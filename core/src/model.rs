@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Usage {
     pub input: u64,
     pub output: u64,
@@ -26,4 +27,17 @@ pub struct ToolCall {
     pub target: String,
     pub at: DateTime<Utc>,
     pub state: ToolState,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn usage_serializes_camel_case() {
+        let v = serde_json::to_value(Usage::default()).unwrap();
+        let mut keys: Vec<&str> = v.as_object().unwrap().keys().map(|k| k.as_str()).collect();
+        keys.sort();
+        assert_eq!(keys, ["cacheCreation", "cacheCreation1h", "cacheRead", "input", "output"]);
+    }
 }
