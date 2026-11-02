@@ -35,7 +35,7 @@ Gereksinimler: Rust (MSVC araç zinciri) + Visual Studio Build Tools, Node 22.
 npm ci
 npm --prefix ui ci
 npm run tauri dev      # geliştirme
-npm run tauri build    # NSIS paketi: src-tauri/target/release/bundle/nsis/
+npm run tauri build    # NSIS paketi: target/release/bundle/nsis/
 cargo test --workspace
 npm --prefix ui test
 ```
