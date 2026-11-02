@@ -4,7 +4,7 @@ use crate::stats::SessionStats;
 use crate::transcript::TranscriptReader;
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -50,6 +50,7 @@ pub struct AgentTree {
     pub finished: u32,
 }
 
+#[derive(Clone)]
 struct Meta {
     agent_type: Option<String>,
     description: Option<String>,
@@ -97,42 +98,6 @@ struct Loaded {
     phase: Option<String>,
 }
 
-fn load(id: &str, jsonl: &Path, session_live: bool, now: SystemTime) -> Loaded {
-    let meta = read_meta(&jsonl.with_extension("meta.json"));
-    let mut stats = SessionStats::default();
-    if let Ok(out) = TranscriptReader::new(jsonl.to_path_buf()).read_new() {
-        for e in &out.entries {
-            stats.apply(e);
-        }
-    }
-    let state = if meta.finished || !session_live {
-        AgentState::Finished
-    } else {
-        let recent = fs::metadata(jsonl)
-            .and_then(|m| m.modified())
-            .map(|mt| now.duration_since(mt).map_or(true, |d| d <= RUNNING_WINDOW))
-            .unwrap_or(false);
-        let open_tool = stats.tool_calls.back().map_or(false, |c| c.state == ToolState::Running);
-        if recent || open_tool {
-            AgentState::Running
-        } else {
-            AgentState::Finished
-        }
-    };
-    Loaded {
-        node: AgentNode {
-            id: id.to_string(),
-            kind: AgentKind::Agent,
-            agent_type: meta.agent_type,
-            description: meta.description,
-            state,
-            stats,
-            children: Vec::new(),
-        },
-        parent: meta.parent,
-        phase: meta.phase,
-    }
-}
 
 type Time = Option<chrono::DateTime<chrono::Utc>>;
 
@@ -185,103 +150,182 @@ fn count(n: &AgentNode, total: &mut u32, finished: &mut u32) {
     }
 }
 
-fn workflow_node(dir: &Path, session_live: bool, now: SystemTime) -> Option<AgentNode> {
-    let wf_id = dir.file_name()?.to_string_lossy().into_owned();
-    let mut phases: Vec<(String, Vec<AgentNode>)> = Vec::new();
-    for (id, p) in agent_files(dir) {
-        let l = load(&id, &p, session_live, now);
-        let name = l.phase.unwrap_or_else(|| NO_PHASE.to_string());
-        match phases.iter_mut().find(|(n, _)| *n == name) {
-            Some((_, v)) => v.push(l.node),
-            None => phases.push((name, vec![l.node])),
+
+struct Cached {
+    reader: TranscriptReader,
+    stats: SessionStats,
+    meta: Meta,
+    meta_sig: Option<(SystemTime, u64)>,
+}
+
+/// Keeps per-agent readers and stats between polls so each build only reads
+/// bytes appended since the previous one.
+#[derive(Default)]
+pub struct AgentCache {
+    agents: HashMap<PathBuf, Cached>,
+    seen: HashSet<PathBuf>,
+}
+
+impl AgentCache {
+    fn load(&mut self, id: &str, jsonl: &Path, session_live: bool, now: SystemTime) -> Loaded {
+        self.seen.insert(jsonl.to_path_buf());
+        let meta_path = jsonl.with_extension("meta.json");
+        let sig = fs::metadata(&meta_path).ok().and_then(|m| Some((m.modified().ok()?, m.len())));
+        let c = self.agents.entry(jsonl.to_path_buf()).or_insert_with(|| Cached {
+            reader: TranscriptReader::new(jsonl.to_path_buf()),
+            stats: SessionStats::default(),
+            meta: read_meta(&meta_path),
+            meta_sig: sig,
+        });
+        if c.meta_sig != sig {
+            c.meta = read_meta(&meta_path);
+            c.meta_sig = sig;
+        }
+        if let Ok(out) = c.reader.read_new() {
+            if out.reset {
+                c.stats = SessionStats::default();
+            }
+            for e in &out.entries {
+                c.stats.apply(e);
+            }
+        }
+        let meta = c.meta.clone();
+        let stats = c.stats.clone();
+        let state = if meta.finished || !session_live {
+            AgentState::Finished
+        } else {
+            let recent = fs::metadata(jsonl)
+                .and_then(|m| m.modified())
+                .map(|mt| now.duration_since(mt).map_or(true, |d| d <= RUNNING_WINDOW))
+                .unwrap_or(false);
+            let open_tool = stats.tool_calls.back().map_or(false, |c| c.state == ToolState::Running);
+            if recent || open_tool {
+                AgentState::Running
+            } else {
+                AgentState::Finished
+            }
+        };
+        Loaded {
+            node: AgentNode {
+                id: id.to_string(),
+                kind: AgentKind::Agent,
+                agent_type: meta.agent_type,
+                description: meta.description,
+                state,
+                stats,
+                children: Vec::new(),
+            },
+            parent: meta.parent,
+            phase: meta.phase,
         }
     }
-    if phases.is_empty() {
-        return None;
-    }
-    let mut phase_nodes: Vec<AgentNode> = phases
-        .into_iter()
-        .map(|(name, mut agents)| {
-            sort_nodes(&mut agents);
-            let mut stats = SessionStats::default();
-            stats.first_at = first_of(agents.iter());
-            AgentNode {
-                id: format!("{wf_id}/{name}"),
-                state: any_running(agents.iter()),
-                kind: AgentKind::Phase { name },
-                agent_type: None,
-                description: None,
-                stats,
-                children: agents,
+
+    fn workflow_node(&mut self, dir: &Path, session_live: bool, now: SystemTime) -> Option<AgentNode> {
+        let wf_id = dir.file_name()?.to_string_lossy().into_owned();
+        let mut phases: Vec<(String, Vec<AgentNode>)> = Vec::new();
+        for (id, p) in agent_files(dir) {
+            let l = self.load(&id, &p, session_live, now);
+            let name = l.phase.unwrap_or_else(|| NO_PHASE.to_string());
+            match phases.iter_mut().find(|(n, _)| *n == name) {
+                Some((_, v)) => v.push(l.node),
+                None => phases.push((name, vec![l.node])),
             }
+        }
+        if phases.is_empty() {
+            return None;
+        }
+        let mut phase_nodes: Vec<AgentNode> = phases
+            .into_iter()
+            .map(|(name, mut agents)| {
+                sort_nodes(&mut agents);
+                let mut stats = SessionStats::default();
+                stats.first_at = first_of(agents.iter());
+                AgentNode {
+                    id: format!("{wf_id}/{name}"),
+                    state: any_running(agents.iter()),
+                    kind: AgentKind::Phase { name },
+                    agent_type: None,
+                    description: None,
+                    stats,
+                    children: agents,
+                }
+            })
+            .collect();
+        sort_nodes(&mut phase_nodes);
+        let mut stats = SessionStats::default();
+        stats.first_at = first_of(phase_nodes.iter());
+        Some(AgentNode {
+            id: wf_id.clone(),
+            kind: AgentKind::Workflow { id: wf_id },
+            agent_type: None,
+            description: None,
+            state: any_running(phase_nodes.iter()),
+            stats,
+            children: phase_nodes,
         })
-        .collect();
-    sort_nodes(&mut phase_nodes);
-    let mut stats = SessionStats::default();
-    stats.first_at = first_of(phase_nodes.iter());
-    Some(AgentNode {
-        id: wf_id.clone(),
-        kind: AgentKind::Workflow { id: wf_id },
-        agent_type: None,
-        description: None,
-        state: any_running(phase_nodes.iter()),
-        stats,
-        children: phase_nodes,
-    })
+    }
+
+    pub fn build(&mut self, subagents_dir: &Path, session_live: bool, now: SystemTime) -> AgentTree {
+        self.seen.clear();
+        let loaded: Vec<Loaded> = agent_files(subagents_dir)
+            .iter()
+            .map(|(id, p)| self.load(id, p, session_live, now))
+            .collect();
+        // Known parents only; self-parent counts as none.
+        let parent_of: HashMap<String, String> = loaded
+            .iter()
+            .filter_map(|l| {
+                let p = l.parent.as_ref()?;
+                (p != &l.node.id && loaded.iter().any(|o| &o.node.id == p)).then(|| (l.node.id.clone(), p.clone()))
+            })
+            .collect();
+        // An agent whose parent chain leads back to itself becomes a root.
+        let in_cycle = |start: &str| {
+            let mut cur = start;
+            for _ in 0..=parent_of.len() {
+                match parent_of.get(cur) {
+                    Some(p) if p == start => return true,
+                    Some(p) => cur = p,
+                    None => return false,
+                }
+            }
+            false // leads into a loop that does not include `start`
+        };
+        let mut kids: HashMap<String, Vec<String>> = HashMap::new();
+        let mut root_ids = Vec::new();
+        for l in &loaded {
+            match parent_of.get(&l.node.id) {
+                Some(p) if !in_cycle(&l.node.id) => kids.entry(p.clone()).or_default().push(l.node.id.clone()),
+                _ => root_ids.push(l.node.id.clone()),
+            }
+        }
+        let mut nodes: HashMap<String, AgentNode> = loaded.into_iter().map(|l| (l.node.id.clone(), l.node)).collect();
+        let mut roots: Vec<AgentNode> = root_ids.iter().filter_map(|id| attach(id, &mut nodes, &kids)).collect();
+        sort_nodes(&mut roots);
+
+        // Workflow groups come after plain agents.
+        let mut wf_dirs: Vec<PathBuf> = fs::read_dir(subagents_dir.join("workflows"))
+            .map(|rd| rd.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect())
+            .unwrap_or_default();
+        wf_dirs.sort();
+        let mut workflows: Vec<AgentNode> =
+            wf_dirs.iter().filter_map(|d| self.workflow_node(d, session_live, now)).collect();
+        sort_nodes(&mut workflows);
+        roots.extend(workflows);
+
+        let (mut total, mut finished) = (0, 0);
+        for r in &roots {
+            count(r, &mut total, &mut finished);
+        }
+        let tree = AgentTree { roots, total, finished };
+        let seen = &self.seen;
+        self.agents.retain(|p, _| seen.contains(p));
+        tree
+    }
 }
 
 pub fn build_tree(subagents_dir: &Path, session_live: bool, now: SystemTime) -> AgentTree {
-    let loaded: Vec<Loaded> = agent_files(subagents_dir)
-        .iter()
-        .map(|(id, p)| load(id, p, session_live, now))
-        .collect();
-    // Known parents only; self-parent counts as none.
-    let parent_of: HashMap<String, String> = loaded
-        .iter()
-        .filter_map(|l| {
-            let p = l.parent.as_ref()?;
-            (p != &l.node.id && loaded.iter().any(|o| &o.node.id == p)).then(|| (l.node.id.clone(), p.clone()))
-        })
-        .collect();
-    // An agent whose parent chain leads back to itself becomes a root.
-    let in_cycle = |start: &str| {
-        let mut cur = start;
-        for _ in 0..=parent_of.len() {
-            match parent_of.get(cur) {
-                Some(p) if p == start => return true,
-                Some(p) => cur = p,
-                None => return false,
-            }
-        }
-        false // leads into a loop that does not include `start`
-    };
-    let mut kids: HashMap<String, Vec<String>> = HashMap::new();
-    let mut root_ids = Vec::new();
-    for l in &loaded {
-        match parent_of.get(&l.node.id) {
-            Some(p) if !in_cycle(&l.node.id) => kids.entry(p.clone()).or_default().push(l.node.id.clone()),
-            _ => root_ids.push(l.node.id.clone()),
-        }
-    }
-    let mut nodes: HashMap<String, AgentNode> = loaded.into_iter().map(|l| (l.node.id.clone(), l.node)).collect();
-    let mut roots: Vec<AgentNode> = root_ids.iter().filter_map(|id| attach(id, &mut nodes, &kids)).collect();
-    sort_nodes(&mut roots);
-
-    // Workflow groups come after plain agents.
-    let mut wf_dirs: Vec<PathBuf> = fs::read_dir(subagents_dir.join("workflows"))
-        .map(|rd| rd.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect())
-        .unwrap_or_default();
-    wf_dirs.sort();
-    let mut workflows: Vec<AgentNode> =
-        wf_dirs.iter().filter_map(|d| workflow_node(d, session_live, now)).collect();
-    sort_nodes(&mut workflows);
-    roots.extend(workflows);
-
-    let (mut total, mut finished) = (0, 0);
-    for r in &roots {
-        count(r, &mut total, &mut finished);
-    }
-    AgentTree { roots, total, finished }
+    AgentCache::default().build(subagents_dir, session_live, now)
 }
 
 #[cfg(test)]
@@ -445,6 +489,51 @@ mod tests {
         let tree = build_tree(Path::new("Z:\\no\\such\\dir"), true, now());
         assert_eq!(tree.total, 0);
         assert!(tree.roots.is_empty());
+    }
+
+    fn append(dir: &Path, id: &str, line: &str) {
+        let mut f = fs::OpenOptions::new().append(true).open(dir.join(format!("agent-{id}.jsonl"))).unwrap();
+        writeln!(f, "{line}").unwrap();
+    }
+
+    #[test]
+    fn cache_reads_only_appended_lines() {
+        let t = fixture();
+        let mut cache = AgentCache::default();
+        let before = cache.build(t.path(), true, now());
+        let n_a2 = find(&before.roots, "a2").stats.tool_call_count;
+        let n_a1 = find(&before.roots, "a1").stats.tool_call_count;
+        append(t.path(), "a2", &call("t9", "2026-11-02T07:05:00Z"));
+        let after = cache.build(t.path(), true, now());
+        assert_eq!(find(&after.roots, "a2").stats.tool_call_count, n_a2 + 1);
+        assert_eq!(find(&after.roots, "a1").stats.tool_call_count, n_a1);
+        // an unchanged third build must not double anything
+        let again = cache.build(t.path(), true, now());
+        assert_eq!(find(&again.roots, "a2").stats.tool_call_count, n_a2 + 1);
+    }
+
+    #[test]
+    fn cache_evicts_removed_agents() {
+        let t = fixture();
+        let mut cache = AgentCache::default();
+        assert_eq!(cache.build(t.path(), true, now()).total, 5);
+        assert_eq!(cache.agents.len(), 5);
+        fs::remove_file(t.path().join("agent-a1.jsonl")).unwrap();
+        let tree = cache.build(t.path(), true, now());
+        assert_eq!(tree.total, 4);
+        assert_eq!(cache.agents.len(), 4);
+    }
+
+    #[test]
+    fn cache_rebuilds_after_shrink() {
+        let t = tempfile::tempdir().unwrap();
+        let two = [call("t1", "2026-11-02T07:00:00Z"), result("t1", "2026-11-02T07:00:01Z"), call("t2", "2026-11-02T07:00:02Z")];
+        agent(t.path(), "r", Some("{}"), &two, 30);
+        let mut cache = AgentCache::default();
+        assert_eq!(cache.build(t.path(), true, now()).roots[0].stats.tool_call_count, 2);
+        agent(t.path(), "r", Some("{}"), &[call("t7", "2026-11-02T07:00:00Z")], 30);
+        let tree = cache.build(t.path(), true, now());
+        assert_eq!(tree.roots[0].stats.tool_call_count, 1);
     }
 
     #[test]
