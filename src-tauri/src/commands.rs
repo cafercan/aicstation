@@ -309,7 +309,7 @@ impl AppState {
             self.get_snapshot().sessions.iter().map(|c| c.cwd.clone()).collect();
         known.extend(lock(&self.history_rows).iter().filter_map(|r| r.cwd.clone()));
         let dir = validate_open_folder(path, &known)?;
-        std::process::Command::new("explorer.exe")
+        std::process::Command::new(crate::platform::explorer_exe())
             .arg(dir)
             .spawn()
             .map(|_| ())
@@ -320,9 +320,22 @@ impl AppState {
 /// Accepts only a path equal to a known session cwd that is an absolute,
 /// local, existing directory. explorer.exe would execute a file path, treats
 /// `,`/leading `/` as switches, and `is_dir` on a UNC path would make an
-/// outbound SMB request. The returned path ends with `\` so explorer always
+/// outbound SMB request. Before the folder itself is touched, its drive must
+/// be a local fixed or removable disk (a mapped network drive is refused) and
+/// no component of the path may be a symlink or junction (either could point
+/// at `\\host\share`). The returned path ends with `\` so explorer always
 /// treats it as a folder.
 pub fn validate_open_folder(path: &str, known_cwds: &[String]) -> Result<PathBuf, String> {
+    validate_open_folder_on(path, known_cwds, crate::platform::drive_kind)
+}
+
+/// [`validate_open_folder`] with the drive-kind lookup passed in (tests).
+pub fn validate_open_folder_on(
+    path: &str,
+    known_cwds: &[String],
+    drive_kind: impl Fn(&Path) -> crate::platform::DriveKind,
+) -> Result<PathBuf, String> {
+    use crate::platform::DriveKind;
     if path.is_empty() || !known_cwds.iter().any(|c| c == path) {
         return Err(errors::FOLDER_UNKNOWN.into());
     }
@@ -336,6 +349,17 @@ pub fn validate_open_folder(path: &str, known_cwds: &[String]) -> Result<PathBuf
     if !p.is_absolute() {
         return Err(errors::FOLDER_RELATIVE.into());
     }
+    let root = drive_root(path).ok_or(errors::FOLDER_INVALID)?;
+    match drive_kind(Path::new(&root)) {
+        DriveKind::Local => {}
+        DriveKind::Remote => return Err(errors::FOLDER_NETWORK.into()),
+        DriveKind::Other => return Err(errors::FOLDER_INVALID.into()),
+    }
+    // `is_symlink` is true for symlinks and junctions (name surrogates), not
+    // for cloud placeholders such as OneDrive folders.
+    if p.ancestors().any(|a| std::fs::symlink_metadata(a).is_ok_and(|m| m.file_type().is_symlink())) {
+        return Err(errors::FOLDER_INVALID.into());
+    }
     if !p.is_dir() {
         return Err(errors::FOLDER_MISSING.into());
     }
@@ -344,6 +368,20 @@ pub fn validate_open_folder(path: &str, known_cwds: &[String]) -> Result<PathBuf
         s.push("\\");
     }
     Ok(PathBuf::from(s))
+}
+
+/// `X:\` of an absolute, non-UNC Windows path, or None. (On a non-Windows
+/// host, tests only, an absolute POSIX path has the root `/`.)
+fn drive_root(path: &str) -> Option<String> {
+    let b = path.as_bytes();
+    if b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'\\' {
+        return Some(format!("{}\\", &path[..2]));
+    }
+    #[cfg(not(windows))]
+    if path.starts_with('/') {
+        return Some("/".into());
+    }
+    None
 }
 
 #[tauri::command(async)]
@@ -431,6 +469,58 @@ mod tests {
         ] {
             assert_eq!(validate_open_folder(&bad, std::slice::from_ref(&bad)).unwrap_err(), code, "should reject {bad}");
         }
+    }
+
+    #[test]
+    fn open_folder_only_on_local_fixed_or_removable_drives() {
+        use crate::platform::DriveKind;
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().to_string_lossy().into_owned();
+        let known = std::slice::from_ref(&real);
+        assert!(validate_open_folder_on(&real, known, |_| DriveKind::Local).is_ok());
+        assert_eq!(validate_open_folder_on(&real, known, |_| DriveKind::Remote).unwrap_err(), errors::FOLDER_NETWORK);
+        assert_eq!(validate_open_folder_on(&real, known, |_| DriveKind::Other).unwrap_err(), errors::FOLDER_INVALID);
+        // The probe is asked about the drive root, before the folder is touched.
+        let asked = std::cell::RefCell::new(None);
+        let missing = format!(r"{real}\yok");
+        let _ = validate_open_folder_on(&missing, std::slice::from_ref(&missing), |r| {
+            *asked.borrow_mut() = Some(r.to_path_buf());
+            DriveKind::Remote
+        });
+        assert_eq!(asked.into_inner().unwrap(), PathBuf::from(&real[..3]));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn temp_folder_is_on_a_local_drive() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().to_string_lossy().into_owned();
+        assert_eq!(crate::platform::drive_kind(Path::new(&real[..3])), crate::platform::DriveKind::Local);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn open_folder_rejects_a_junction_anywhere_on_the_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("hedef");
+        fs::create_dir_all(target.join("alt")).unwrap();
+        let link = dir.path().join("baglanti");
+        let made = std::process::Command::new("cmd.exe")
+            .args(["/c", "mklink", "/J"])
+            .arg(&link)
+            .arg(&target)
+            .output()
+            .is_ok_and(|o| o.status.success());
+        if !made {
+            eprintln!("junction could not be created here; skipping");
+            return;
+        }
+        for bad in [link.clone(), link.join("alt")] {
+            let p = bad.to_string_lossy().into_owned();
+            assert_eq!(validate_open_folder(&p, std::slice::from_ref(&p)).unwrap_err(), errors::FOLDER_INVALID, "{p}");
+        }
+        let ok = target.join("alt").to_string_lossy().into_owned();
+        assert!(validate_open_folder(&ok, std::slice::from_ref(&ok)).is_ok());
     }
 
     #[test]

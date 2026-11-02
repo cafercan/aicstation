@@ -145,10 +145,10 @@ fn poisoned<T>(_: T) -> String {
     crate::errors::INTERNAL_LOCK.to_string()
 }
 
-/// Absolute path of Windows PowerShell (never resolved through PATH).
+/// Absolute path of Windows PowerShell under the System32 directory from
+/// `GetSystemDirectoryW` (never PATH, the cwd or `%SystemRoot%`).
 pub fn powershell_exe() -> PathBuf {
-    let root = std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into());
-    PathBuf::from(root).join("System32").join("WindowsPowerShell").join("v1.0").join("powershell.exe")
+    crate::platform::system_dir().join("WindowsPowerShell").join("v1.0").join("powershell.exe")
 }
 
 /// PowerShell arguments for resuming a session. Only a lowercase UUID is
@@ -665,6 +665,23 @@ mod tests {
         for bad in ["", "x; calc", "F00DCAFE-0000-4000-8000-000000000001", "f00dcafe-0000-4000-8000-000000000001 & calc"] {
             assert!(resume_args(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn powershell_comes_from_the_system_directory() {
+        let sys = crate::platform::system_dir();
+        assert!(sys.is_absolute());
+        assert!(sys.ends_with("System32") || sys.to_string_lossy().to_lowercase().ends_with("system32"), "{sys:?}");
+        assert_eq!(powershell_exe(), sys.join("WindowsPowerShell").join("v1.0").join("powershell.exe"));
+    }
+
+    #[test]
+    fn explorer_comes_from_the_windows_directory() {
+        let exe = crate::platform::explorer_exe();
+        assert_eq!(exe, crate::platform::windows_dir().join("explorer.exe"));
+        assert!(exe.is_absolute());
+        #[cfg(windows)]
+        assert!(exe.is_file(), "{exe:?}");
     }
 
     #[test]

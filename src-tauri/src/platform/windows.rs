@@ -19,6 +19,49 @@ use windows_sys::Win32::System::Diagnostics::ToolHelp::{
 use windows_sys::Win32::System::Threading::{
     GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
 };
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
+use std::path::{Path, PathBuf};
+use windows_sys::Win32::Storage::FileSystem::GetDriveTypeW;
+use windows_sys::Win32::System::SystemInformation::{GetSystemDirectoryW, GetWindowsDirectoryW};
+
+/// `GetDriveTypeW` results (WindowsProgramming constants).
+const DRIVE_REMOVABLE: u32 = 2;
+const DRIVE_FIXED: u32 = 3;
+const DRIVE_REMOTE: u32 = 4;
+
+pub(super) fn drive_kind(root: &Path) -> super::DriveKind {
+    let wide: Vec<u16> = root.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+    match unsafe { GetDriveTypeW(wide.as_ptr()) } {
+        DRIVE_FIXED | DRIVE_REMOVABLE => super::DriveKind::Local,
+        DRIVE_REMOTE => super::DriveKind::Remote,
+        _ => super::DriveKind::Other,
+    }
+}
+
+/// Calls a `Get*DirectoryW` style API; `fallback` when it fails.
+fn api_dir(get: unsafe extern "system" fn(*mut u16, u32) -> u32, fallback: &str) -> PathBuf {
+    let mut buf = vec![0u16; 260];
+    loop {
+        let n = unsafe { get(buf.as_mut_ptr(), buf.len() as u32) } as usize;
+        if n == 0 || n > 32 * 1024 {
+            return PathBuf::from(fallback);
+        }
+        if n < buf.len() {
+            let p = PathBuf::from(std::ffi::OsString::from_wide(&buf[..n]));
+            return if p.is_absolute() { p } else { PathBuf::from(fallback) };
+        }
+        // Too small: `n` is the size needed, including the terminator.
+        buf.resize(n, 0);
+    }
+}
+
+pub(super) fn system_dir() -> PathBuf {
+    api_dir(GetSystemDirectoryW, r"C:\Windows\System32")
+}
+
+pub(super) fn windows_dir() -> PathBuf {
+    api_dir(GetWindowsDirectoryW, r"C:\Windows")
+}
 
 const PARENT_MAP_TTL: Duration = Duration::from_millis(500);
 
