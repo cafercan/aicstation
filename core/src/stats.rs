@@ -8,7 +8,8 @@ use std::collections::{BTreeMap, HashSet, VecDeque};
 /// Maximum number of tool calls kept in memory.
 pub const MAX_TOOL_CALLS: usize = 50;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SessionStats {
     pub title: Option<String>,
     pub cwd: Option<String>,
@@ -23,6 +24,7 @@ pub struct SessionStats {
     pub tool_call_count: u64,
     pub first_at: Option<DateTime<Utc>>,
     pub last_at: Option<DateTime<Utc>>,
+    #[serde(skip)]
     seen_ids: HashSet<String>,
 }
 
