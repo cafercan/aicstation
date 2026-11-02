@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getSessionDetail, onSnapshot, openFolder, type AgentNode, type SessionDetail, type ToolCall } from "../api";
 import { fmtContext, fmtCost, fmtElapsed, fmtTokens, statusColor, statusKind, statusLabel } from "../format";
 import ClaudeMark from "../components/ClaudeMark";
@@ -8,6 +8,10 @@ interface Props {
   sessionId: string;
   onBack: () => void;
   onTerminal?: (id: number) => void;
+  /** The session is in the current snapshot (its process runs). */
+  live?: boolean;
+  /** "▶ Devam et" on a closed session; a rejection is shown inline. */
+  onResume?: (sessionId: string, name: string) => Promise<unknown>;
 }
 
 const MAIN = "__main__";
@@ -69,16 +73,27 @@ function ToolResult({ state }: { state: ToolCall["state"] }) {
   return <span className="y">… çalışıyor</span>;
 }
 
-export default function SessionDetailPage({ sessionId, onBack, onTerminal }: Props) {
+export default function SessionDetailPage({ sessionId, onBack, onTerminal, live = false, onResume }: Props) {
   const [detail, setDetail] = useState<SessionDetail | null | undefined>(undefined);
   const [sel, setSel] = useState(MAIN);
   const [folderErr, setFolderErr] = useState<string | null>(null);
+  const [resumeErr, setResumeErr] = useState<string | null>(null);
+  const liveRef = useRef(live);
+  /** Re-opens loading after it was considered final, and loads once. */
+  const wakeRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    liveRef.current = live;
+    if (live) wakeRef.current();
+  }, [live]);
 
   useEffect(() => {
     let alive = true;
     let unlisten: (() => void) | undefined;
     // At most one request in flight; events arriving meanwhile cause a single
-    // follow-up. A closed session (pid 0) cannot change, so it is loaded once.
+    // follow-up. A closed session (pid 0) cannot change, so it is loaded once,
+    // but pid 0 is final only while the session is not in the current
+    // snapshot: a live session answered as closed keeps being refreshed.
     let inFlight = false;
     let again = false;
     let done = false;
@@ -92,7 +107,7 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal }: Pro
         .then((d) => {
           if (!alive || my !== seq) return; // stale
           setDetail(d);
-          if (d && d.card.pid === 0) done = true;
+          if (d && d.card.pid === 0 && !liveRef.current) done = true;
         })
         .catch(() => { if (alive && my === seq) setDetail((p) => p ?? null); })
         .finally(() => {
@@ -100,8 +115,13 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal }: Pro
           if (again) { again = false; load(); }
         });
     };
+    wakeRef.current = () => { done = false; load(); };
     load();
-    onSnapshot(() => load())
+    onSnapshot((s) => {
+      liveRef.current = s.sessions.some((c) => c.sessionId === sessionId);
+      if (liveRef.current) done = false;
+      load();
+    })
       .then((u) => { if (alive) unlisten = u; else u(); })
       .catch(() => {});
     return () => { alive = false; unlisten?.(); };
@@ -134,6 +154,12 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal }: Pro
           {term !== undefined && (
             <button className="btn" onClick={() => onTerminal?.(term)}>Terminale git</button>
           )}
+          {kind === "closed" && !live && onResume && (
+            <button className="btn" onClick={() => {
+              setResumeErr(null);
+              onResume(card.sessionId, card.name).catch((e) => setResumeErr(`Devam edilemedi: ${String(e)}`));
+            }}>▶ Devam et</button>
+          )}
           <button className="btn" onClick={() => {
             setFolderErr(null);
             openFolder(card.cwd).catch((e) => setFolderErr(`Klasör açılamadı: ${String(e)}`));
@@ -141,6 +167,7 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal }: Pro
         </div>
       </div>
       {folderErr && <div className="meta r" role="alert">{folderErr}</div>}
+      {resumeErr && <div className="meta r" role="alert">{resumeErr}</div>}
       <div className="meta">
         {card.cwd} · başladı {started} · son hareket {fmtElapsed(Date.now() - card.lastActivityMs)}
       </div>

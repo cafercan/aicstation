@@ -4,10 +4,14 @@ import type { AgentNode, HistoryRow, SessionDetail, ToolCall } from "../api";
 
 const invoke = vi.fn();
 let snapshotCb: (() => void) | null = null;
+/** Session ids in the snapshot events the mock emits. */
+let snapIds: string[] = [];
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...a: unknown[]) => invoke(...a) }));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async (_n: string, cb: (e: { payload: unknown }) => void) => {
-    snapshotCb = () => cb({ payload: { sessions: [], runningAgents: 0, waitingCount: 0 } });
+    snapshotCb = () => cb({
+      payload: { sessions: snapIds.map((sessionId) => ({ sessionId })), runningAgents: 0, waitingCount: 0 },
+    });
     return () => {};
   }),
 }));
@@ -59,6 +63,7 @@ beforeEach(() => {
   terminalForPid.mockReset();
   terminalForPid.mockReturnValue(undefined);
   snapshotCb = null;
+  snapIds = [];
 });
 
 test("ağaç: workflow → aşama → ajan iç içe çizilir", async () => {
@@ -142,6 +147,48 @@ test("kapanmış oturum bir kez çekilir, snapshot olaylarında yeniden çekilme
   for (let i = 0; i < 3; i++) await act(async () => { snapshotCb!(); });
   await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
   expect(detailCalls()).toBe(1);
+});
+
+test("pid 0 gelse de oturum snapshot'ta canlıysa ayrıntı yenilenmeye devam eder", async () => {
+  // Backend glitch: a live session answered as closed with empty stats.
+  invoke.mockResolvedValue(closed({ model: null }));
+  snapIds = ["s1"];
+  render(<SessionDetailPage sessionId="s1" live onBack={() => {}} />);
+  await screen.findByText("Klasörü aç");
+  await waitFor(() => expect(snapshotCb).not.toBeNull());
+  invoke.mockResolvedValue(detail());
+  await act(async () => { snapshotCb!(); });
+  await waitFor(() => expect(detailCalls()).toBe(2));
+  expect(await screen.findByText("çalışıyor")).toBeTruthy();
+  expect(screen.queryByText(/kapandı/)).toBeNull();
+});
+
+test("canlı prop'u olmadan da: snapshot olayında oturum listedeyse pid 0 son kabul edilmez", async () => {
+  invoke.mockResolvedValue(closed());
+  render(<SessionDetailPage sessionId="s1" onBack={() => {}} />);
+  await screen.findByText("Klasörü aç");
+  await waitFor(() => expect(snapshotCb).not.toBeNull());
+  snapIds = ["s1"];
+  await act(async () => { snapshotCb!(); });
+  await waitFor(() => expect(detailCalls()).toBe(2));
+  await act(async () => { snapshotCb!(); });
+  await waitFor(() => expect(detailCalls()).toBe(3));
+});
+
+test("kapanmış oturumda ▶ Devam et: onResume(id, ad); hata satır içinde", async () => {
+  invoke.mockResolvedValue(closed());
+  const onResume = vi.fn().mockRejectedValueOnce("Bu oturum zaten açık").mockResolvedValue(undefined);
+  render(<SessionDetailPage sessionId="s1" onBack={() => {}} onResume={onResume} />);
+  fireEvent.click(await screen.findByText("▶ Devam et"));
+  expect(onResume).toHaveBeenCalledWith("s1", "demo");
+  expect(await screen.findByText("Devam edilemedi: Bu oturum zaten açık")).toBeTruthy();
+});
+
+test("canlı oturumda ▶ Devam et yok", async () => {
+  invoke.mockResolvedValue(detail());
+  render(<SessionDetailPage sessionId="s1" onBack={() => {}} onResume={vi.fn()} />);
+  await screen.findByText("Klasörü aç");
+  expect(screen.queryByText("▶ Devam et")).toBeNull();
 });
 
 test("aynı anda en fazla bir ayrıntı isteği; bekleyen olay sonra tek istekle karşılanır", async () => {
@@ -229,4 +276,22 @@ test("Geçmiş: indexing true iken 2 saniyede bir yenilenir", async () => {
   } finally {
     vi.useRealTimers();
   }
+});
+
+test("Geçmiş: ▶ Devam et satırı açmadan onResume çağırır; hata o satırda gösterilir", async () => {
+  invoke.mockResolvedValue({
+    rows: [row("a", "C:/a", true), row("b", "C:/b", false)], todayCost: 0, todayComplete: true, indexing: false,
+  });
+  const onOpen = vi.fn();
+  const onResume = vi.fn().mockRejectedValueOnce("Bilinmeyen oturum").mockResolvedValue(undefined);
+  render(<History onOpen={onOpen} onResume={onResume} />);
+  const trB = (await screen.findByText("ad-b")).closest("tr")!;
+  fireEvent.click(within(trB).getByText("▶ Devam et"));
+  expect(onResume).toHaveBeenCalledWith("b", "ad-b");
+  expect(onOpen).not.toHaveBeenCalled();
+  expect(await within(trB).findByText("Bilinmeyen oturum")).toBeTruthy();
+  const trA = screen.getByText("ad-a").closest("tr")!;
+  expect(within(trA).queryByText("Bilinmeyen oturum")).toBeNull();
+  fireEvent.click(within(trA).getByText("▶ Devam et"));
+  expect(onResume).toHaveBeenLastCalledWith("a", "ad-a");
 });

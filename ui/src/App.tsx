@@ -9,7 +9,8 @@ import SessionDetailPage from "./pages/SessionDetail";
 import TerminalView from "./pages/TerminalView";
 import { statusKind } from "./format";
 import {
-  allTerminalIds, closeTerminal, confirmClose, killOrphans, openTerminal, sessionsIn, terminalName,
+  allTerminalIds, closeTerminal, confirmClose, killOrphans, openResumeTerminal, openTerminal, sessionsIn,
+  terminalName,
   useTerminals,
 } from "./terminal/store";
 import "./app.css";
@@ -64,6 +65,9 @@ export default function App() {
   const onNew = useCallback(() => {
     openTerminal().then((t) => setView({ terminal: t.id })).catch(() => {});
   }, []);
+  /** Rejections reach the page, which shows them inline. */
+  const onResume = useCallback((sessionId: string, name: string) =>
+    openResumeTerminal(sessionId, name).then((t) => setView({ terminal: t.id })), []);
   const onClose = useCallback((id: number) => {
     if (!confirmClose([id], snapRef.current.sessions)) return;
     setView((v) => (typeof v === "object" && "terminal" in v && v.terminal === id ? "dashboard" : v));
@@ -83,9 +87,10 @@ export default function App() {
     page = <Dashboard snapshot={snapshot} history={history} now={now}
       onOpen={(id) => setView({ session: id })} />;
   } else if (view === "history") {
-    page = <History onOpen={(id) => setView({ session: id })} />;
+    page = <History onOpen={(id) => setView({ session: id })} onResume={onResume} />;
   } else if ("session" in view) {
     page = <SessionDetailPage key={view.session} sessionId={view.session}
+      live={snapshot.sessions.some((s) => s.sessionId === view.session)} onResume={onResume}
       onBack={() => setView("dashboard")} onTerminal={(id) => setView({ terminal: id })} />;
   } else if (!terminals.some((t) => t.id === termId)) {
     page = (
