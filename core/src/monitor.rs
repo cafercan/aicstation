@@ -12,6 +12,9 @@ use std::time::{Duration, SystemTime};
 
 /// Minimum gap between transcript lookups for a session whose file was not found.
 const LOOKUP_RETRY: Duration = Duration::from_secs(10);
+/// Transcript bytes read per live session per refresh; a huge transcript fills
+/// in over several ticks instead of delaying the first snapshot.
+pub const PUMP_BUDGET: u64 = 32 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -56,6 +59,8 @@ struct SessionState {
     reader: Option<TranscriptReader>,
     stats: SessionStats,
     agents: AgentCache,
+    /// Agent tree from the last update (today-cost of live sessions).
+    tree: AgentTree,
     /// When a failed transcript lookup last happened.
     last_lookup: Option<SystemTime>,
     /// Entries applied so far (incremental-read check in tests).
@@ -69,6 +74,7 @@ impl SessionState {
             reader: None,
             stats: SessionStats::default(),
             agents: AgentCache::default(),
+            tree: AgentTree::default(),
             last_lookup: None,
             #[cfg(test)]
             applied: 0,
@@ -76,12 +82,12 @@ impl SessionState {
     }
 
     /// Reads newly appended transcript lines into `stats`.
-    fn pump(&mut self) {
+    fn pump(&mut self, budget: u64) {
         let Some(reader) = self.reader.as_mut() else { return };
         let stats = &mut self.stats;
         #[cfg(test)]
         let applied = &mut self.applied;
-        let _ = reader.read_each(|ev| match ev {
+        let _ = reader.read_each_limited(budget, |ev| match ev {
             ReadEvent::Reset => *stats = SessionStats::default(),
             ReadEvent::Entry(e) => {
                 #[cfg(test)]
@@ -98,6 +104,7 @@ pub struct Monitor {
     claude_dir: PathBuf,
     locator: Locator,
     states: HashMap<String, SessionState>,
+    pump_budget: u64,
 }
 
 fn dt_ms(t: Option<chrono::DateTime<chrono::Utc>>) -> Option<u64> {
@@ -180,7 +187,7 @@ fn make_card(
 impl Monitor {
     pub fn new(claude_dir: PathBuf) -> Self {
         let locator = Locator::new(claude_dir.join("projects"));
-        Self { claude_dir, locator, states: HashMap::new() }
+        Self { claude_dir, locator, states: HashMap::new(), pump_budget: PUMP_BUDGET }
     }
 
     /// Finds the transcript for a live session (misses retried at most every
@@ -198,14 +205,41 @@ impl Monitor {
                 }
             }
         }
-        st.pump();
+        st.pump(self.pump_budget);
         if st.reader.is_none() {
             return AgentTree::default();
         }
-        match self.locator.subagents_dir(id) {
+        let tree = match self.locator.subagents_dir(id) {
             Some(dir) => st.agents.build(&dir, true, now),
             None => AgentTree::default(),
+        };
+        st.tree = tree.clone();
+        tree
+    }
+
+    /// Cost on `day` of the sessions live at the last refresh (main transcript
+    /// plus agents), and their ids. History excludes these ids, so the two sums
+    /// never overlap.
+    pub fn live_cost_on(&self, day: chrono::NaiveDate) -> (f64, HashSet<String>) {
+        fn agents_on(nodes: &[AgentNode], day: chrono::NaiveDate) -> f64 {
+            nodes
+                .iter()
+                .map(|n| {
+                    let own = if n.kind == AgentKind::Agent {
+                        n.stats.cost_by_day.get(&day).copied().unwrap_or(0.0)
+                    } else {
+                        0.0
+                    };
+                    own + agents_on(&n.children, day)
+                })
+                .sum()
         }
+        let mut total = 0.0;
+        for st in self.states.values() {
+            total += st.stats.cost_by_day.get(&day).copied().unwrap_or(0.0);
+            total += agents_on(&st.tree.roots, day);
+        }
+        (total, self.states.keys().cloned().collect())
     }
 
     pub fn refresh(&mut self, probe: &dyn ProcessProbe, now: SystemTime) -> Snapshot {
@@ -280,7 +314,21 @@ pub struct ClosedJob {
     subagents_dir: Option<PathBuf>,
 }
 
+/// Identity of a closed transcript's content: (path, length, mtime in ms).
+pub type ClosedKey = (PathBuf, u64, u64);
+
 impl ClosedJob {
+    /// Cache key for the detail this job would build; `None` if the file is gone.
+    pub fn key(&self) -> Option<ClosedKey> {
+        let md = std::fs::metadata(&self.path).ok()?;
+        let m = md
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
+            .map_or(0, |d| d.as_millis() as u64);
+        Some((self.path.clone(), md.len(), m))
+    }
+
     pub fn run(self, session_id: &str, now: SystemTime) -> Option<SessionDetail> {
         let mut reader = TranscriptReader::new(self.path);
         let mut stats = SessionStats::default();
@@ -415,6 +463,67 @@ mod tests {
         let after = m.states[&sid].applied;
         assert_eq!(after - first, 2, "only the new line (assistant + meta) is read");
         assert_eq!(m.states[&sid].stats.tokens.output, 12);
+    }
+
+    #[test]
+    fn pump_respects_byte_budget() {
+        let e = Env::new();
+        let sid = id(1);
+        e.reg(1, &sid, "busy", 10, None);
+        let t = e.transcript(&sid);
+        let n = 2000;
+        for i in 0..n {
+            e.append(&t, &asst(&format!("m{i}"), 1, "2026-11-02T07:00:00Z"));
+        }
+        let mut m = e.mon();
+        m.pump_budget = 64 * 1024;
+        let snap = m.refresh(&FakeProbe, now());
+        assert_eq!(snap.sessions.len(), 1, "card appears at once");
+        let first = m.states[&sid].stats.tokens.output;
+        assert!(first > 0 && first < n, "partial stats after one tick: {first}");
+        let mut ticks = 1;
+        while m.states[&sid].stats.tokens.output < n {
+            m.refresh(&FakeProbe, now());
+            ticks += 1;
+            assert!(ticks < 100);
+        }
+        assert_eq!(m.states[&sid].stats.tokens.output, n, "every line exactly once");
+        assert!(ticks > 2);
+    }
+
+    #[test]
+    fn live_cost_on_sums_main_and_agents_for_the_day() {
+        let e = Env::new();
+        let sid = id(1);
+        e.reg(1, &sid, "busy", 10, None);
+        e.append(&e.transcript(&sid), &asst("m1", 1_000_000, "2026-11-02T12:00:00Z"));
+        let sub = e.dir.path().join("projects/proj-a").join(&sid).join("subagents");
+        fs::create_dir_all(&sub).unwrap();
+        e.append(&sub.join("agent-a1.jsonl"), &asst("s1", 1_000_000, "2026-11-02T12:00:00Z"));
+        let mut m = e.mon();
+        m.refresh(&FakeProbe, now());
+        let day = chrono::DateTime::parse_from_rfc3339("2026-11-02T12:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Local)
+            .date_naive();
+        let (cost, ids) = m.live_cost_on(day);
+        let main = m.states[&sid].stats.cost_usd;
+        assert!((cost - 2.0 * main).abs() < 1e-9, "{cost} vs {main}");
+        assert_eq!(ids, HashSet::from([sid.clone()]));
+        assert_eq!(m.live_cost_on(day.succ_opt().unwrap()).0, 0.0);
+    }
+
+    #[test]
+    fn closed_job_key_tracks_size() {
+        let e = Env::new();
+        let sid = id(9);
+        let t = e.transcript(&sid);
+        e.append(&t, &asst("m1", 5, "2026-11-02T07:00:00Z"));
+        let mut m = e.mon();
+        let k1 = m.closed_job(&sid).unwrap().key().unwrap();
+        assert_eq!(k1, m.closed_job(&sid).unwrap().key().unwrap());
+        e.append(&t, &asst("m2", 5, "2026-11-02T07:00:01Z"));
+        assert_ne!(k1, m.closed_job(&sid).unwrap().key().unwrap());
     }
 
     #[test]

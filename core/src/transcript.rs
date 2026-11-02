@@ -202,11 +202,17 @@ pub struct TranscriptReader {
     path: PathBuf,
     offset: u64,
     carry: Vec<u8>,
+    /// Inside a line longer than `max_line`: discard bytes until its newline.
+    skipping: bool,
+    max_line: usize,
 }
+
+/// Lines longer than this are dropped (memory guard against corrupt files).
+pub const MAX_LINE: usize = 16 * 1024 * 1024;
 
 impl TranscriptReader {
     pub fn new(path: PathBuf) -> Self {
-        Self { path, offset: 0, carry: Vec::new() }
+        Self { path, offset: 0, carry: Vec::new(), skipping: false, max_line: MAX_LINE }
     }
 
     /// Streams bytes appended since the last call, line by line, without collecting
@@ -216,28 +222,57 @@ impl TranscriptReader {
     /// On an io error, entries already delivered stay delivered; `offset`/`carry`
     /// only ever cover bytes already handed over, so the next call neither loses nor
     /// repeats lines.
-    pub fn read_each(&mut self, mut f: impl FnMut(ReadEvent)) -> io::Result<()> {
+    pub fn read_each(&mut self, f: impl FnMut(ReadEvent)) -> io::Result<()> {
+        self.read_each_limited(u64::MAX, f).map(|_| ())
+    }
+
+    /// Like [`read_each`](Self::read_each) but stops once about `max_bytes` have been
+    /// read in this call (the partial line stays in `carry`, so nothing is lost or
+    /// repeated). Returns true when the file holds more unread bytes.
+    pub fn read_each_limited(&mut self, max_bytes: u64, mut f: impl FnMut(ReadEvent)) -> io::Result<bool> {
         let mut file = File::open(&self.path)?;
         let len = file.metadata()?.len();
         if len < self.offset {
             self.offset = 0;
             self.carry.clear();
+            self.skipping = false;
             f(ReadEvent::Reset);
         }
         file.seek(SeekFrom::Start(self.offset))?;
         let mut buf = vec![0u8; READ_BUF];
-        loop {
+        let mut read = 0u64;
+        while read < max_bytes {
             let n = file.read(&mut buf)?;
             if n == 0 {
                 break;
             }
+            read += n as u64;
             self.offset += n as u64;
-            self.carry.extend_from_slice(&buf[..n]);
-            let Some(last_nl) = self.carry.iter().rposition(|&b| b == b'\n') else {
+            let mut chunk = &buf[..n];
+            if self.skipping {
+                match chunk.iter().position(|&b| b == b'\n') {
+                    None => continue,
+                    Some(i) => {
+                        self.skipping = false;
+                        chunk = &chunk[i + 1..];
+                    }
+                }
+            }
+            // Only the newly read bytes can hold a new line end.
+            let start = self.carry.len();
+            self.carry.extend_from_slice(chunk);
+            let Some(pos) = self.carry[start..].iter().rposition(|&b| b == b'\n') else {
+                if self.carry.len() > self.max_line {
+                    self.carry = Vec::new();
+                    self.skipping = true;
+                }
                 continue;
             };
-            let rest = self.carry.split_off(last_nl + 1);
+            let rest = self.carry.split_off(start + pos + 1);
             for line in self.carry.split(|&b| b == b'\n') {
+                if line.len() > self.max_line {
+                    continue;
+                }
                 if let Ok(s) = std::str::from_utf8(line) {
                     for e in parse_line(s) {
                         f(ReadEvent::Entry(e));
@@ -245,8 +280,12 @@ impl TranscriptReader {
                 }
             }
             self.carry = rest;
+            if self.carry.len() > self.max_line {
+                self.carry = Vec::new();
+                self.skipping = true;
+            }
         }
-        Ok(())
+        Ok(self.offset < len)
     }
 
     /// Collecting variant of [`read_each`](Self::read_each); only for small reads/tests.
@@ -309,8 +348,75 @@ mod tests {
 
     #[test]
     fn title_from_custom_title() {
-        let e = parse_line(r#"{"type":"custom-title","customTitle":"Dell","sessionId":"s"}"#);
-        assert_eq!(e, vec![Entry::Title("Dell".into())]);
+        let e = parse_line(r#"{"type":"custom-title","customTitle":"Pusula","sessionId":"s"}"#);
+        assert_eq!(e, vec![Entry::Title("Pusula".into())]);
+    }
+
+    fn msg_line(i: usize) -> String {
+        format!(
+            r#"{{"type":"assistant","timestamp":"2026-11-02T07:12:52Z","message":{{"id":"m{i}","content":[{{"type":"tool_use","id":"t{i}","name":"Bash","input":{{"command":"echo {i}"}}}}]}}}}"#
+        )
+    }
+
+    fn ids(evs: &[Entry]) -> Vec<String> {
+        evs.iter()
+            .filter_map(|e| match e {
+                Entry::Assistant { message_id, .. } => Some(message_id.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn read_each_limited_stops_early_without_losing_or_repeating_lines() {
+        let (_d, p) = tmp();
+        let n = 3000;
+        let body: String = (0..n).map(|i| msg_line(i) + "\n").collect();
+        std::fs::write(&p, &body).unwrap();
+        let total = body.len() as u64;
+        let mut r = TranscriptReader::new(p);
+        let mut got = Vec::new();
+        let mut calls = 0;
+        loop {
+            calls += 1;
+            let before = r.offset;
+            let more = r
+                .read_each_limited(READ_BUF as u64, |ev| {
+                    if let ReadEvent::Entry(e) = ev {
+                        got.push(e)
+                    }
+                })
+                .unwrap();
+            assert!(r.offset - before <= 2 * READ_BUF as u64, "a call reads about max_bytes");
+            if !more {
+                break;
+            }
+            assert!(calls < 1000);
+        }
+        assert!(calls > 2, "budget split the read into several calls ({calls})");
+        assert_eq!(r.offset, total);
+        let expect: Vec<String> = (0..n).map(|i| format!("m{i}")).collect();
+        assert_eq!(ids(&got), expect);
+    }
+
+    #[test]
+    fn overlong_line_is_dropped_and_reading_continues() {
+        let (_d, p) = tmp();
+        let mut r = TranscriptReader::new(p.clone());
+        r.max_line = 1000;
+        let huge = format!(r#"{{"type":"assistant","x":"{}"}}"#, "a".repeat(200_000));
+        // also a long-but-allowed line just under the cap boundary
+        std::fs::write(&p, format!("{}\n{huge}\n{}\n", msg_line(1), msg_line(2))).unwrap();
+        let o = r.read_new().unwrap();
+        assert_eq!(ids(&o.entries), ["m1", "m2"]);
+        assert!(r.carry.len() <= 1000 + READ_BUF, "carry stays bounded");
+        // a huge unterminated tail is dropped too, then the next line is read
+        let mut f = std::fs::OpenOptions::new().append(true).open(&p).unwrap();
+        write!(f, "{}", "b".repeat(300_000)).unwrap();
+        assert!(r.read_new().unwrap().entries.is_empty());
+        assert!(r.carry.len() <= 1000 + READ_BUF);
+        writeln!(f, "zz\n{}", msg_line(3)).unwrap();
+        assert_eq!(ids(&r.read_new().unwrap().entries), ["m3"]);
     }
 
     #[test]
