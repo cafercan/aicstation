@@ -305,6 +305,29 @@ impl Monitor {
         })
     }
 
+    /// Detail of a session that the last snapshot listed as live (`card` is its
+    /// snapshot card) when the registry cannot be read right now, e.g. while
+    /// Claude Code rewrites its file. Built from the state the snapshot keeps,
+    /// so a live session is never shown as closed or empty because of one miss.
+    pub fn known_detail(&self, card: &SessionCard) -> SessionDetail {
+        match self.states.get(&card.session_id) {
+            Some(st) => SessionDetail {
+                card: card.clone(),
+                tokens: st.stats.tokens,
+                tool_call_count: st.stats.tool_call_count,
+                main_tool_calls: st.stats.tool_calls.iter().cloned().collect(),
+                tree: st.tree.clone(),
+            },
+            None => SessionDetail {
+                card: card.clone(),
+                tokens: Usage::default(),
+                tool_call_count: 0,
+                main_tool_calls: Vec::new(),
+                tree: AgentTree::default(),
+            },
+        }
+    }
+
     /// Locates a closed session's files; the expensive streaming is done by
     /// `ClosedJob::run`, which needs no access to the monitor (no lock held).
     pub fn closed_job(&mut self, session_id: &str) -> Option<ClosedJob> {
@@ -588,6 +611,47 @@ mod tests {
         let by = |p| snap.sessions.iter().find(|c| c.pid == p).unwrap();
         assert_eq!(by(1).name, "demo");
         assert_eq!(by(2).name, "kayitli");
+    }
+
+    #[test]
+    fn closed_job_reads_a_transcript_larger_than_the_pump_budget() {
+        let e = Env::new();
+        let sid = id(9);
+        let t = e.transcript(&sid);
+        // ~34 MiB in 64 KiB-read chunks: more than one PUMP_BUDGET, lines
+        // straddling every read boundary.
+        let pad = "x".repeat(40_000);
+        let n = 900u64;
+        {
+            let mut f = fs::File::create(&t).unwrap();
+            for i in 0..n {
+                let line = asst(&format!("m{i}"), 1, "2026-11-02T07:00:00Z")
+                    .replacen(r#""content":[]"#, &format!(r#""content":[],"pad":"{pad}""#), 1);
+                writeln!(f, "{line}").unwrap();
+            }
+        }
+        assert!(fs::metadata(&t).unwrap().len() > PUMP_BUDGET);
+        let d = e.mon().closed_job(&sid).unwrap().run(&sid, now()).unwrap();
+        assert_eq!(d.tokens.output, n);
+        assert_eq!(d.card.model.as_deref(), Some("claude-sonnet-5-5"));
+        assert_eq!(d.card.cwd, r"C:\work\demo");
+    }
+
+    #[test]
+    fn known_detail_uses_live_state_and_snapshot_card() {
+        let e = Env::new();
+        let sid = id(1);
+        e.reg(1, &sid, "busy", 10, None);
+        e.append(&e.transcript(&sid), &asst("m1", 5, "2026-11-02T07:00:00Z"));
+        let mut m = e.mon();
+        let card = m.refresh(&FakeProbe, now()).sessions[0].clone();
+        let d = m.known_detail(&card);
+        assert_eq!(d.card.pid, 1);
+        assert_eq!(d.tokens.output, 5);
+        // No state yet: the card alone, never a closed-looking card.
+        let mut other = card.clone();
+        other.session_id = id(2);
+        assert_eq!(m.known_detail(&other).card.pid, 1);
     }
 
     #[test]

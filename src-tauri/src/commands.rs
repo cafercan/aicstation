@@ -121,10 +121,18 @@ impl AppState {
             return None;
         }
         let now = SystemTime::now();
+        // Live per the latest snapshot: never the closed path (one failed
+        // registry read must not turn a running session into a closed one).
+        let live_card = lock(&self.snapshot)
+            .as_ref()
+            .and_then(|c| c.snap.sessions.iter().find(|s| s.session_id == session_id).cloned());
         let closed = {
             let mut m = lock(&self.monitor);
             if let Some(d) = m.live_detail(session_id, self.probe.as_ref(), now) {
                 return Some(d);
+            }
+            if let Some(card) = live_card {
+                return Some(m.known_detail(&card));
             }
             m.closed_job(session_id)?
         };
@@ -476,7 +484,25 @@ mod tests {
         assert!(!state.save_history_if_dirty().unwrap());
     }
 
-    const OK_ID: &str = "bbbbbbbb-2222-4333-8444-555555555555";
+    #[test]
+    fn live_session_never_served_as_closed_when_registry_read_misses() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, probe) = two_sessions(tmp.path(), 5);
+        let reg = claude.join("sessions").join("4242.json");
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(probe));
+        assert_eq!(state.get_snapshot().sessions[0].session_id, LIVE_ID);
+        // Claude Code is rewriting its registry file at this very moment.
+        fs::write(&reg, "").unwrap();
+        let d = state.get_session_detail(LIVE_ID).unwrap();
+        assert_eq!(d.card.pid, 4242, "still live per the latest snapshot");
+        assert_eq!(d.tokens.output, 5, "stats from the live state, not empty");
+        assert_eq!(d.card.model.as_deref(), Some("claude-sonnet-5-5"));
+        // Once a refresh confirms it is gone, the closed path takes over.
+        state.refresh();
+        assert_eq!(state.get_session_detail(LIVE_ID).unwrap().card.pid, 0);
+    }
+
+    const OK_ID: &str ="bbbbbbbb-2222-4333-8444-555555555555";
     const UNC_ID: &str = "cccccccc-2222-4333-8444-555555555555";
     const REL_ID: &str = "dddddddd-2222-4333-8444-555555555555";
     const UNKNOWN_ID: &str = "eeeeeeee-2222-4333-8444-555555555555";
