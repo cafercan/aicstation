@@ -149,4 +149,5 @@ export const tr = {
   "err.tab_not_found": "Sekme bulunamadı",
   "err.tab_ambiguous": "Pencere öne getirildi; aynı adlı birden çok sekme var",
   "err.tab_no_match": "Pencere öne getirildi; oturumun sekmesi bulunamadı",
+  "err.tab_select_failed": "Pencere öne getirildi; oturumun sekmesi seçilemedi",
 } as const satisfies Record<string, string>;

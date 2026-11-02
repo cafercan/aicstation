@@ -139,4 +139,5 @@ export const en: Dict = {
   "err.tab_not_found": "Tab not found",
   "err.tab_ambiguous": "Window brought forward; several tabs have the same name",
   "err.tab_no_match": "Window brought forward; the session's tab was not found",
+  "err.tab_select_failed": "Window brought forward; the session's tab could not be selected",
 };

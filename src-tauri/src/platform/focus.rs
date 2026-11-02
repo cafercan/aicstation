@@ -10,16 +10,20 @@ use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
 };
 use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+use windows::Win32::System::Variant::{VARIANT, VT_I4};
 use windows::Win32::UI::Accessibility::{
     CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationSelectionItemPattern,
-    TreeScope_Descendants, UIA_SelectionItemPatternId, UIA_TabItemControlTypeId,
+    TreeScope_Descendants, UIA_ControlTypePropertyId, UIA_SelectionItemPatternId, UIA_TabItemControlTypeId,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     BringWindowToTop, EnumWindows, GetClassNameW, GetForegroundWindow, GetWindowThreadProcessId, IsIconic,
     IsWindowVisible, SetForegroundWindow, ShowWindow, SW_RESTORE,
 };
 
-use crate::errors::{TAB_AMBIGUOUS as DUPLICATE_NOTE, TAB_NOT_FOUND as NOT_FOUND, TAB_NO_MATCH as NO_MATCH_NOTE};
+use crate::errors::{
+    TAB_AMBIGUOUS as DUPLICATE_NOTE, TAB_NOT_FOUND as NOT_FOUND, TAB_NO_MATCH as NO_MATCH_NOTE,
+    TAB_SELECT_FAILED as SELECT_FAILED_NOTE,
+};
 
 const WT_WINDOW_CLASS: &str = "CASCADIA_HOSTING_WINDOW_CLASS";
 
@@ -48,10 +52,7 @@ pub fn focus_session_tab(pid: u32, name: &str) -> Result<Option<String>, String>
                     .GetCurrentPatternAs::<IUIAutomationSelectionItemPattern>(UIA_SelectionItemPatternId)
                     .and_then(|p| p.Select())
             };
-            match selected {
-                Ok(()) => Ok(None),
-                Err(_) => Ok(Some(NO_MATCH_NOTE.into())),
-            }
+            Ok(select_note(selected.is_ok()))
         }
         TabChoice::Duplicate(w) => {
             bring_forward(windows[w]);
@@ -66,6 +67,12 @@ pub fn focus_session_tab(pid: u32, name: &str) -> Result<Option<String>, String>
     drop(uia);
     drop(com);
     result
+}
+
+/// Note after selecting the single matching tab: none on success, else
+/// `tab_select_failed` (the tab was found; unlike `tab_no_match`).
+fn select_note(selected: bool) -> Option<String> {
+    (!selected).then(|| SELECT_FAILED_NOTE.into())
 }
 
 /// COM for this (blocking-pool) thread; uninitialized on drop if we did it.
@@ -120,17 +127,30 @@ fn wt_windows(pid: u32) -> Vec<HWND> {
 }
 
 /// TabItem elements of a window, in UI order. Empty on any UIA failure.
+/// UIA filters by control type (one cross-process query for the tabs
+/// instead of fetching every descendant and checking each).
 fn tab_items(uia: &IUIAutomation, hwnd: HWND) -> Vec<IUIAutomationElement> {
     unsafe {
         let Ok(root) = uia.ElementFromHandle(hwnd) else { return Vec::new() };
-        let Ok(all) = uia.CreateTrueCondition() else { return Vec::new() };
-        let Ok(found) = root.FindAll(TreeScope_Descendants, &all) else { return Vec::new() };
+        let Ok(is_tab) = uia.CreatePropertyCondition(UIA_ControlTypePropertyId, &i4_variant(UIA_TabItemControlTypeId.0))
+        else {
+            return Vec::new();
+        };
+        let Ok(found) = root.FindAll(TreeScope_Descendants, &is_tab) else { return Vec::new() };
         let n = found.Length().unwrap_or(0);
-        (0..n)
-            .filter_map(|i| found.GetElement(i).ok())
-            .filter(|e| e.CurrentControlType().is_ok_and(|t| t == UIA_TabItemControlTypeId))
-            .collect()
+        (0..n).filter_map(|i| found.GetElement(i).ok()).collect()
     }
+}
+
+/// A VT_I4 VARIANT (plain value, nothing to free).
+fn i4_variant(v: i32) -> VARIANT {
+    let mut var = VARIANT::default();
+    unsafe {
+        let inner = &mut *var.Anonymous.Anonymous;
+        inner.vt = VT_I4;
+        inner.Anonymous.lVal = v;
+    }
+    var
 }
 
 /// Restores a minimized window and makes it the foreground window. The
@@ -152,6 +172,27 @@ fn bring_forward(hwnd: HWND) {
         let _ = SetForegroundWindow(hwnd);
         if attached {
             let _ = AttachThreadInput(me, fg_thread, false);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_failed_select_of_the_single_match_has_its_own_note() {
+        assert_eq!(select_note(true), None);
+        assert_eq!(select_note(false).as_deref(), Some(crate::errors::TAB_SELECT_FAILED));
+        assert_ne!(crate::errors::TAB_SELECT_FAILED, NO_MATCH_NOTE);
+    }
+
+    #[test]
+    fn tab_condition_variant_is_the_tab_item_control_type() {
+        let v = i4_variant(UIA_TabItemControlTypeId.0);
+        unsafe {
+            assert_eq!(v.Anonymous.Anonymous.vt, VT_I4);
+            assert_eq!(v.Anonymous.Anonymous.Anonymous.lVal, 50019);
         }
     }
 }

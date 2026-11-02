@@ -42,6 +42,8 @@ pub const TAB_NOT_FOUND: &str = "tab_not_found";
 pub const TAB_AMBIGUOUS: &str = "tab_ambiguous";
 /// Note (Ok): window focused, the session's tab could not be selected.
 pub const TAB_NO_MATCH: &str = "tab_no_match";
+/// Note (Ok): window focused, the one matching tab refused to be selected.
+pub const TAB_SELECT_FAILED: &str = "tab_select_failed";
 
 /// `code:detail`.
 pub fn with(code: &str, detail: impl std::fmt::Display) -> String {
@@ -54,7 +56,7 @@ pub const ALL: &[&str] = &[
     FOLDER_UNKNOWN, FOLDER_NETWORK, FOLDER_INVALID, FOLDER_RELATIVE, FOLDER_MISSING, FOLDER_OPEN_FAILED,
     PTY_UNKNOWN, PTY_LIMIT, PTY_TOO_LARGE, PTY_SPAWN_FAILED, PTY_IO, INTERNAL_LOCK, TASK_FAILED,
     WT_NOT_FOUND, WT_OPEN_FAILED, WT_HOME_INVALID, WT_HOME_MISSING, WT_POWERSHELL_INVALID,
-    TAB_NOT_FOUND, TAB_AMBIGUOUS, TAB_NO_MATCH,
+    TAB_NOT_FOUND, TAB_AMBIGUOUS, TAB_NO_MATCH, TAB_SELECT_FAILED,
 ];
 
 #[cfg(test)]
