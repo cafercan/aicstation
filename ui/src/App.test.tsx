@@ -10,6 +10,9 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
 
+vi.mock("@xterm/xterm", () => ({ Terminal: class {} }));
+vi.mock("@xterm/addon-fit", () => ({ FitAddon: class {} }));
+
 import App from "./App";
 
 test("iskelet: menü ve status bar görünür", async () => {

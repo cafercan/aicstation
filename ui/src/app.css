@@ -51,3 +51,11 @@ table.hist th { text-align: left; color: #999; font-weight: normal; padding: 4px
 table.hist td { padding: 4px 6px; border-top: 1px solid #2a2a2a; }
 table.hist tbody tr { cursor: pointer; }
 table.hist tbody tr:hover { background: #23262d; }
+.main { position: relative; }
+.term-host { position: absolute; inset: 0; padding: 6px; }
+.side .dot.busy { color: #4caf50; }
+.side .dot.waiting { color: #f0b429; }
+.side .dot.idle, .side .dot.none { color: #888; }
+.side .close { float: right; color: #888; padding: 0 3px; }
+.side .close:hover { color: #fff; }
+.side .new { cursor: pointer; }
