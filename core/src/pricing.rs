@@ -28,15 +28,52 @@ fn base_id(model: &str) -> &str {
     model.split('[').next().unwrap_or(model).trim()
 }
 
-/// Context window in tokens. `[1m]` suffix -> 1M; any other `claude-*` -> 200K; else None.
+/// Context windows by model family (source: `claude-api` skill model table, cached 2026-10-06).
+/// Matched against the id with `[1m]` and a `-YYYYMMDD` date stripped; the longest family that
+/// equals the id or prefixes it at a `-` boundary wins, so `claude-opus-4` never shadows `claude-opus-4-8`.
+const CONTEXT_WINDOWS: &[(&str, u64)] = &[
+    ("claude-fable-5-1", 1_000_000),
+    ("claude-fable-5", 1_000_000),
+    ("claude-mythos", 1_000_000),
+    ("claude-opus-5-5", 1_000_000),
+    ("claude-opus-5", 1_000_000),
+    ("claude-opus-4-8", 1_000_000),
+    ("claude-opus-4-7", 1_000_000),
+    ("claude-opus-4-6", 1_000_000),
+    ("claude-sonnet-5-5", 1_000_000),
+    ("claude-sonnet-5", 1_000_000),
+    ("claude-sonnet-4-6", 1_000_000),
+    ("claude-haiku-5-5", 1_000_000),
+    ("claude-haiku-4-5", 200_000),
+    ("claude-opus-4-5", 200_000),
+    ("claude-opus-4-1", 200_000),
+    ("claude-opus-4", 200_000),
+    ("claude-sonnet-4-5", 200_000),
+    ("claude-sonnet-4", 200_000),
+    ("claude-3", 200_000),
+];
+
+/// Drops a trailing `-YYYYMMDD` date.
+fn strip_date(id: &str) -> &str {
+    match id.rsplit_once('-') {
+        Some((head, d)) if d.len() == 8 && d.bytes().all(|b| b.is_ascii_digit()) => head,
+        _ => id,
+    }
+}
+
+/// Context window in tokens: `[1m]` suffix -> 1M, otherwise by model family; unknown -> None.
 pub fn context_window(requested_model: &str) -> Option<u64> {
     if requested_model.contains("[1m]") {
-        Some(1_000_000)
-    } else if requested_model.starts_with("claude-") {
-        Some(200_000)
-    } else {
-        None
+        return Some(1_000_000);
     }
+    let id = strip_date(base_id(requested_model));
+    CONTEXT_WINDOWS
+        .iter()
+        .filter(|(fam, _)| {
+            id == *fam || id.strip_prefix(fam).is_some_and(|rest| rest.starts_with('-'))
+        })
+        .max_by_key(|(fam, _)| fam.len())
+        .map(|&(_, w)| w)
 }
 
 /// Estimated cost in USD, or None for an unknown model. A `[1m]` suffix is ignored.
@@ -65,8 +102,34 @@ mod tests {
         let u = Usage { input: 1_000_000, output: 1_000_000, cache_read: 0, cache_creation: 0, cache_creation_1h: 0 };
         assert_eq!(cost_usd("claude-opus-5-5[1m]", &u), Some(24.0));
         assert_eq!(cost_usd("gpt-x", &u), None);
-        assert_eq!(context_window("claude-opus-5-5"), Some(200_000));
         assert_eq!(context_window("foo"), None);
+    }
+
+    #[test]
+    fn context_window_by_family() {
+        for id in [
+            "claude-fable-5-1", "claude-fable-5", "claude-mythos-5-1", "claude-mythos-preview",
+            "claude-opus-5-5", "claude-opus-5", "claude-opus-4-8", "claude-opus-4-7", "claude-opus-4-6",
+            "claude-sonnet-5-5", "claude-sonnet-5", "claude-sonnet-4-6", "claude-haiku-5-5",
+        ] {
+            assert_eq!(context_window(id), Some(1_000_000), "{id}");
+        }
+        for id in [
+            "claude-haiku-4-5", "claude-opus-4-5", "claude-opus-4-1", "claude-opus-4",
+            "claude-sonnet-4-5", "claude-sonnet-4", "claude-3-5-sonnet", "claude-3-opus-20240229",
+        ] {
+            assert_eq!(context_window(id), Some(200_000), "{id}");
+        }
+    }
+
+    #[test]
+    fn context_window_suffixes_and_unknown() {
+        assert_eq!(context_window("claude-haiku-4-5-20251001"), Some(200_000));
+        assert_eq!(context_window("claude-sonnet-4-5[1m]"), Some(1_000_000));
+        assert_eq!(context_window("claude-opus-5-5[1m]"), Some(1_000_000));
+        assert_eq!(context_window("claude-unknown-9"), None);
+        assert_eq!(context_window("claude-opus-6"), None);
+        assert_eq!(context_window(""), None);
     }
 
     #[test]

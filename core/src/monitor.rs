@@ -31,6 +31,9 @@ pub struct SessionCard {
     pub cost_usd: f64,
     pub agents_total: u32,
     pub agents_finished: u32,
+    /// Finished calls among the main session's last <= 50 tool calls.
+    pub tool_ok: u32,
+    pub tool_err: u32,
     pub last_tool: Option<ToolCall>,
     pub started_at_ms: u64,
     pub last_activity_ms: u64,
@@ -162,6 +165,7 @@ fn make_card(
         .filter(|n| !n.is_empty())
         .or_else(|| stats.title.clone())
         .unwrap_or_else(|| cwd_name(&cwd));
+    let (tool_ok, tool_err) = stats.tool_outcomes();
     SessionCard {
         session_id: session_id.to_string(),
         pid: live.map_or(0, |l| l.pid),
@@ -175,6 +179,8 @@ fn make_card(
         cost_usd: stats.cost_usd + agent_cost(&tree.roots),
         agents_total: tree.total,
         agents_finished: tree.finished,
+        tool_ok,
+        tool_err,
         last_tool: stats.tool_calls.back().cloned(),
         started_at_ms: live.map(|l| l.started_at_ms).or_else(|| dt_ms(stats.first_at)).unwrap_or(0),
         last_activity_ms: live
@@ -559,6 +565,18 @@ mod tests {
         assert!((c.cost_usd - 2.0 * main).abs() < 1e-9, "{} vs {}", c.cost_usd, main);
         assert_eq!(c.agents_total, 1);
         assert_eq!(c.agents_finished, 1);
+    }
+
+    #[test]
+    fn card_serializes_tool_outcome_counts_camel_case() {
+        let e = Env::new();
+        let sid = id(1);
+        e.reg(1, &sid, "busy", 10, None);
+        e.append(&e.transcript(&sid), &asst("m1", 5, "2026-11-02T07:00:00Z"));
+        let snap = e.mon().refresh(&FakeProbe, now());
+        let v = serde_json::to_value(&snap.sessions[0]).unwrap();
+        assert_eq!(v["toolOk"], 0);
+        assert_eq!(v["toolErr"], 0);
     }
 
     #[test]

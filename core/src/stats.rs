@@ -100,13 +100,23 @@ impl SessionStats {
         }
     }
 
-    /// (input + cache_read + cache_creation) of the last usage / context window * 100.
+    /// (ok, error) counts over the kept recent tool calls; running calls are ignored.
+    pub fn tool_outcomes(&self) -> (u32, u32) {
+        self.tool_calls.iter().fold((0, 0), |(ok, err), c| match c.state {
+            ToolState::Ok => (ok + 1, err),
+            ToolState::Error => (ok, err + 1),
+            ToolState::Running => (ok, err),
+        })
+    }
+
+    /// (input + cache_read + cache_creation) of the last usage / context window * 100,
+    /// clamped to 0..=100. None when the window is unknown.
     pub fn context_pct(&self) -> Option<f32> {
         let u = self.last_usage?;
         let name = self.requested_model.as_deref().or(self.model.as_deref())?;
         let win = pricing::context_window(name)?;
         let used = u.input + u.cache_read + u.cache_creation;
-        Some((used as f64 / win as f64 * 100.0) as f32)
+        Some((used as f64 / win as f64 * 100.0).min(100.0) as f32)
     }
 }
 
@@ -154,6 +164,32 @@ mod tests {
         let mut s = SessionStats::default();
         s.apply(&asst("m", "claude-opus-5-5", Some("claude-opus-5-5[1m]"), usage(100_000, 5, 50_000, 50_000), vec![], at(10, 0)));
         assert_eq!(s.context_pct(), Some(20.0));
+    }
+
+    #[test]
+    fn context_pct_uses_family_window_without_suffix() {
+        let mut s = SessionStats::default();
+        s.apply(&asst("m", "claude-opus-5-5", None, usage(7_000, 5, 400_000, 100_000), vec![], at(10, 0)));
+        let pct = s.context_pct().unwrap();
+        assert!((pct - 50.7).abs() < 0.01, "{pct}");
+    }
+
+    #[test]
+    fn context_pct_is_clamped_to_100() {
+        let mut s = SessionStats::default();
+        s.apply(&asst("m", "claude-haiku-4-5", None, usage(250_000, 0, 0, 0), vec![], at(10, 0)));
+        assert_eq!(s.context_pct(), Some(100.0));
+    }
+
+    #[test]
+    fn tool_outcomes_count_finished_calls_only() {
+        let mut s = SessionStats::default();
+        s.apply(&asst("m", "claude-opus-5-5", None, usage(1, 1, 0, 0), vec![tool("A"), tool("B"), tool("C"), tool("D")], at(10, 0)));
+        assert_eq!(s.tool_outcomes(), (0, 0));
+        s.apply(&Entry::ToolResult { tool_use_id: "A".into(), is_error: false, at: at(10, 1) });
+        s.apply(&Entry::ToolResult { tool_use_id: "B".into(), is_error: false, at: at(10, 1) });
+        s.apply(&Entry::ToolResult { tool_use_id: "C".into(), is_error: true, at: at(10, 1) });
+        assert_eq!(s.tool_outcomes(), (2, 1));
     }
 
     #[test]
