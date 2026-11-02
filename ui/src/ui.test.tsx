@@ -186,6 +186,34 @@ test("kart: Sekmeye git notu kartta gösterilir", async () => {
   expect(await screen.findByText("Pencere öne getirildi; aynı adlı birden çok sekme var")).toBeTruthy();
 });
 
+test("kart: Sekmeye git notu role=alert, ~6 sn sonra kaybolur", async () => {
+  vi.useFakeTimers();
+  try {
+    const onGoto = vi.fn(async () => "tab_ambiguous");
+    render(<SessionCardView card={card()} now={0} onOpen={() => {}} onGoto={onGoto} />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Sekmeye git" })); });
+    expect(screen.getByRole("alert").textContent).toBe("Pencere öne getirildi; aynı adlı birden çok sekme var");
+    await act(async () => { await vi.advanceTimersByTimeAsync(5900); });
+    expect(screen.queryByRole("alert")).not.toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    expect(screen.queryByRole("alert")).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("kart: hata notu bir sonraki başarılı Sekmeye git ile temizlenir", async () => {
+  const onGoto = vi.fn<() => Promise<string | null>>()
+    .mockRejectedValueOnce(new Error("Sekmeye gidilemedi: Sekme bulunamadı"))
+    .mockResolvedValueOnce(null);
+  render(<SessionCardView card={card()} now={0} onOpen={() => {}} onGoto={onGoto} />);
+  fireEvent.click(screen.getByRole("button", { name: "Sekmeye git" }));
+  expect((await screen.findByRole("alert")).textContent).toBe("Sekmeye gidilemedi: Sekme bulunamadı");
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Sekmeye git" })); });
+  expect(onGoto).toHaveBeenCalledTimes(2);
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
 const sidebar = (over: Partial<Parameters<typeof Sidebar>[0]> = {}) => (
   <Sidebar view="dashboard" onSelect={() => {}} onNew={() => {}} onClose={() => {}} onOpenWt={async () => {}}
     terminals={[{ id: 1, label: "projem", status: "shell" }]} {...over} />

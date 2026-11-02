@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { SessionCard } from "../api";
 import {
   agentColor, clampPct, fmtContext, fmtCost, fmtElapsed, statusColor, statusKind, statusLabel, toolSuccess,
@@ -6,6 +6,9 @@ import {
 import { errorText, useT } from "../i18n";
 import AgentDonut from "./AgentDonut";
 import ClaudeMark from "./ClaudeMark";
+
+/** How long the "Go to tab" note stays on the card. */
+export const GOTO_NOTE_MS = 6000;
 
 interface Props {
   card: SessionCard;
@@ -17,7 +20,13 @@ interface Props {
 
 export default function SessionCardView({ card, now, onOpen, onGoto }: Props) {
   const t = useT();
+  /** "Go to tab" note or error; cleared after GOTO_NOTE_MS or by the next click. */
   const [note, setNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (!note) return;
+    const id = setTimeout(() => setNote(null), GOTO_NOTE_MS);
+    return () => clearTimeout(id);
+  }, [note]);
   const kind = statusKind(card.status, card.pid);
   const running = Math.max(0, card.agentsTotal - card.agentsFinished);
   const finished = Math.max(0, card.agentsFinished);
@@ -49,7 +58,7 @@ export default function SessionCardView({ card, now, onOpen, onGoto }: Props) {
           )}
         </div>
       </div>
-      {note && <div className="goto-note" role="status">{errorText(note)}</div>}
+      {note && <div className="goto-note" role="alert">{errorText(note)}</div>}
       <div className="path" title={card.cwd}>
         <span className="cwd">{card.cwd}</span><span className="model">{card.model ?? "?"}</span>
       </div>
