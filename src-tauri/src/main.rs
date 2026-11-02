@@ -156,6 +156,21 @@ fn indexer_loop(app: tauri::AppHandle) {
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
+            // The main window is built here (config has `create: false`) only
+            // to enable WebView2 clipboard-read access, so right-click paste
+            // via navigator.clipboard.readText works without a prompt. No
+            // clipboard plugin and no new IPC permission are involved.
+            let main_conf = app
+                .config()
+                .app
+                .windows
+                .iter()
+                .find(|w| w.label == "main")
+                .cloned()
+                .ok_or("main penceresi yapılandırmada yok")?;
+            tauri::WebviewWindowBuilder::from_config(app.handle(), &main_conf)?
+                .enable_clipboard_access()
+                .build()?;
             let data = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data)?;
             let dir = claude_dir();

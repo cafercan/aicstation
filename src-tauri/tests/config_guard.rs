@@ -82,3 +82,20 @@ fn no_updater_or_network_plugins() {
     let conf: serde_json::Value = serde_json::from_str(&read("tauri.conf.json")).unwrap();
     assert!(conf["plugins"]["updater"].is_null(), "plugins.updater must not exist");
 }
+
+/// The main window is not created from config (`create: false`); main.rs
+/// builds it so WebView2 clipboard-read is enabled without a plugin. Both
+/// halves must stay together or the app starts without a window.
+#[test]
+fn main_window_built_in_code_with_clipboard_access() {
+    let conf: serde_json::Value = serde_json::from_str(&read("tauri.conf.json")).unwrap();
+    let main = conf["app"]["windows"]
+        .as_array()
+        .and_then(|w| w.iter().find(|w| w["label"] == "main"))
+        .expect("main window config");
+    assert_eq!(main["create"], serde_json::Value::Bool(false));
+    let src = read("src/main.rs");
+    assert!(src.contains("WebviewWindowBuilder::from_config"));
+    assert!(src.contains(".enable_clipboard_access()"));
+    assert!(!read("Cargo.toml").contains("tauri-plugin-clipboard"), "no clipboard plugin");
+}
