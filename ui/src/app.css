@@ -1,0 +1,62 @@
+:root { color-scheme: dark; }
+html, body, #root { height: 100%; margin: 0; }
+body { font-family: "Segoe UI", sans-serif; font-size: 13px; color: #ddd; background: #1b1d22; }
+.app { display: flex; flex-direction: column; height: 100%; }
+.body { display: flex; flex: 1; min-height: 0; }
+.side { width: 150px; background: #15161a; padding: 8px 6px; border-right: 1px solid #2a2a2a; }
+.side .item { padding: 6px 8px; border-radius: 4px; margin-bottom: 3px; color: #bbb; cursor: pointer; }
+.side .item.on { background: #2b3140; color: #fff; }
+.side .sub { padding-left: 16px; font-size: 11px; color: #999; }
+.side .new { color: #7fd; cursor: default; }
+.side .head { margin: 10px 0 4px 8px; font-size: 10px; color: #777; }
+.main { flex: 1; padding: 10px; overflow: auto; }
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 10px; }
+.kpi { background: #23262d; border-radius: 5px; padding: 6px 8px; }
+.kpi b { display: block; font-size: 17px; color: #fff; }
+.kpi b.warn { color: #fd6; }
+.kpi span { font-size: 10px; color: #999; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 6px; }
+.card { background: #23262d; border-radius: 5px; padding: 7px 8px; border-left: 3px solid #666; cursor: pointer; }
+.card.busy { border-left-color: #4caf50; }
+.card.waiting { border-left-color: #f0b429; }
+.card.idle { opacity: .75; }
+.card h4 { margin: 0 0 2px; font-size: 12px; color: #fff; }
+.card .path { font-size: 10px; color: #888; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge { font-size: 10px; padding: 1px 6px; border-radius: 8px; background: #3a3a3a; color: #ccc; font-weight: normal; }
+.busy .badge { background: #2e5130; color: #9f9; }
+.waiting .badge { background: #5a4510; color: #fd6; }
+.waiting-for { font-size: 11px; color: #fd6; font-weight: normal; }
+.row { display: flex; justify-content: space-between; font-size: 10.5px; color: #bbb; margin-top: 3px; }
+.bar { height: 4px; background: #333; border-radius: 2px; margin-top: 4px; }
+.bar i { display: block; height: 4px; background: #5aa0ff; border-radius: 2px; }
+.sb { background: #0f1013; border-top: 1px solid #2a2a2a; padding: 4px 10px; font-family: Consolas, monospace; font-size: 11px; color: #ccc; white-space: nowrap; overflow: hidden; }
+.sb .g { color: #6c6; } .sb .c2 { color: #6cd; }
+.empty { color: #999; }
+.empty button { background: #2b3140; color: #fff; border: 0; border-radius: 4px; padding: 4px 10px; cursor: pointer; }
+
+.hd { display: flex; justify-content: space-between; align-items: center; }
+.hd h3 { margin: 0; color: #fff; font-size: 15px; }
+.hd .back { cursor: pointer; margin-right: 6px; }
+.btn { background: #2b3140; color: #cde; border: 0; border-radius: 4px; padding: 4px 10px; font-size: 11px; margin-left: 6px; cursor: pointer; }
+.meta { color: #888; font-size: 11px; margin: 2px 0 8px; }
+.kpis.six { grid-template-columns: repeat(6, 1fr); }
+.cols { display: flex; gap: 8px; }
+.tree { width: 44%; background: #202329; border-radius: 5px; padding: 8px; font-size: 11.5px; line-height: 1.7; }
+.tree .node { cursor: pointer; border-radius: 3px; padding: 0 4px; }
+.tree .node.sel { background: #2b3140; }
+.log { flex: 1; background: #202329; border-radius: 5px; padding: 8px; font-family: Consolas, monospace; font-size: 11px; line-height: 1.6; }
+.cap { color: #777; font-size: 10px; font-family: "Segoe UI", sans-serif; }
+.g { color: #6c6; } .y { color: #fd6; } .x { color: #888; } .r { color: #f77; } .c2 { color: #6cd; }
+table.hist { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+table.hist th { text-align: left; color: #999; font-weight: normal; padding: 4px 6px; }
+table.hist td { padding: 4px 6px; border-top: 1px solid #2a2a2a; }
+table.hist tbody tr { cursor: pointer; }
+table.hist tbody tr:hover { background: #23262d; }
+.main { position: relative; }
+.term-host { position: absolute; inset: 0; padding: 6px; }
+.side .dot.busy { color: #4caf50; }
+.side .dot.waiting { color: #f0b429; }
+.side .dot.idle, .side .dot.none { color: #888; }
+.side .close { float: right; color: #888; padding: 0 3px; }
+.side .close:hover { color: #fff; }
+.side .new { cursor: pointer; }

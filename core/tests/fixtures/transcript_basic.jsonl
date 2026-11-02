@@ -1,0 +1,6 @@
+{"type":"mode","mode":"normal"}
+{"type":"user","timestamp":"2026-11-02T07:12:50.000Z","message":{"role":"user","content":"merhaba"},"cwd":"C:\\demo\\proje","gitBranch":"main","sessionId":"sess-demo"}
+{"type":"assistant","timestamp":"2026-11-02T07:12:52.197Z","requestedModel":"claude-opus-5-5[1m]","message":{"id":"msg_1","model":"claude-opus-5-5","content":[{"type":"tool_use","id":"toolu_A","name":"Read","input":{"file_path":"C:\\demo\\adc.c"}}],"usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":100,"cache_creation_input_tokens":20}},"cwd":"C:\\demo\\proje","gitBranch":"main","sessionId":"sess-demo"}
+{"type":"user","timestamp":"2026-11-02T07:12:53.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_A","is_error":true,"content":"hata"}]}}
+{"type":"custom-title","customTitle":"Demo","sessionId":"sess-demo"}
+{"type":"api-request-blob","data":"x"}
