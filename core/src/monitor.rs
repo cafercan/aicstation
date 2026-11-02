@@ -11,6 +11,9 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
+/// Consecutive ticks a session may be missing from the registry (file being
+/// rewritten) while its process is alive before it is dropped.
+const MAX_MISSED_TICKS: u8 = 2;
 /// Minimum gap between transcript lookups for a session whose file was not found.
 const LOOKUP_RETRY: Duration = Duration::from_secs(10);
 /// Transcript bytes read per live session per refresh; a huge transcript fills
@@ -111,6 +114,8 @@ pub struct Monitor {
     locator: Locator,
     states: HashMap<String, SessionState>,
     pump_budget: u64,
+    /// Sessions of the previous tick with their consecutive missed ticks.
+    last_live: HashMap<String, (LiveSession, u8)>,
 }
 
 fn dt_ms(t: Option<chrono::DateTime<chrono::Utc>>) -> Option<u64> {
@@ -198,7 +203,7 @@ fn make_card(
 impl Monitor {
     pub fn new(claude_dir: PathBuf) -> Self {
         let locator = Locator::new(claude_dir.join("projects"));
-        Self { claude_dir, locator, states: HashMap::new(), pump_budget: PUMP_BUDGET }
+        Self { claude_dir, locator, states: HashMap::new(), pump_budget: PUMP_BUDGET, last_live: HashMap::new() }
     }
 
     /// Finds the transcript for a live session (misses retried at most every
@@ -254,7 +259,20 @@ impl Monitor {
     }
 
     pub fn refresh(&mut self, probe: &dyn ProcessProbe, now: SystemTime) -> Snapshot {
-        let live = read_live_sessions(&self.claude_dir.join("sessions"), probe);
+        let mut live = read_live_sessions(&self.claude_dir.join("sessions"), probe);
+        let mut next: HashMap<String, (LiveSession, u8)> =
+            live.iter().map(|l| (l.session_id.clone(), (l.clone(), 0))).collect();
+        for (sid, (l, missed)) in &self.last_live {
+            if next.contains_key(sid) {
+                continue;
+            }
+            let missed = missed + 1;
+            if missed <= MAX_MISSED_TICKS && probe.start_filetime(l.pid) == Some(l.proc_start) {
+                live.push(l.clone());
+                next.insert(sid.clone(), (l.clone(), missed));
+            }
+        }
+        self.last_live = next;
         let ids: HashSet<&str> = live.iter().map(|l| l.session_id.as_str()).collect();
         self.states.retain(|k, _| ids.contains(k.as_str()));
 
@@ -447,6 +465,73 @@ mod tests {
         )
     }
 
+    struct DeadProbe;
+    impl ProcessProbe for DeadProbe {
+        fn start_filetime(&self, _pid: u32) -> Option<u64> {
+            None
+        }
+        fn parent_pid(&self, _pid: u32) -> Option<u32> {
+            None
+        }
+    }
+
+    fn miss(e: &Env, pid: u32) {
+        fs::write(e.dir.path().join("sessions").join(format!("{pid}.json")), "{ half-writ").unwrap();
+    }
+
+    #[test]
+    fn transient_registry_miss_keeps_session() {
+        let e = Env::new();
+        let sid = id(1);
+        e.reg(1, &sid, "busy", 10, Some("demo"));
+        e.append(&e.transcript(&sid), &asst("m1", 5, "2026-11-02T07:00:00Z"));
+        let mut m = e.mon();
+        m.refresh(&FakeProbe, now());
+        miss(&e, 1);
+        let snap = m.refresh(&FakeProbe, now());
+        assert_eq!(snap.sessions.len(), 1, "kept through a miss");
+        assert_eq!(snap.sessions[0].name, "demo");
+        assert_eq!(snap.sessions[0].pid, 1);
+        assert_eq!(m.states[&sid].stats.tokens.output, 5, "state kept");
+        let applied = m.states[&sid].applied;
+        let snap = m.refresh(&FakeProbe, now());
+        assert_eq!(snap.sessions.len(), 1, "kept through the second miss");
+        assert_eq!(m.states[&sid].applied, applied, "not re-read from scratch");
+        // reappearing resets the miss counter
+        e.reg(1, &sid, "busy", 11, Some("demo"));
+        m.refresh(&FakeProbe, now());
+        miss(&e, 1);
+        m.refresh(&FakeProbe, now());
+        assert_eq!(m.refresh(&FakeProbe, now()).sessions.len(), 1);
+    }
+
+    #[test]
+    fn dead_process_drops_immediately() {
+        let e = Env::new();
+        let sid = id(1);
+        e.reg(1, &sid, "busy", 10, None);
+        let mut m = e.mon();
+        m.refresh(&FakeProbe, now());
+        miss(&e, 1);
+        let snap = m.refresh(&DeadProbe, now());
+        assert!(snap.sessions.is_empty());
+        assert!(!m.states.contains_key(&sid));
+    }
+
+    #[test]
+    fn third_consecutive_miss_drops() {
+        let e = Env::new();
+        let sid = id(1);
+        e.reg(1, &sid, "busy", 10, None);
+        let mut m = e.mon();
+        m.refresh(&FakeProbe, now());
+        miss(&e, 1);
+        assert_eq!(m.refresh(&FakeProbe, now()).sessions.len(), 1);
+        assert_eq!(m.refresh(&FakeProbe, now()).sessions.len(), 1);
+        assert!(m.refresh(&FakeProbe, now()).sessions.is_empty());
+        assert!(!m.states.contains_key(&sid));
+    }
+
     #[test]
     fn snapshot_lists_only_live_sessions() {
         let e = Env::new();
@@ -602,7 +687,7 @@ mod tests {
         m.refresh(&FakeProbe, now());
         assert!(m.states.contains_key(&sid));
         fs::remove_file(e.dir.path().join("sessions/1.json")).unwrap();
-        let snap = m.refresh(&FakeProbe, now());
+        let snap = m.refresh(&DeadProbe, now());
         assert!(snap.sessions.is_empty());
         assert!(m.states.is_empty());
     }

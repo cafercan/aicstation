@@ -528,7 +528,12 @@ mod tests {
         assert_eq!(d.card.pid, 4242, "still live per the latest snapshot");
         assert_eq!(d.tokens.output, 5, "stats from the live state, not empty");
         assert_eq!(d.card.model.as_deref(), Some("claude-sonnet-5-5"));
-        // Once a refresh confirms it is gone, the closed path takes over.
+        // The registry miss is debounced (process still alive): kept for 2 ticks.
+        for _ in 0..2 {
+            state.refresh();
+            assert_eq!(state.get_session_detail(LIVE_ID).unwrap().card.pid, 4242);
+        }
+        // Once the miss persists, the closed path takes over.
         state.refresh();
         assert_eq!(state.get_session_detail(LIVE_ID).unwrap().card.pid, 0);
     }
