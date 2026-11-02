@@ -184,7 +184,7 @@ pub struct ReadOutcome { pub entries: Vec<Entry>, pub reset: bool }
 ```rust
 #[test] fn parses_assistant_with_usage_and_tool_use() // model, requested_model "claude-opus-5-5[1m]", usage alanları, tool_uses[0].name=="Read"
 #[test] fn parses_tool_result_error_flag()             // user satırı, tool_result is_error:true → Entry::ToolResult{is_error:true}
-#[test] fn title_from_custom_title()                   // {"type":"custom-title","customTitle":"Dell"} → Title("Dell")
+#[test] fn title_from_custom_title()                   // {"type":"custom-title","customTitle":"Pusula"} → Title("Pusula")
 #[test] fn unknown_and_broken_lines_yield_nothing()    // "{not json", {"type":"api-request-blob"} → []
 #[test] fn tool_target_is_short()                      // Read→file_path dosya adı, Bash→command ilk 60 karakter, Grep→pattern
 #[test] fn partial_line_is_kept_for_next_read()        // "…}\n{\"type\":\"assi" yaz → 1 entry; satırı tamamla → sonraki read_new 1 entry

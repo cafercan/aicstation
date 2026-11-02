@@ -84,14 +84,16 @@ test("spawn: ESC[6n yanıtı pty_write ile iletilir, çıktı bayt olarak yazıl
   expect(invoke).toHaveBeenCalledWith("pty_write", { id: 7, data: "\x1b[1;1R" });
 });
 
-test("kapatma: içinde Busy/Waiting oturum varsa onay ister", async () => {
+test("kapatma: içinde herhangi bir Claude oturumu varsa onay ister", async () => {
   await openTerminal();
   const ask = vi.spyOn(window, "confirm").mockReturnValue(false);
-  expect(confirmClose([7], [card({ parentPid: 4242, status: "idle" })])).toBe(true);
+  expect(confirmClose([7], [])).toBe(true);
+  expect(confirmClose([7], [card({ parentPid: 9999, status: "busy" })])).toBe(true);
   expect(ask).not.toHaveBeenCalled();
+  expect(confirmClose([7], [card({ parentPid: 4242, status: "idle" })])).toBe(false);
   expect(confirmClose([7], [card({ parentPid: 4242, status: "busy" })])).toBe(false);
   expect(confirmClose([7], [card({ parentPid: 4242, status: "waiting" })])).toBe(false);
-  expect(ask).toHaveBeenCalledTimes(2);
+  expect(ask).toHaveBeenCalledTimes(3);
   ask.mockReturnValue(true);
   expect(confirmClose([7], [card({ parentPid: 4242, status: "busy" })])).toBe(true);
 });

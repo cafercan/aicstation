@@ -120,15 +120,14 @@ export async function closeTerminal(id: number): Promise<void> {
   removeEntry(id);
 }
 
-/** True when closing may proceed: no Busy/Waiting Claude inside, or the user agrees. */
+/** True when closing may proceed: no Claude session (in any state) inside, or the user agrees. */
 export function confirmClose(ids: number[], sessions: SessionCard[]): boolean {
   const active = terminals
     .filter((t) => ids.includes(t.id))
-    .flatMap((t) => sessionsIn(t, sessions))
-    .filter((s) => s.status === "busy" || s.status === "waiting");
+    .flatMap((t) => sessionsIn(t, sessions));
   if (active.length === 0) return true;
   return window.confirm(
-    `Terminalde çalışan ${active.length} Claude oturumu var (${active.map((s) => s.name).join(", ")}). Yine de kapatılsın mı?`,
+    `Terminalde açık ${active.length} Claude oturumu var (${active.map((s) => s.name).join(", ")}). Yine de kapatılsın mı?`,
   );
 }
 
