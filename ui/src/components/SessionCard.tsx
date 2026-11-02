@@ -40,8 +40,14 @@ export default function SessionCardView({ card, now, onOpen }: Props) {
       <div className="agents">
         <AgentDonut running={running} finished={finished} />
         <div className="astats">
-          <div><i style={{ color: AGENT_RUNNING_COLOR }}>●</i> <span>{`${running} çalışıyor`}</span></div>
-          <div><i style={{ color: AGENT_FINISHED_COLOR }}>●</i> <span>{`${finished} bitti`}</span></div>
+          {running + finished === 0 ? (
+            <div className="muted">alt ajan yok</div>
+          ) : (
+            <>
+              <div><i style={{ color: AGENT_RUNNING_COLOR }}>●</i> <span>{`${running} ajan çalışıyor`}</span></div>
+              <div><i style={{ color: AGENT_FINISHED_COLOR }}>●</i> <span>{`${finished} ajan tamamlandı`}</span></div>
+            </>
+          )}
           <div className="muted">tool başarı <b>{toolSuccess(card.toolOk, card.toolErr)}</b></div>
         </div>
       </div>

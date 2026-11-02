@@ -43,8 +43,9 @@ test('durum yoksa rozet "?" gösterir', () => {
 test("halka: çalışan/biten ajanlar, ortada toplam", () => {
   const { container, unmount } = render(
     <SessionCardView card={card({ agentsTotal: 5, agentsFinished: 3 })} now={0} onOpen={() => {}} />);
-  expect(screen.getByText("2 çalışıyor")).toBeTruthy();
-  expect(screen.getByText("3 bitti")).toBeTruthy();
+  expect(screen.getByText("2 ajan çalışıyor")).toBeTruthy();
+  expect(screen.getByText("3 ajan tamamlandı")).toBeTruthy();
+  expect(screen.queryByText("alt ajan yok")).toBeNull();
   expect(screen.getByText("5")).toBeTruthy();
   expect(screen.getByText("ajan")).toBeTruthy();
   const segs = container.querySelectorAll("circle[data-seg]");
@@ -54,6 +55,11 @@ test("halka: çalışan/biten ajanlar, ortada toplam", () => {
   const empty = render(<SessionCardView card={card({ agentsTotal: 0 })} now={0} onOpen={() => {}} />);
   expect(screen.getByText("0")).toBeTruthy();
   expect(empty.container.querySelectorAll("circle[data-seg]")).toHaveLength(0);
+  // No subagents at all: one muted line instead of two zero lines.
+  const none = screen.getByText("alt ajan yok");
+  expect(none.closest(".muted")).toBeTruthy();
+  expect(screen.queryByText(/ajan çalışıyor/)).toBeNull();
+  expect(screen.queryByText(/ajan tamamlandı/)).toBeNull();
 });
 
 test("tool başarı oranı yalnız biten çağrılardan", () => {
