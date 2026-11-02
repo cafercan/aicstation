@@ -198,7 +198,8 @@ fn main() {
             commands::pty_resize,
             commands::pty_kill,
             commands::pty_list,
-            commands::open_windows_terminal
+            commands::open_windows_terminal,
+            commands::focus_session_tab
         ])
         .build(tauri::generate_context!())
         .expect("Claude Pano başlatılamadı")

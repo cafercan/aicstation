@@ -2,7 +2,21 @@
 use pano_core::registry::ProcessProbe;
 
 #[cfg(windows)]
+mod focus;
+#[cfg(windows)]
 mod windows;
+
+/// Brings the Windows Terminal window hosting `pid` forward and selects the
+/// tab titled `name`. Err when the process is not in a Windows Terminal.
+#[cfg(windows)]
+pub fn focus_session_tab(pid: u32, name: &str) -> Result<Option<String>, String> {
+    focus::focus_session_tab(pid, name)
+}
+
+#[cfg(not(windows))]
+pub fn focus_session_tab(_pid: u32, _name: &str) -> Result<Option<String>, String> {
+    Err("Sekme bulunamadı".into())
+}
 
 #[cfg(windows)]
 pub fn probe() -> Box<dyn ProcessProbe + Send + Sync> {

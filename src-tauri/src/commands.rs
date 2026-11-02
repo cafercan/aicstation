@@ -256,6 +256,22 @@ impl AppState {
         Ok((session_id.to_string(), dir))
     }
 
+    /// Pid and name of a live session for "Sekmeye git", both from the
+    /// latest snapshot (the UI sends only the id).
+    pub fn focus_target(&self, session_id: &str) -> Result<(u32, String), String> {
+        if !is_session_id(session_id) {
+            return Err("Geçersiz oturum kimliği".into());
+        }
+        self.fresh_cache(|c| {
+            c.snap
+                .sessions
+                .iter()
+                .find(|s| s.session_id == session_id && s.pid != 0)
+                .map(|s| (s.pid, s.name.clone()))
+        })
+        .ok_or_else(|| "Oturum açık değil".into())
+    }
+
     fn known_cwd(&self, session_id: &str) -> Option<String> {
         // Only an indexed row's cwd is the transcript's; an unindexed row only
         // carries the project folder name.
@@ -334,6 +350,19 @@ pub async fn get_session_detail(
 #[tauri::command(async)]
 pub fn get_history(state: tauri::State<'_, AppState>) -> HistoryView {
     state.get_history()
+}
+
+/// "Sekmeye git" for a session in a Windows Terminal tab: brings its window
+/// forward and selects the tab (best effort, Win32 + UI Automation on the
+/// blocking pool). Only the id comes from the UI. Ok(Some(note)) when the
+/// window was focused but no single tab could be selected.
+#[tauri::command]
+pub async fn focus_session_tab(app: tauri::AppHandle, session_id: String) -> Result<Option<String>, String> {
+    use tauri::Manager;
+    let (pid, name) = app.state::<AppState>().focus_target(&session_id)?;
+    tauri::async_runtime::spawn_blocking(move || crate::platform::focus_session_tab(pid, &name))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command(async)]
@@ -500,6 +529,20 @@ mod tests {
         // Once a refresh confirms it is gone, the closed path takes over.
         state.refresh();
         assert_eq!(state.get_session_detail(LIVE_ID).unwrap().card.pid, 0);
+    }
+
+    #[test]
+    fn focus_target_takes_pid_and_name_from_the_live_snapshot() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, probe) = two_sessions(tmp.path(), 5);
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(probe));
+        let (pid, name) = state.focus_target(LIVE_ID).unwrap();
+        assert_eq!(pid, 4242);
+        assert_eq!(name, "demo", "card name (cwd folder fallback)");
+        assert_eq!(state.focus_target(CLOSED_ID).unwrap_err(), "Oturum açık değil");
+        for bad in ["", "../x", "11111111-2222-4333-8444-55555555555G", "x; calc", "AAAAAAAA-2222-4333-8444-555555555555"] {
+            assert_eq!(state.focus_target(bad).unwrap_err(), "Geçersiz oturum kimliği", "{bad}");
+        }
     }
 
     const OK_ID: &str ="bbbbbbbb-2222-4333-8444-555555555555";
