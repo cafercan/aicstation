@@ -7,16 +7,21 @@ use std::path::{Path, PathBuf};
 
 pub const WT_NOT_FOUND: &str = "Windows Terminal bulunamadı";
 
-/// `wt.exe -w 0 nt -d <home> powershell.exe -NoLogo`.
-pub fn wt_args(home: &Path) -> Result<Vec<OsString>, String> {
+/// `wt.exe -w 0 nt -d <home> <absolute powershell.exe> -NoLogo`; the shell
+/// is never looked up through PATH or the start directory.
+pub fn wt_args(home: &Path, powershell: &Path) -> Result<Vec<OsString>, String> {
     // wt splits its own command line on `;` (subcommand separator), even
-    // inside quotes; a relative directory would resolve against our cwd.
-    if !home.is_absolute() || home.as_os_str().to_string_lossy().contains(';') {
+    // inside quotes; a relative path would resolve against our cwd.
+    let bad = |p: &Path| !p.is_absolute() || p.as_os_str().to_string_lossy().contains(';');
+    if bad(home) {
         return Err("Kullanıcı klasörü geçersiz".into());
+    }
+    if bad(powershell) {
+        return Err("PowerShell yolu geçersiz".into());
     }
     let mut a: Vec<OsString> = ["-w", "0", "nt", "-d"].iter().map(OsString::from).collect();
     a.push(home.as_os_str().to_owned());
-    a.push("powershell.exe".into());
+    a.push(powershell.as_os_str().to_owned());
     a.push("-NoLogo".into());
     Ok(a)
 }
@@ -36,7 +41,7 @@ pub fn wt_program(local_app_data: Option<&OsStr>, exists: impl Fn(&Path) -> bool
 /// Spawns Windows Terminal with the fixed arguments; takes no input.
 pub fn open() -> Result<(), String> {
     let home = std::env::var_os("USERPROFILE").ok_or("Kullanıcı klasörü bulunamadı")?;
-    let args = wt_args(Path::new(&home))?;
+    let args = wt_args(Path::new(&home), &crate::pty::powershell_exe())?;
     // The alias is a reparse point that `metadata` may fail to follow.
     let program = wt_program(std::env::var_os("LOCALAPPDATA").as_deref(), |p| {
         std::fs::symlink_metadata(p).is_ok()
@@ -57,20 +62,35 @@ mod tests {
     }
 
     #[test]
-    fn args_are_fixed_new_tab_in_home_with_powershell() {
-        let a = wt_args(Path::new(r"C:\Users\Ayşe Yılmaz")).unwrap();
-        assert_eq!(
-            strs(&a),
-            ["-w", "0", "nt", "-d", r"C:\Users\Ayşe Yılmaz", "powershell.exe", "-NoLogo"]
-        );
+    fn args_are_fixed_new_tab_in_home_with_absolute_powershell() {
+        let a = wt_args(Path::new(r"C:\Users\Ayşe Yılmaz"), Path::new(PS)).unwrap();
+        assert_eq!(strs(&a), ["-w", "0", "nt", "-d", r"C:\Users\Ayşe Yılmaz", PS, "-NoLogo"]);
+    }
+
+    const PS: &str = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe";
+
+    #[test]
+    fn args_reject_relative_or_split_powershell_path() {
+        let home = Path::new(r"C:\Users\x");
+        assert!(wt_args(home, Path::new("powershell.exe")).is_err());
+        assert!(wt_args(home, Path::new(r"C:\a;b\powershell.exe")).is_err());
+    }
+
+    #[test]
+    fn open_uses_the_same_absolute_powershell_as_the_terminals() {
+        let ps = crate::pty::powershell_exe();
+        assert!(ps.is_absolute());
+        let a = wt_args(Path::new(r"C:\Users\x"), &ps).unwrap();
+        assert_eq!(a[5], ps.as_os_str());
     }
 
     #[test]
     fn args_reject_home_wt_would_misparse() {
         // `;` separates wt subcommands; a relative or empty path is not a home.
-        assert!(wt_args(Path::new(r"C:\Users\a;b")).is_err());
-        assert!(wt_args(Path::new(r"Users\x")).is_err());
-        assert!(wt_args(Path::new("")).is_err());
+        let ps = Path::new(PS);
+        assert!(wt_args(Path::new(r"C:\Users\a;b"), ps).is_err());
+        assert!(wt_args(Path::new(r"Users\x"), ps).is_err());
+        assert!(wt_args(Path::new(""), ps).is_err());
     }
 
     #[test]

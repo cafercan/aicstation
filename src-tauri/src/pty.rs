@@ -61,7 +61,7 @@ fn poisoned<T>(_: T) -> String {
 }
 
 /// Absolute path of Windows PowerShell (never resolved through PATH).
-fn powershell_exe() -> PathBuf {
+pub fn powershell_exe() -> PathBuf {
     let root = std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into());
     PathBuf::from(root).join("System32").join("WindowsPowerShell").join("v1.0").join("powershell.exe")
 }
