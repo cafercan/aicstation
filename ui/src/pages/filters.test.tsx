@@ -9,8 +9,9 @@ vi.mock("../terminal/store", () => ({ terminalForPid: () => undefined }));
 
 import { setLang } from "../i18n";
 import { focusSearch } from "../shortcuts/bus";
-import Dashboard, { resetDashboardFilter } from "./Dashboard";
-import History, { resetHistoryFilters } from "./History";
+import Dashboard from "./Dashboard";
+import History from "./History";
+import { resetUiState } from "../testing/reset";
 
 const card = (id: string, over: Partial<SessionCard>): SessionCard => ({
   sessionId: id, pid: 1, parentPid: null, name: id, cwd: `C:\\p\\${id}`, status: "busy", waitingFor: null,
@@ -43,14 +44,14 @@ function mockBackend(view: HistoryView, search?: (q: string, gen: number) => Pro
   invoke.mockImplementation((cmd: string, args?: { query: string; generation: number }) => {
     if (cmd === "get_history") return Promise.resolve(view);
     if (cmd === "search_history" && search) return search(args!.query, args!.generation);
+    if (cmd === "cancel_search") return Promise.resolve(null);
     return Promise.reject(new Error(`unexpected ${cmd}`));
   });
 }
 
 beforeEach(() => {
   invoke.mockReset();
-  resetDashboardFilter();
-  resetHistoryFilters();
+  resetUiState();
 });
 
 test("Dashboard: arama kutusu ad/klasör/model süzer (Türkçe İ/ı duyarsız), boşsa 'uyan yok'", () => {
@@ -159,7 +160,68 @@ test("İçerikte ara: yeni arama eskisinin geç gelen yanıtını ezer; her aram
   await act(async () => { pending[0]({ hits: [hit("a", "", "eski", "")], truncated: false, cancelled: false }); });
   expect(screen.getByText("yeni", { selector: "mark" })).toBeTruthy();
   expect(screen.queryByText("eski", { selector: "mark" })).toBeNull();
-  expect(screen.getByText(/ilk 1 sonuç gösteriliyor/)).toBeTruthy();
+  expect(screen.getByText(/sonuçlar kısaltıldı/)).toBeTruthy();
+  // A new search does not also send cancel_search (its generation already stops the old one).
+  expect(invoke.mock.calls.filter(([c]) => c === "cancel_search")).toHaveLength(0);
+});
+
+test("İçerikte ara: bütçe dolunca eşleşme olmasa da 'sonuçlar kısaltıldı' görünür", async () => {
+  mockBackend(hview(), async () => ({ hits: [], truncated: true, cancelled: false }));
+  render(<History onOpen={() => {}} />);
+  await screen.findByText("ad-a");
+  const box = screen.getByLabelText("İçerikte ara");
+  fireEvent.change(box, { target: { value: "bulunmaz" } });
+  fireEvent.submit(box.closest("form")!);
+  expect(await screen.findByText(/Eşleşme yok\. · sonuçlar kısaltıldı/)).toBeTruthy();
+});
+
+test("İçerikte ara: temizle ve sayfadan çıkış süren aramayı durdurur (cancel_search)", async () => {
+  mockBackend(hview(), () => new Promise(() => {}));
+  const cancels = () => invoke.mock.calls.filter(([c]) => c === "cancel_search").length;
+  const r = render(<History onOpen={() => {}} />);
+  await screen.findByText("ad-a");
+  const box = screen.getByLabelText("İçerikte ara");
+  // Nothing running: leaving or clearing sends nothing.
+  fireEvent.change(box, { target: { value: "uzun arama" } });
+  fireEvent.submit(box.closest("form")!);
+  await screen.findByText("Aranıyor…");
+  fireEvent.click(screen.getByRole("button", { name: "Temizle" }));
+  expect(cancels()).toBe(1);
+  expect(screen.queryByText("Aranıyor…")).toBeNull();
+  fireEvent.change(box, { target: { value: "yine uzun" } });
+  fireEvent.submit(box.closest("form")!);
+  await screen.findByText("Aranıyor…");
+  r.unmount();
+  expect(cancels()).toBe(2);
+});
+
+test("Geçmiş sayfası açıkken maliyet verisi 30 sn'de bir yenilenir", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    mockBackend(hview());
+    render(<History onOpen={() => {}} />);
+    await screen.findByText("ad-a");
+    const loads = () => invoke.mock.calls.filter(([c]) => c === "get_history").length;
+    const first = loads();
+    await act(async () => { vi.advanceTimersByTime(29_000); });
+    expect(loads()).toBe(first);
+    await act(async () => { vi.advanceTimersByTime(1_500); });
+    expect(loads()).toBe(first + 1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("Maliyet: canlı oturumlar projeler ve model dağılımına da girer", async () => {
+  const live = [{ sessionId: "L", cwd: "C:\\p\\canli", model: "claude-haiku-5", costByDay: { [key(today)]: 9 } }];
+  mockBackend(hview({ live, todayCost: 9 }));
+  render(<History onOpen={() => {}} />);
+  await screen.findByText("ad-a");
+  expect([...document.querySelectorAll(".cost-top .lbl")].map((e) => e.textContent)).toEqual(["canli", "İstanbul", "beta"]);
+  expect(document.querySelector(".cost-models .legend li")!.textContent).toBe("claude-haiku-569%");
+  // a (3) + b (1) + today's total (9, the live session).
+  expect(screen.getByText("$13.00")).toBeTruthy();
+  expect(screen.getByText(/canlı oturumlar dahil/)).toBeTruthy();
 });
 
 test("Maliyet: 30 gün varsayılan, bugün vurgulu; 7/90 aralığı; tahmini toplam ve ortalama", async () => {

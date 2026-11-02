@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { HistoryRow, HistorySummary } from "./api";
-import { CHART_TOKENS, dailyCosts, localDateKey, modelSplit, rangeDays, topProjects, totals } from "./costs";
+import { CHART_TOKENS, dailyCosts, localDateKey, modelSplit, rangeDays, topProjects, totals, withLive } from "./costs";
 import { THEME_IDS, THEMES } from "./theme";
 
 const sum = (over: Partial<HistorySummary>): HistorySummary => ({
@@ -87,6 +87,29 @@ test("model dağılımı: paylar toplamı 1, sıralı; modelsiz '?' olarak grupl
   const capped = modelSplit(many, days, 4);
   expect(capped).toHaveLength(5);
   expect(capped[4]).toMatchObject({ model: null, other: true, cost: 4 + 3 + 2 + 1 });
+});
+
+test("canlı oturumlar üç grafikte de aynı şekilde sayılır", () => {
+  const days = new Set(rangeDays(NOW, 7));
+  const rows = [row("a", { cwd: "C:\\p\\alfa", model: "claude-opus-5-5", costByDay: { "2026-11-01": 1, "2026-11-02": 0.5 } })];
+  const live = [{ sessionId: "L", cwd: "C:\\p\\canli", model: "claude-sonnet-5-5", costByDay: { "2026-11-01": 0.25, "2026-11-02": 2 } }];
+  const all = withLive(rows, live);
+  expect(all).toHaveLength(2);
+  // Daily bars: yesterday includes the live session; today is the backend's
+  // total (closed 0.5 + live 2), same as summing the merged rows.
+  const b = dailyCosts(all, rangeDays(NOW, 7), NOW, 2.5);
+  expect(b[5].cost).toBe(1.25);
+  expect(b[6].cost).toBe(dailyCosts(all, rangeDays(NOW, 7), NOW)[6].cost);
+  expect(topProjects(all, days).map((p) => [p.name, p.cost])).toEqual([["canli", 2.25], ["alfa", 1.5]]);
+  const m = modelSplit(all, days);
+  expect(m.map((x) => [x.model, x.cost])).toEqual([["claude-sonnet-5-5", 2.25], ["claude-opus-5-5", 1.5]]);
+  // Totals agree across the charts.
+  const sum = (xs: { cost: number }[]) => xs.reduce((a, x) => a + x.cost, 0);
+  expect(sum(b)).toBeCloseTo(sum(topProjects(all, days)));
+  expect(sum(b)).toBeCloseTo(sum(m));
+  // No live data, or a live id that is also a row: rows unchanged / not doubled.
+  expect(withLive(rows, undefined)).toBe(rows);
+  expect(withLive(rows, [{ ...live[0], sessionId: "a" }])).toHaveLength(1);
 });
 
 test("grafik renkleri: her temada yüzeylerde ≥ 3 kontrast ve seriler birbirinden farklı", () => {

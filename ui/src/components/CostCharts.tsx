@@ -1,7 +1,8 @@
 import { useState, type KeyboardEvent, type MouseEvent } from "react";
 import type { HistoryView } from "../api";
 import {
-  CHART_TOKENS, RANGES, dailyCosts, modelSplit, rangeDays, topProjects, totals, type DayBucket, type RangeDays,
+  CHART_TOKENS, RANGES, dailyCosts, modelSplit, rangeDays, topProjects, totals, withLive, type DayBucket,
+  type RangeDays,
 } from "../costs";
 import { fmtCost } from "../format";
 import { locale, useT } from "../i18n";
@@ -10,11 +11,6 @@ import { cssVar } from "../theme";
 
 /** Chosen range; kept in memory for the app session only. */
 const rangeStore = createStore<RangeDays>(30);
-
-/** Test helper: back to the default range. */
-export function resetCostRange(): void {
-  rangeStore.set(30);
-}
 
 const H = 120;
 const W = 600;
@@ -149,13 +145,15 @@ export default function CostCharts({ view, now }: { view: HistoryView; now: numb
   const range = rangeStore.use();
   const dates = rangeDays(now, range);
   const days = new Set(dates);
-  const buckets = dailyCosts(view.rows, dates, now, view.todayCost);
+  // Live sessions count in all three charts (the today bar's total has them too).
+  const rows = withLive(view.rows, view.live);
+  const buckets = dailyCosts(rows, dates, now, view.todayCost);
   const { total, avg } = totals(buckets);
   const computing = view.indexing || !view.todayComplete;
   return (
     <section className="costs" aria-label={t("cost.title")}>
       <div className="hd">
-        <h3>{t("cost.title")} <span className="est">{t("cost.estimated")}</span></h3>
+        <h3>{t("cost.title")} <span className="est">{t("cost.estimated")} · {t("cost.inclLive")}</span></h3>
         <div className="seg" role="group" aria-label={t("cost.range")}>
           {RANGES.map((r) => (
             <button key={r} type="button" className={r === range ? "on" : undefined} aria-pressed={r === range}
@@ -170,8 +168,8 @@ export default function CostCharts({ view, now }: { view: HistoryView; now: numb
       </div>
       <div className="cost-grid">
         <DailyChart buckets={buckets} />
-        <TopProjects list={topProjects(view.rows, days)} />
-        <ModelSplit list={modelSplit(view.rows, days)} />
+        <TopProjects list={topProjects(rows, days)} />
+        <ModelSplit list={modelSplit(rows, days)} />
       </div>
     </section>
   );

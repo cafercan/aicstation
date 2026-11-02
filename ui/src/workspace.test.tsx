@@ -250,19 +250,27 @@ test("kısayol katmanı Ayarlar panelinin girişlerine dokunmaz", async () => {
   expect(screen.getByRole("heading", { name: "Ayarlar" })).toBeTruthy();
 });
 
-test("bölünmüş terminalde odak bağlamı odaktaki bölmenin oturumunu izler", async () => {
+test("bölünmüş terminalde odak bağlamı iki görünür bölmenin oturumlarını da gönderir", async () => {
   await boot();
-  const card = { sessionId: "s-1", status: "busy", pid: 5 };
+  const focus = () => invoke.mock.calls.filter(([c]) => c === "set_focus_context").map((c) => (c as unknown[])[1]);
   chord("T", "KeyT");
   chord("T", "KeyT");
   await waitFor(() => expect(vis(2).visible).toBe("true"));
-  act(() => { fake.inside.set(1, card); });
+  act(() => {
+    fake.inside.set(1, { sessionId: "s-1", status: "busy", pid: 5 });
+    fake.inside.set(2, { sessionId: "s-2", status: "busy", pid: 6 });
+  });
   key({ key: "1", code: "Digit1", ctrlKey: true, altKey: true });
+  // Single terminal 1 on screen: its session only.
+  await waitFor(() => expect(focus().slice(-1)[0]).toEqual({ sessionIds: ["s-1"] }));
   chord("|", "Backslash");
   expect(vis(2).active).toBe("true");
-  const focus = () => invoke.mock.calls.filter(([c]) => c === "set_focus_context").map((c) => (c as unknown[])[1]);
-  await waitFor(() => expect(focus().slice(-1)[0]).toEqual({ sessionId: null }));
+  // Split: both panes' sessions, whichever pane is active.
+  await waitFor(() => expect(focus().slice(-1)[0]).toEqual({ sessionIds: ["s-1", "s-2"] }));
   fireEvent.mouseDown(screen.getByTestId("term-1"));
   expect(vis(1).active).toBe("true");
-  await waitFor(() => expect(focus().slice(-1)[0]).toEqual({ sessionId: "s-1" }));
+  expect(focus().slice(-1)[0]).toEqual({ sessionIds: ["s-1", "s-2"] });
+  // Back to the dashboard: nothing on screen.
+  chord("D", "KeyD");
+  await waitFor(() => expect(focus().slice(-1)[0]).toEqual({ sessionIds: [] }));
 });

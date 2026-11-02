@@ -8,6 +8,13 @@
  * untouched. Ctrl+Alt is also how Windows reports AltGr, which types
  * characters on many layouts (Turkish Q: AltGr+7 = "{"), so a Ctrl+Alt+digit
  * only counts when the key really is that digit and AltGraph is not down.
+ *
+ * Keys are physical: letters match by `ev.code` (KeyT...), so the chords work
+ * the same on Cyrillic, Turkish and other layouts; `ev.key` is only a
+ * fallback when the event has no usable code. "/" and "\" are the keys at
+ * the US positions Slash and Backslash (IntlBackslash, the extra ISO key
+ * beside left Shift, also counts as "\"); the help shows the key cap the
+ * current layout puts there (see `displayChord`).
  */
 
 export type ActionId =
@@ -68,14 +75,25 @@ export function parseChord(s: string): Chord | null {
   return c;
 }
 
+/** Physical codes of the "/" and "\\" chord keys. */
+export const SLASH_CODES = ["Slash"] as const;
+export const BACKSLASH_CODES = ["Backslash", "IntlBackslash"] as const;
+
 /** Normalized key of an event: a letter, a digit, "/", "\\", "tab", or null. */
-function eventKey(ev: KeyEventLike): string | null {
+export function eventKey(ev: KeyEventLike): string | null {
   const digit = /^(?:Digit|Numpad)([0-9])$/.exec(ev.code)?.[1];
   if (digit !== undefined) return ev.key === digit ? digit : null;
-  if (ev.code === "Slash" || ev.key === "/" || ev.key === "?") return "/";
-  if (ev.code === "Backslash" || ev.key === "\\" || ev.key === "|") return "\\";
+  const letter = /^Key([A-Z])$/.exec(ev.code)?.[1];
+  if (letter !== undefined) return letter.toLowerCase();
+  if ((SLASH_CODES as readonly string[]).includes(ev.code)) return "/";
+  if ((BACKSLASH_CODES as readonly string[]).includes(ev.code)) return "\\";
   if (ev.key === "Tab") return "tab";
-  if (/^[a-z]$/i.test(ev.key)) return ev.key.toLowerCase();
+  // No usable code (synthetic events, some IMEs): fall back to the character.
+  if (ev.code === "" || ev.code === "Unidentified") {
+    if (ev.key === "/" || ev.key === "?") return "/";
+    if (ev.key === "\\" || ev.key === "|") return "\\";
+  }
+  if (!/^(?:Key|Digit|Numpad)/.test(ev.code) && /^[a-z]$/i.test(ev.key)) return ev.key.toLowerCase();
   return null;
 }
 
@@ -88,6 +106,38 @@ export function matchChord(ev: KeyEventLike): Binding | null {
   if (key === null) return null;
   const hit = PARSED.find(({ c }) => c.key === key && c.ctrl && c.shift === ev.shiftKey && c.alt === ev.altKey);
   return hit?.b ?? null;
+}
+
+/** `code` → the character the current layout puts on that key (lower case). */
+export type LayoutMap = Pick<Map<string, string>, "get">;
+
+/**
+ * A chord as the user's keyboard shows it: the "/" and "\\" keys become the
+ * key cap at their physical position (Turkish Q: Slash is ".", Backslash is
+ * ","), letters stay upper case. Without a layout map, the chord unchanged.
+ */
+export function displayChord(chord: string, layout?: LayoutMap | null): string {
+  if (!layout) return chord;
+  const i = chord.lastIndexOf("+");
+  const key = chord.slice(i + 1);
+  const code = key === "/" ? SLASH_CODES[0] : key === "\\" ? BACKSLASH_CODES[0] : null;
+  if (!code) return chord;
+  const cap = layout.get(code) ?? (key === "\\" ? layout.get(BACKSLASH_CODES[1]) : undefined);
+  if (!cap || cap === key) return chord;
+  return `${chord.slice(0, i + 1)}${cap.toUpperCase()}`;
+}
+
+/**
+ * The keyboard layout map from `navigator.keyboard.getLayoutMap()` (WebView2
+ * has it), or null where unsupported. Read once per call; cheap.
+ */
+export async function loadLayoutMap(): Promise<LayoutMap | null> {
+  try {
+    const kb = (navigator as Navigator & { keyboard?: { getLayoutMap?: () => Promise<LayoutMap> } }).keyboard;
+    return kb?.getLayoutMap ? await kb.getLayoutMap() : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Next (`delta` 1) or previous (-1) id after `current`, wrapping; first/last when current is not in `ids`. */

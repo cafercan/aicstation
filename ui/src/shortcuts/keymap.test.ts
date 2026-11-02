@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { keyAction, type KeyLike } from "../terminal/keys";
-import { KEYMAP, cycle, matchChord, parseChord, type KeyEventLike } from "./keymap";
+import { KEYMAP, cycle, displayChord, matchChord, parseChord, type KeyEventLike } from "./keymap";
 
 /** A US-layout keydown. */
 function ev(chord: string, over: Partial<KeyEventLike> = {}): KeyEventLike {
@@ -87,6 +87,51 @@ test("terminalin kendi tuşlarıyla çakışma yok: uygulama akorlarını xterm 
   for (const c of ["Ctrl+C", "Ctrl+Shift+C", "Ctrl+V", "Ctrl+Shift+V", "Ctrl+F", "Ctrl+=", "Ctrl+-", "Ctrl+0"]) {
     expect(matchChord(ev(c)), c).toBeNull();
   }
+});
+
+test("harfler fiziksel tuşla eşleşir: Kiril ve Türkçe düzenlerde de çalışır", () => {
+  // Russian ЙЦУКЕН: the T key types "е", W "ц", D "в", H "р", F "а", P "з".
+  const ru: [string, string, string][] = [
+    ["KeyT", "Е", "newTerminal"], ["KeyW", "Ц", "closeTerminal"], ["KeyD", "В", "dashboard"],
+    ["KeyH", "Р", "history"], ["KeyF", "А", "focusSearch"], ["KeyP", "З", "palette"],
+  ];
+  for (const [code, key, id] of ru) {
+    expect(matchChord(ev("Ctrl+Shift+T", { code, key }))?.id, code).toBe(id);
+  }
+  // Turkish F: the key at the T position types another letter; the position decides.
+  expect(matchChord(ev("Ctrl+Shift+T", { code: "KeyT", key: "I" }))?.id).toBe("newTerminal");
+  // Dvorak-like: the key that types "t" sits elsewhere; its code wins.
+  expect(matchChord(ev("Ctrl+Shift+T", { code: "KeyK", key: "T" }))).toBeNull();
+  // No usable code: the character is the fallback.
+  expect(matchChord(ev("Ctrl+Shift+T", { code: "" }))?.id).toBe("newTerminal");
+  expect(matchChord(ev("Ctrl+Shift+W", { code: "Unidentified" }))?.id).toBe("closeTerminal");
+});
+
+test("/ ve \\ fiziksel konumdan (Slash, Backslash, IntlBackslash)", () => {
+  // Turkish Q: Slash is the "." key (Shift gives ":"), Backslash is "," (";"),
+  // IntlBackslash is "<" (">").
+  expect(matchChord(ev("Ctrl+Shift+/", { key: ":" }))?.id).toBe("shortcuts");
+  expect(matchChord(ev("Ctrl+Shift+\\", { key: ";" }))?.id).toBe("toggleSplit");
+  expect(matchChord(ev("Ctrl+Shift+\\", { code: "IntlBackslash", key: ">" }))?.id).toBe("toggleSplit");
+  // "/" typed elsewhere (Turkish Q Shift+7) is not the chord key.
+  expect(matchChord(ev("Ctrl+Shift+7", { key: "/" }))).toBeNull();
+  // Without a code the character still works.
+  expect(matchChord(ev("Ctrl+Shift+/", { code: "" }))?.id).toBe("shortcuts");
+  expect(matchChord(ev("Ctrl+Shift+\\", { code: "" }))?.id).toBe("toggleSplit");
+});
+
+test("yardım tablosu tuş başlığını geçerli düzenden gösterir", () => {
+  const trQ = new Map([["Slash", "."], ["Backslash", ","], ["IntlBackslash", "<"], ["KeyT", "t"]]);
+  expect(displayChord("Ctrl+Shift+/", trQ)).toBe("Ctrl+Shift+.");
+  expect(displayChord("Ctrl+Shift+\\", trQ)).toBe("Ctrl+Shift+,");
+  expect(displayChord("Ctrl+Shift+T", trQ)).toBe("Ctrl+Shift+T");
+  const us = new Map([["Slash", "/"], ["Backslash", "\\"]]);
+  expect(displayChord("Ctrl+Shift+/", us)).toBe("Ctrl+Shift+/");
+  expect(displayChord("Ctrl+Shift+\\", us)).toBe("Ctrl+Shift+\\");
+  // ISO keyboard without a Backslash key in the map: the IntlBackslash cap.
+  expect(displayChord("Ctrl+Shift+\\", new Map([["IntlBackslash", "<"]]))).toBe("Ctrl+Shift+<");
+  expect(displayChord("Ctrl+Shift+/", null)).toBe("Ctrl+Shift+/");
+  expect(displayChord("Ctrl+Shift+/", new Map())).toBe("Ctrl+Shift+/");
 });
 
 test("akorlar benzersiz", () => {

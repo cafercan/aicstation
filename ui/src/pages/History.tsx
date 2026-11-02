@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { getHistory, searchHistory, type HistoryView, type SearchOutcome } from "../api";
-import CostCharts, { resetCostRange } from "../components/CostCharts";
+import { cancelSearch, getHistory, searchHistory, type HistoryView, type SearchOutcome } from "../api";
+import CostCharts from "../components/CostCharts";
 import { filterHistory, rowCwd, type HistoryFilter, type HistorySort } from "../filter";
 import { fmtCost, fmtElapsed } from "../format";
 import { resumeError } from "../gotoTab";
@@ -22,14 +22,27 @@ const filterStore = createStore<HistoryFilter & { folder: string }>({ query: "",
 /** Latest content-search generation; a reply for an older one is dropped. */
 let searchGen = 0;
 
+/** How often the page reloads history (cost charts) while open and indexed. */
+export const HISTORY_REFRESH_MS = 30_000;
+
 function ContentSearch({ view, onOpen }: { view: HistoryView; onOpen: (id: string) => void }) {
   const t = useT();
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<SearchOutcome | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  // A search still running when the page goes away is superseded.
-  useEffect(() => () => { searchGen++; }, []);
+  /** A search is in flight in the backend (it keeps reading until stopped). */
+  const running = useRef(false);
+  /** Stops the backend search and drops its late reply. */
+  const stop = () => {
+    searchGen++;
+    if (running.current) {
+      running.current = false;
+      cancelSearch().catch(() => {});
+    }
+  };
+  // Leaving the page stops a search still running.
+  useEffect(() => stop, []);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -39,14 +52,18 @@ function ContentSearch({ view, onOpen }: { view: HistoryView; onOpen: (id: strin
       setErr(errorText("search_query_invalid"));
       return;
     }
+    // A new generation already stops the previous search in the backend (no
+    // separate cancel_search here: it could arrive after this search starts
+    // and stop it instead).
     const gen = ++searchGen;
     setBusy(true);
+    running.current = true;
     searchHistory(query, gen)
       .then((out) => { if (gen === searchGen && !out.cancelled) setResult(out); })
       .catch((x) => { if (gen === searchGen) setErr(errorText(x)); })
-      .finally(() => { if (gen === searchGen) setBusy(false); });
+      .finally(() => { if (gen === searchGen) { setBusy(false); running.current = false; } });
   };
-  const clear = () => { searchGen++; setBusy(false); setResult(null); setErr(null); setQ(""); };
+  const clear = () => { stop(); setBusy(false); setResult(null); setErr(null); setQ(""); };
   const nameOf = (id: string) => {
     const r = view.rows.find((x) => x.sessionId === id);
     return r ? r.summary?.name ?? r.name : id.slice(0, 8);
@@ -63,11 +80,16 @@ function ContentSearch({ view, onOpen }: { view: HistoryView; onOpen: (id: strin
       {busy && <div className="meta" role="status">{t("hist.contentSearching")}</div>}
       {err && <div className="r" role="alert">{err}</div>}
       {result && !busy && (
-        result.hits.length === 0 ? <div className="meta">{t("hist.contentNone")}</div> : (
+        result.hits.length === 0 ? (
+          <div className="meta">
+            {t("hist.contentNone")}
+            {result.truncated && <> · {t("hist.contentTruncated")}</>}
+          </div>
+        ) : (
           <>
             <div className="meta">
               {t("hist.contentHits", { n: result.hits.length })}
-              {result.truncated && <> · {t("hist.contentTruncated", { n: result.hits.length })}</>}
+              {result.truncated && <> · {t("hist.contentTruncated")}</>}
             </div>
             <ul className="hits">
               {result.hits.map((h, i) => (
@@ -106,8 +128,8 @@ export default function History({ onOpen, onResume, onTerminal }: Props) {
     let alive = true;
     const load = () => getHistory().then((h) => alive && setView(h)).catch(() => {});
     load();
-    if (!indexing) return () => { alive = false; };
-    const t = setInterval(load, 2000);
+    // Fast while indexing; afterwards every 30 s so today's cost stays current.
+    const t = setInterval(load, indexing ? 2000 : HISTORY_REFRESH_MS);
     return () => { alive = false; clearInterval(t); };
   }, [indexing]);
 
@@ -199,10 +221,4 @@ export default function History({ onOpen, onResume, onTerminal }: Props) {
       )}
     </div>
   );
-}
-
-/** Test helper: reset the in-memory filters and the cost range. */
-export function resetHistoryFilters(): void {
-  resetCostRange();
-  filterStore.set({ query: "", from: "", to: "", sort: "date", folder: "" });
 }

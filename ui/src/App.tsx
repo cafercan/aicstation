@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { getHistory, getSnapshot, onSnapshot, openWindowsTerminal, type HistoryView, type Snapshot } from "./api";
-import { hideToTray, onNavigate, onTrayQuit, setFocusContext } from "./api";
+import {
+  getHistory, getSnapshot, hideToTray, onNavigate, onSnapshot, onTrayQuit, openWindowsTerminal, setFocusContext,
+  type HistoryView, type Snapshot,
+} from "./api";
 import Sidebar, { type View } from "./components/Sidebar";
 import StatusBar from "./components/StatusBar";
 import Dashboard from "./pages/Dashboard";
@@ -23,6 +25,17 @@ import { splitAfterClose, type Split } from "./terminal/split";
 import { Overlays, TerminalArea, useShortcuts, useSplitCleanup, type Overlay } from "./workspace";
 
 const EMPTY: Snapshot = { sessions: [], runningAgents: 0, waitingCount: 0 };
+
+/** Claude sessions inside the shown terminals, in pane order, without repeats (at most two). */
+function focusSessions(ids: number[], terminals: ReturnType<typeof useTerminals>, sessions: Snapshot["sessions"]): string[] {
+  const out: string[] = [];
+  for (const id of ids) {
+    const entry = terminals.find((t) => t.id === id);
+    const s = entry ? sessionsIn(entry, sessions)[0]?.sessionId : undefined;
+    if (s && !out.includes(s)) out.push(s);
+  }
+  return out.slice(0, 2);
+}
 
 export default function App() {
   // Language and theme changes re-render the whole tree (labels, inline SVG colors).
@@ -78,7 +91,8 @@ export default function App() {
     try {
       unlistens.push(getCurrentWindow().onCloseRequested((e) => {
         e.preventDefault();
-        if (!currentSettings()?.closeToTray) return exitApp();
+        // Until the settings have loaded, the default (minimize to tray) applies.
+        if (!(currentSettings()?.closeToTray ?? true)) return exitApp();
         hideToTray().catch((err) => { console.error("Tepsiye küçültülemedi:", err); exitApp(); });
       }));
     } catch { /* not running inside Tauri */ }
@@ -129,11 +143,13 @@ export default function App() {
   useShortcuts(shortcuts);
 
   const selectedId = typeof view === "object" && "session" in view ? view.session : null;
-  // The session on screen (detail, or the Claude session inside the shown
-  // terminal): the backend holds back its notifications while focused.
-  const termEntry = terminals.find((t) => t.id === termId);
-  const focusId = selectedId ?? (termEntry ? sessionsIn(termEntry, snapshot.sessions)[0]?.sessionId ?? null : null);
-  useEffect(() => { setFocusContext(focusId).catch(() => {}); }, [focusId]);
+  // The sessions on screen (the detail view's, or the Claude sessions in the
+  // visible terminal panes, both panes of a shown split): the backend holds
+  // back their notifications while the window is focused.
+  const shownTerms = splitShown ? [split.left, split.right] : termId !== null ? [termId] : [];
+  const focusIds = selectedId ? [selectedId] : focusSessions(shownTerms, terminals, snapshot.sessions);
+  const focusKey = focusIds.join("\n");
+  useEffect(() => { setFocusContext(focusKey ? focusKey.split("\n") : []).catch(() => {}); }, [focusKey]);
 
   let page;
   if (view === "dashboard") {

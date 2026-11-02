@@ -70,11 +70,21 @@ export interface HistoryRow {
   summary: HistorySummary | null;
 }
 
+/** A live session's cost per local day (live sessions are not in `rows`). */
+export interface LiveCost {
+  sessionId: string;
+  cwd: string;
+  model: string | null;
+  costByDay: Record<string, number>;
+}
+
 export interface HistoryView {
   rows: HistoryRow[];
   todayCost: number;
   todayComplete: boolean;
   indexing: boolean;
+  /** Live sessions' cost per day, for the cost charts (absent in old fixtures). */
+  live?: LiveCost[];
 }
 
 export interface Usage {
@@ -164,8 +174,11 @@ export interface Settings {
 export const getSettings = () => invoke<Settings>("get_settings");
 /** Resolves to what was stored; rejects with an error code. */
 export const setSettings = (settings: Settings) => invoke<Settings>("set_settings", { settings });
-/** The session whose detail or embedded terminal is on screen, or null. */
-export const setFocusContext = (sessionId: string | null) => invoke<void>("set_focus_context", { sessionId });
+/**
+ * The sessions on screen: the detail view's session, or the Claude sessions
+ * in the visible terminal panes (at most two; empty for any other view).
+ */
+export const setFocusContext = (sessionIds: string[]) => invoke<void>("set_focus_context", { sessionIds });
 /** Hides the window to the tray (close with "minimize to tray" on). */
 export const hideToTray = () => invoke<void>("hide_to_tray");
 
@@ -192,7 +205,7 @@ export interface SearchHit {
 
 export interface SearchOutcome {
   hits: SearchHit[];
-  /** The 50-hit limit was reached. */
+  /** A limit was reached (50 hits, 8 s or 2 GiB read); more matches may exist. */
   truncated: boolean;
   /** A newer search replaced this one; ignore it. */
   cancelled: boolean;
@@ -204,3 +217,6 @@ export interface SearchOutcome {
  */
 export const searchHistory = (query: string, generation: number) =>
   invoke<SearchOutcome>("search_history", { query, generation });
+
+/** Stops the running content search (page left or search cleared). */
+export const cancelSearch = () => invoke<void>("cancel_search");

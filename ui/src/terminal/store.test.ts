@@ -34,8 +34,9 @@ vi.mock("@xterm/addon-search", () => ({ SearchAddon: class { kind = "search"; } 
 
 import { ubuntuTheme, terminalFont, renderOptions } from "./theme";
 import {
-  confirmClose, getTerminals, killOrphans, openResumeTerminal, openTerminal, resetTerminals, setFontSize, terminalForPid, terminalName,
+  confirmClose, getTerminals, killOrphans, openResumeTerminal, openTerminal, setFontSize, terminalForPid, terminalName,
 } from "./store";
+import { resetUiState } from "../testing/reset";
 import type { SessionCard } from "../api";
 import { setLang } from "../i18n";
 
@@ -48,7 +49,7 @@ function card(over: Partial<SessionCard>): SessionCard {
 }
 
 beforeEach(() => {
-  resetTerminals();
+  resetUiState();
   FakeChannel.all = [];
   writes.length = 0;
   invoke.mockReset();

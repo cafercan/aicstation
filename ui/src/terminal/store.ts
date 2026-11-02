@@ -6,6 +6,7 @@ import { Terminal } from "@xterm/xterm";
 import { useSyncExternalStore } from "react";
 import { ptySpawnResume, type PtyInfo, type SessionCard } from "../api";
 import { t, type Key, type Params } from "../i18n";
+import { onTestReset } from "../prefs";
 import { clampFontSize } from "./keys";
 import { renderOptions, ubuntuTheme, terminalFont } from "./theme";
 
@@ -46,13 +47,13 @@ export function useTerminals(): TerminalEntry[] {
   return useSyncExternalStore(subscribe, getTerminals);
 }
 
-/** Test helper: forget all terminals without touching the backend. */
-export function resetTerminals(): void {
-  for (const t of terminals) t.term.dispose();
+/** Between tests: forget all terminals without touching the backend. */
+onTestReset(() => {
+  for (const t of terminals) t.term.dispose?.();
   terminals = [];
   counter = 0;
   emit();
-}
+});
 
 /** Terminal id whose PTY pid equals the Claude session's parent pid. */
 export function terminalForPid(parentPid: number | null | undefined): number | undefined {

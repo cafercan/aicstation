@@ -1,6 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useT, type Key } from "../i18n";
-import { KEYMAP, type ActionId } from "../shortcuts/keymap";
+import { KEYMAP, displayChord, loadLayoutMap, type ActionId, type LayoutMap } from "../shortcuts/keymap";
 
 /** Dictionary key of each action's name (palette and help). */
 export const ACTION_LABEL: Record<ActionId, Key> = {
@@ -33,6 +33,13 @@ export default function ShortcutsHelp({ onClose }: { onClose: () => void }) {
   const t = useT();
   const close = useRef<HTMLButtonElement>(null);
   useEffect(() => { close.current?.focus(); }, []);
+  // Key caps of the current layout for the "/" and "\\" chords.
+  const [layout, setLayout] = useState<LayoutMap | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void loadLayoutMap().then((m) => { if (alive) setLayout(m); });
+    return () => { alive = false; };
+  }, []);
   return (
     <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="help" role="dialog" aria-modal="true" aria-labelledby="help-title"
@@ -41,7 +48,7 @@ export default function ShortcutsHelp({ onClose }: { onClose: () => void }) {
         <table>
           <tbody>
             {helpRows().map((r) => (
-              <tr key={r.id}><td><kbd>{r.chord}</kbd></td><td>{t(ACTION_LABEL[r.id])}</td></tr>
+              <tr key={r.id}><td><kbd>{displayChord(r.chord, layout)}</kbd></td><td>{t(ACTION_LABEL[r.id])}</td></tr>
             ))}
           </tbody>
         </table>

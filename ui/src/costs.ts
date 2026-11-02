@@ -4,7 +4,7 @@
  * backend's today total, which also covers live sessions. Every figure is an
  * estimate (list prices over recorded token usage).
  */
-import type { HistoryRow } from "./api";
+import type { HistoryRow, LiveCost } from "./api";
 import { folderName } from "./format";
 import type { Token } from "./theme";
 
@@ -15,6 +15,25 @@ export const CHART_TOKENS = {
   /** Model split series, in order; the last one also colors "other". */
   series: ["accent", "ctxB", "yellow", "busy", "danger", "muted"],
 } as const satisfies { bar: Token; today: Token; series: readonly Token[] };
+
+/**
+ * History rows plus the live sessions as rows of their own, so every chart
+ * (daily bars, top projects, model split) counts live sessions on every day
+ * the same way. The today bar's backend total already includes them.
+ */
+export function withLive(rows: HistoryRow[], live: LiveCost[] | undefined): HistoryRow[] {
+  if (!live?.length) return rows;
+  const known = new Set(rows.map((r) => r.sessionId));
+  const extra = live.filter((l) => !known.has(l.sessionId)).map((l): HistoryRow => ({
+    sessionId: l.sessionId, modifiedMs: 0, size: 0, name: l.sessionId, cwd: l.cwd,
+    summary: {
+      name: l.sessionId, cwd: l.cwd, model: l.model, firstAtMs: 0, lastAtMs: 0, agentsTotal: 0,
+      costUsd: Object.values(l.costByDay).reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0),
+      costByDay: l.costByDay,
+    },
+  }));
+  return [...rows, ...extra];
+}
 
 export const RANGES = [7, 30, 90] as const;
 export type RangeDays = (typeof RANGES)[number];

@@ -48,7 +48,8 @@ vi.mock("@xterm/addon-fit", () => ({ FitAddon: class {} }));
 
 import App from "./App";
 import SettingsPage from "./pages/Settings";
-import { resetSettingsForTest } from "./settings";
+import { loadSettings } from "./settings";
+import { resetUiState } from "./testing/reset";
 import { setLang } from "./i18n";
 
 const calls = (cmd: string) => invoke.mock.calls.filter((c) => c[0] === cmd).map((c) => c[1]);
@@ -61,7 +62,7 @@ beforeEach(() => {
   invoke.mockClear();
   h.destroy.mockClear();
   setLang("tr");
-  resetSettingsForTest(null);
+  resetUiState();
 });
 afterEach(() => { setLang("tr"); });
 
@@ -79,7 +80,8 @@ test("dişli ayarlar sayfasını açar; anahtarlar kayıtlı değerleri gösteri
 });
 
 test("anahtar değişince tüm ayarlar dil koduyla birlikte kaydedilir", async () => {
-  resetSettingsForTest({ ...DEFAULTS });
+  await loadSettings();
+  invoke.mockClear();
   render(<SettingsPage />);
   fireEvent.click(screen.getByRole("checkbox", { name: "Bildirim sesi (sistemin varsayılan sesi)" }));
   await waitFor(() => expect(calls("set_settings")).toEqual([{ settings: { ...DEFAULTS, notifySound: true } }]));
@@ -87,8 +89,8 @@ test("anahtar değişince tüm ayarlar dil koduyla birlikte kaydedilir", async (
 });
 
 test("kaydetme reddedilirse anahtar geri alınır ve hata gösterilir", async () => {
+  await loadSettings();
   h.failSet = true;
-  resetSettingsForTest({ ...DEFAULTS });
   render(<SettingsPage />);
   const box = screen.getByRole("checkbox", { name: "Bir alt ajan bitince" }) as HTMLInputElement;
   fireEvent.click(box);
@@ -103,15 +105,31 @@ test("arayüz dili değişince arka uca bildirilir", async () => {
   await waitFor(() => expect(calls("set_settings")).toContainEqual({ settings: { ...DEFAULTS, lang: "en" } }));
 });
 
-test("odak bağlamı: oturum detayı açılınca id, panoya dönünce null gönderilir", async () => {
+test("odak bağlamı: oturum detayı açılınca id, panoya dönünce boş liste gönderilir", async () => {
   render(<App />);
-  await waitFor(() => expect(calls("set_focus_context")).toEqual([{ sessionId: null }]));
+  await waitFor(() => expect(calls("set_focus_context")).toEqual([{ sessionIds: [] }]));
   // Toast / tray menu click: the backend asks the UI to open the session.
   await waitFor(() => expect(h.listeners.has("navigate")).toBe(true));
   act(() => h.listeners.get("navigate")!({ payload: { session: A } }));
-  await waitFor(() => expect(calls("set_focus_context").slice(-1)[0]).toEqual({ sessionId: A }));
+  await waitFor(() => expect(calls("set_focus_context").slice(-1)[0]).toEqual({ sessionIds: [A] }));
   act(() => h.listeners.get("navigate")!({ payload: { session: null } }));
-  await waitFor(() => expect(calls("set_focus_context").slice(-1)[0]).toEqual({ sessionId: null }));
+  await waitFor(() => expect(calls("set_focus_context").slice(-1)[0]).toEqual({ sessionIds: [] }));
+});
+
+test("ayarlar yüklenmeden pencere kapatılırsa varsayılan geçerli: tepsiye gizlenir", async () => {
+  // get_settings never answers.
+  const never = new Promise<never>(() => {});
+  const base = invoke.getMockImplementation()!;
+  invoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) =>
+    cmd === "get_settings" ? never : base(cmd, args));
+  render(<App />);
+  await waitFor(() => expect(h.closeHandler).not.toBeNull());
+  const prevent = vi.fn();
+  act(() => h.closeHandler!({ preventDefault: prevent }));
+  expect(prevent).toHaveBeenCalled();
+  await waitFor(() => expect(calls("hide_to_tray").length).toBe(1));
+  expect(h.destroy).not.toHaveBeenCalled();
+  invoke.mockImplementation(base);
 });
 
 test("pencereyi kapatmak: tepsi açıksa gizler, kapalıysa uygulamadan çıkar", async () => {

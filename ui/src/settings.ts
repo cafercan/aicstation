@@ -49,8 +49,3 @@ export async function pushLang(lang: string): Promise<void> {
   if (!cur || cur.lang === lang) return;
   await save({ ...cur, lang });
 }
-
-/** Test helper. */
-export function resetSettingsForTest(s: Settings | null = null): void {
-  store.set(s);
-}

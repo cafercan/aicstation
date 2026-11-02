@@ -21,11 +21,6 @@ interface Props {
 /** Search text and status chips; in memory for the app session only. */
 const filterStore = createStore<{ query: string; chips: ReadonlySet<string> }>({ query: "", chips: new Set() });
 
-/** Test helper: reset the in-memory filter. */
-export function resetDashboardFilter(): void {
-  filterStore.set({ query: "", chips: new Set() });
-}
-
 export default function Dashboard({ snapshot, history, now, onOpen, onTerminal }: Props) {
   const t = useT();
   const f = filterStore.use();
