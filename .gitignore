@@ -1,4 +1,6 @@
 .superpowers/
 node_modules/
+ui/node_modules/
 target/
 dist/
+src-tauri/gen/
