@@ -50,6 +50,7 @@ export const az: Dict = {
   "sb.openSessions": "{n} açıq sessiya",
   "sb.agents": "{n} agent",
   "sb.noAgents": "agent yoxdur",
+  "sb.context": "kontekst {pct}",
 
   "app.terminalMissing": "Terminal tapılmadı.",
   "app.backToDashboard": "← Panel",
@@ -129,6 +130,7 @@ export const az: Dict = {
   "err.pty_too_large": "Məlumat çox böyükdür (ən çoxu {detail} bayt)",
   "err.pty_spawn_failed": "Terminalı başlatmaq olmadı",
   "err.pty_io": "Terminala yazmaq olmadı",
+  "err.pty_resize_failed": "Terminalın ölçüsü dəyişdirilə bilmədi",
   "err.internal_lock": "Daxili kilid xətası",
   "err.task_failed": "Əməliyyat yarımçıq qaldı",
   "err.wt_not_found": "Windows Terminal tapılmadı",

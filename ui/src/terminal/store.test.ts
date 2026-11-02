@@ -223,6 +223,12 @@ test("devam terminali: ad yoksa \"Devam: <kısa id>\"; hata atılır ve terminal
   invoke.mockImplementation(async (cmd: string) => (cmd === "pty_spawn_resume" ? { id: 12, pid: 5 } : undefined));
   const t = await openResumeTerminal("0f864996-1f75-464e-b101-a3ceed5d79d9");
   expect(terminalName(t, [])).toBe("Devam: 0f864996");
+  // The fallback title follows the language (key + params, not a frozen string).
+  setLang("en");
+  expect(terminalName(t, [])).toBe("Resume: 0f864996");
+  setLang("az");
+  expect(terminalName(t, [])).toBe("Davam: 0f864996");
+  setLang("tr");
   invoke.mockImplementation(async (cmd: string) => {
     if (cmd === "pty_spawn_resume") throw "session_live";
     return undefined;

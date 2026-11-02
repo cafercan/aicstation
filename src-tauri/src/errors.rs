@@ -27,6 +27,7 @@ pub const PTY_LIMIT: &str = "pty_limit";
 pub const PTY_TOO_LARGE: &str = "pty_too_large";
 pub const PTY_SPAWN_FAILED: &str = "pty_spawn_failed";
 pub const PTY_IO: &str = "pty_io";
+pub const PTY_RESIZE_FAILED: &str = "pty_resize_failed";
 pub const INTERNAL_LOCK: &str = "internal_lock";
 pub const TASK_FAILED: &str = "task_failed";
 
@@ -54,7 +55,7 @@ pub fn with(code: &str, detail: impl std::fmt::Display) -> String {
 pub const ALL: &[&str] = &[
     SESSION_INVALID, SESSION_LIVE, SESSION_RESUME_TERMINAL_OPEN, SESSION_UNKNOWN, SESSION_NOT_LIVE, SESSION_FOLDER,
     FOLDER_UNKNOWN, FOLDER_NETWORK, FOLDER_INVALID, FOLDER_RELATIVE, FOLDER_MISSING, FOLDER_OPEN_FAILED,
-    PTY_UNKNOWN, PTY_LIMIT, PTY_TOO_LARGE, PTY_SPAWN_FAILED, PTY_IO, INTERNAL_LOCK, TASK_FAILED,
+    PTY_UNKNOWN, PTY_LIMIT, PTY_TOO_LARGE, PTY_SPAWN_FAILED, PTY_IO, PTY_RESIZE_FAILED, INTERNAL_LOCK, TASK_FAILED,
     WT_NOT_FOUND, WT_OPEN_FAILED, WT_HOME_INVALID, WT_HOME_MISSING, WT_POWERSHELL_INVALID,
     TAB_NOT_FOUND, TAB_AMBIGUOUS, TAB_NO_MATCH, TAB_SELECT_FAILED,
 ];

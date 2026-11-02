@@ -54,6 +54,7 @@ export const tr = {
   "sb.openSessions": "{n} açık oturum",
   "sb.agents": "{n} ajan",
   "sb.noAgents": "ajan yok",
+  "sb.context": "bağlam {pct}",
 
   // App shell
   "app.terminalMissing": "Terminal bulunamadı.",
@@ -139,6 +140,7 @@ export const tr = {
   "err.pty_too_large": "Veri çok büyük (en fazla {detail} bayt)",
   "err.pty_spawn_failed": "Terminal başlatılamadı",
   "err.pty_io": "Terminale yazılamadı",
+  "err.pty_resize_failed": "Terminal boyutu değiştirilemedi",
   "err.internal_lock": "İç kilit hatası",
   "err.task_failed": "İşlem yarıda kaldı",
   "err.wt_not_found": "Windows Terminal bulunamadı",

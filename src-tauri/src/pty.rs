@@ -130,6 +130,10 @@ fn io_failed(e: impl std::fmt::Display) -> String {
     crate::errors::with(crate::errors::PTY_IO, e)
 }
 
+fn resize_failed(e: impl std::fmt::Display) -> String {
+    crate::errors::with(crate::errors::PTY_RESIZE_FAILED, e)
+}
+
 fn resume_terminal_open(pty: Option<u32>) -> String {
     match pty {
         Some(id) => crate::errors::with(crate::errors::SESSION_RESUME_TERMINAL_OPEN, id),
@@ -454,7 +458,7 @@ impl PtyManager {
     pub fn resize(&self, id: u32, cols: u16, rows: u16) -> Result<(), String> {
         let g = self.inner.lock().map_err(poisoned)?;
         let e = g.ptys.get(&id).ok_or_else(|| unknown(id))?;
-        e.master.resize(size(cols, rows)).map_err(io_failed)
+        e.master.resize(size(cols, rows)).map_err(resize_failed)
     }
 
     pub fn kill(&self, id: u32) -> Result<(), String> {
@@ -906,6 +910,12 @@ mod tests {
         let second = start().expect("released once the session left the live set");
         m.kill(first.id).unwrap();
         m.kill(second.id).unwrap();
+    }
+
+    #[test]
+    fn resize_failure_has_its_own_code() {
+        assert_eq!(resize_failed("os"), "pty_resize_failed:os");
+        assert_eq!(io_failed("os"), "pty_io:os", "write failures keep pty_io");
     }
 
     #[test]

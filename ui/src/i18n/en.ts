@@ -47,6 +47,7 @@ export const en: Dict = {
   "sb.openSessions": { one: "1 open session", other: "{n} open sessions" },
   "sb.agents": { one: "1 agent", other: "{n} agents" },
   "sb.noAgents": "no agents",
+  "sb.context": "ctx {pct}",
 
   "app.terminalMissing": "Terminal not found.",
   "app.backToDashboard": "← Dashboard",
@@ -129,6 +130,7 @@ export const en: Dict = {
   "err.pty_too_large": "Data too large (at most {detail} bytes)",
   "err.pty_spawn_failed": "Could not start the terminal",
   "err.pty_io": "Could not write to the terminal",
+  "err.pty_resize_failed": "Could not resize the terminal",
   "err.internal_lock": "Internal lock error",
   "err.task_failed": "The operation was interrupted",
   "err.wt_not_found": "Windows Terminal not found",

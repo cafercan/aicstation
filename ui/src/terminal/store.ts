@@ -5,7 +5,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { Terminal } from "@xterm/xterm";
 import { useSyncExternalStore } from "react";
 import { ptySpawnResume, type PtyInfo, type SessionCard } from "../api";
-import { t } from "../i18n";
+import { t, type Key, type Params } from "../i18n";
 import { clampFontSize } from "./keys";
 import { renderOptions, ubuntuTheme, terminalFont } from "./theme";
 
@@ -18,7 +18,18 @@ export interface TerminalEntry {
   fit: FitAddon;
   search: SearchAddon;
   /** Name given at creation (resume terminals); else "PowerShell N". */
-  title?: string;
+  title?: TerminalTitle;
+}
+
+/**
+ * A creation-time name: literal text (a session name) or a dictionary key
+ * with params, translated when shown so it follows the language switch.
+ */
+export type TerminalTitle = { text: string } | { key: Key; params?: Params };
+
+function titleText(title: TerminalTitle | undefined): string {
+  if (!title) return "";
+  return "text" in title ? title.text : t(title.key, title.params);
 }
 
 let terminals: TerminalEntry[] = [];
@@ -54,7 +65,7 @@ export function sessionsIn(t: TerminalEntry, sessions: SessionCard[]): SessionCa
 }
 
 export function terminalName(t: TerminalEntry, sessions: SessionCard[]): string {
-  return sessionsIn(t, sessions)[0]?.name || t.title || `PowerShell ${t.n}`;
+  return sessionsIn(t, sessions)[0]?.name || titleText(t.title) || `PowerShell ${t.n}`;
 }
 
 function removeEntry(id: number): void {
@@ -86,12 +97,12 @@ export function openTerminal(): Promise<TerminalEntry> {
 export function openResumeTerminal(sessionId: string, name?: string): Promise<TerminalEntry> {
   return startTerminal(
     (cols, rows, onOutput, onExit) => ptySpawnResume(sessionId, cols, rows, onOutput, onExit),
-    name || t("term.resumeTitle", { id: sessionId.slice(0, 8) }),
+    name ? { text: name } : { key: "term.resumeTitle", params: { id: sessionId.slice(0, 8) } },
   );
 }
 
 /** Shared lifecycle: xterm + addons, input queued until the spawn resolves, exit handling. */
-async function startTerminal(spawn: Spawn, title?: string): Promise<TerminalEntry> {
+async function startTerminal(spawn: Spawn, title?: TerminalTitle): Promise<TerminalEntry> {
   const term = new Terminal({
     ...terminalFont, ...renderOptions, theme: ubuntuTheme, cursorBlink: true, scrollback: 10000,
     linkHandler: NO_LINKS, windowsPty: { backend: "conpty" },

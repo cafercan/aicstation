@@ -12,7 +12,7 @@ export default function StatusBar({ sessions, selectedId }: Props) {
     <footer className="sb">
       <span className="c2">{c.model ?? "?"}</span> │ {folderName(c.cwd) || "?"} │{" "}
       <span className="g">{c.gitBranch ?? "?"}</span> │{" "}
-      ctx {fmtContext(c.contextPct)} │{" "}
+      {t("sb.context", { pct: fmtContext(c.contextPct) })} │{" "}
       {c.agentsTotal > 0 ? t("sb.agents", { n: c.agentsTotal }) : t("sb.noAgents")} │{" "}
       <span style={{ color: statusTextColor(statusKind(c.status, c.pid)) }}>{statusLabel(c.status, c.pid)}</span> │{" "}
       {fmtCost(c.costUsd)}

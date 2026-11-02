@@ -137,7 +137,17 @@ test("status bar durum etiketini renkli ve bağlamı sınırlı gösterir", () =
   const st = screen.getByText("onay bekliyor");
   // Text tone of the status (readable on the status bar in every theme).
   expect(st.getAttribute("style")).toContain("rgb(255, 129, 147)");
-  expect(screen.getByRole("contentinfo").textContent).toContain("ctx 100%");
+  expect(screen.getByRole("contentinfo").textContent).toContain("bağlam 100%");
+});
+
+test("status bar bağlam etiketi sözlükten gelir ve dil değişince güncellenir", () => {
+  render(<StatusBar sessions={[card({ contextPct: 40 })]} selectedId="s1" />);
+  expect(screen.getByRole("contentinfo").textContent).toContain("bağlam 40%");
+  act(() => setLang("en"));
+  expect(screen.getByRole("contentinfo").textContent).toContain("ctx 40%");
+  act(() => setLang("az"));
+  expect(screen.getByRole("contentinfo").textContent).toContain("kontekst 40%");
+  act(() => setLang("tr"));
 });
 
 test("status bar seçili oturumu gösterir", () => {
