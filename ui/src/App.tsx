@@ -16,6 +16,7 @@ import {
   useTerminals,
 } from "./terminal/store";
 import "./app.css";
+import "./features.css";
 
 const EMPTY: Snapshot = { sessions: [], runningAgents: 0, waitingCount: 0 };
 
