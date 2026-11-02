@@ -971,3 +971,34 @@ mod wt_command_tests {
         let _f: fn() -> Result<(), String> = super::open_windows_terminal;
     }
 }
+
+// ---- settings, notifications, tray ------------------------------------------
+
+use crate::notifier::Notifier;
+use crate::settings::{Settings, SettingsStore};
+
+#[tauri::command(async)]
+pub fn get_settings(store: tauri::State<'_, SettingsStore>) -> Settings {
+    store.get()
+}
+
+/// Validated (unknown language refused), unknown keys ignored, missing keys
+/// defaulted; `trayNoticeShown` from the UI is ignored. Returns what is stored.
+#[tauri::command(async)]
+pub fn set_settings(store: tauri::State<'_, SettingsStore>, settings: Settings) -> Result<Settings, String> {
+    store.set_from_ui(settings)
+}
+
+/// The session whose detail or embedded terminal the UI shows (null for any
+/// other view); its notifications are held back while the window is focused.
+#[tauri::command(async)]
+pub fn set_focus_context(notifier: tauri::State<'_, Notifier>, session_id: Option<String>) -> Result<(), String> {
+    notifier.set_focus(session_id)
+}
+
+/// Window close with "minimize to tray" on: hides the window (terminals and
+/// monitoring keep running). Takes nothing from the UI.
+#[tauri::command(async)]
+pub fn hide_to_tray(app: tauri::AppHandle) -> Result<(), String> {
+    crate::notifier::hide_to_tray(&app)
+}

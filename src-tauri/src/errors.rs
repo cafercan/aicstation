@@ -48,6 +48,11 @@ pub const TAB_NO_MATCH: &str = "tab_no_match";
 /// Note (Ok): window focused, the one matching tab refused to be selected.
 pub const TAB_SELECT_FAILED: &str = "tab_select_failed";
 
+/// Settings sent by the UI carry an invalid value (e.g. an unknown language).
+pub const SETTINGS_INVALID: &str = "settings_invalid";
+/// `settings_save_failed:<OS message>`: settings.json could not be written.
+pub const SETTINGS_SAVE_FAILED: &str = "settings_save_failed";
+
 /// `code:detail`.
 pub fn with(code: &str, detail: impl std::fmt::Display) -> String {
     format!("{code}:{detail}")
@@ -60,6 +65,7 @@ pub const ALL: &[&str] = &[
     PTY_UNKNOWN, PTY_LIMIT, PTY_TOO_LARGE, PTY_SPAWN_FAILED, PTY_IO, PTY_RESIZE_FAILED, INTERNAL_LOCK, TASK_FAILED,
     WT_NOT_FOUND, WT_OPEN_FAILED, WT_HOME_INVALID, WT_HOME_MISSING, WT_POWERSHELL_INVALID,
     TAB_NOT_FOUND, TAB_AMBIGUOUS, TAB_NO_MATCH, TAB_SELECT_FAILED,
+    SETTINGS_INVALID, SETTINGS_SAVE_FAILED,
 ];
 
 #[cfg(test)]

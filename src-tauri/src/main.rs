@@ -1,8 +1,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod alerts;
 mod commands;
 mod errors;
+mod native_text;
+mod notifier;
 mod platform;
 mod pty;
+mod settings;
+mod toast;
+mod tray;
 mod wt;
 
 use commands::AppState;
@@ -22,12 +28,14 @@ const INDEX_BUDGET: Duration = Duration::from_millis(50);
 const INDEX_IDLE: Duration = Duration::from_secs(1);
 const MAX_INDEX_PANICS: u32 = 3;
 
-/// Refreshes, lets the resume holds follow the live set, then emits.
+/// Refreshes, lets the resume holds follow the live set, emits, then runs
+/// the notifications and the tray off the same snapshot.
 fn emit_snapshot(app: &tauri::AppHandle) {
     let snap = app.state::<AppState>().refresh();
     let live: std::collections::HashSet<String> = snap.sessions.iter().map(|s| s.session_id.clone()).collect();
     app.state::<pty::PtyManager>().observe_live(&live);
-    let _ = app.emit("snapshot", snap);
+    let _ = app.emit("snapshot", &snap);
+    notifier::after_snapshot(app, &snap);
 }
 
 /// What the snapshot thread does next.
@@ -186,11 +194,39 @@ fn navigation_allowed(url: &tauri::Url, dev: Option<&tauri::Url>) -> bool {
     app_origin || dev.is_some_and(|d| url.origin() == d.origin())
 }
 
+/// Icon of the toasts (registered with the AppUserModelID).
+const TOAST_ICON: &[u8] = include_bytes!("../icons/64x64.png");
+
+/// Writes the toast icon into the app data dir when missing or different.
+fn toast_icon(data: &std::path::Path) -> Option<PathBuf> {
+    let p = data.join("toast-icon.png");
+    if std::fs::read(&p).ok().as_deref() != Some(TOAST_ICON) {
+        std::fs::write(&p, TOAST_ICON).ok()?;
+    }
+    Some(p)
+}
+
 fn main() {
+    // A second launch brings the running instance forward and exits.
+    #[cfg(windows)]
+    let activation = match platform::single::acquire("com.cafercan.sessionstation") {
+        platform::single::Instance::First(a) => a,
+        platform::single::Instance::Second => return,
+    };
     tauri::Builder::default()
-        .setup(|app| {
+        .setup(move |app| {
             let data = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data)?;
+            let settings = settings::SettingsStore::open(data.join("settings.json"));
+            let lang = settings.get().lang;
+            app.manage(settings);
+            app.manage(notifier::Notifier::default());
+            app.manage(tray::TrayState::default());
+            app.manage(toast::Toaster::new(
+                &app.config().identifier,
+                app.config().product_name.as_deref().unwrap_or("SessionStation"),
+                toast_icon(&data).as_deref(),
+            ));
             let dir = claude_dir();
             app.manage(AppState::new(
                 dir.clone(),
@@ -224,6 +260,12 @@ fn main() {
                     }
                 })
                 .build()?;
+            tray::create(app.handle(), &lang)?;
+            #[cfg(windows)]
+            {
+                let handle = app.handle().clone();
+                activation.listen(move || tray::show_main(&handle));
+            }
             let handle = app.handle().clone();
             std::thread::spawn(move || snapshot_loop(handle, dir));
             let handle = app.handle().clone();
@@ -242,7 +284,11 @@ fn main() {
             commands::pty_kill,
             commands::pty_list,
             commands::open_windows_terminal,
-            commands::focus_session_tab
+            commands::focus_session_tab,
+            commands::get_settings,
+            commands::set_settings,
+            commands::set_focus_context,
+            commands::hide_to_tray
         ])
         .build(tauri::generate_context!())
         .expect("SessionStation başlatılamadı")

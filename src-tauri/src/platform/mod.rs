@@ -54,6 +54,9 @@ pub fn explorer_exe() -> PathBuf {
 
 #[cfg(windows)]
 mod focus;
+/// Single-instance guard (named mutex + activation event).
+#[cfg(windows)]
+pub mod single;
 #[cfg(windows)]
 mod windows;
 

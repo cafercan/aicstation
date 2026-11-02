@@ -15,6 +15,10 @@ const COMMANDS: &[&str] = &[
     "pty_list",
     "open_windows_terminal",
     "focus_session_tab",
+    "get_settings",
+    "set_settings",
+    "set_focus_context",
+    "hide_to_tray",
 ];
 
 fn main() {
