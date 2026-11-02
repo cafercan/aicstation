@@ -228,3 +228,17 @@ table.hist tbody tr:hover { background: var(--hover); }
 .about-name { font-weight: 600; font-size: 11.5px; }
 .about-tag { margin-top: 1px; }
 .about-note { margin-top: 4px; font-size: 9.5px; opacity: .8; }
+
+/* Settings page (gear at the bottom of the sidebar). */
+.prefs .gear { align-self: flex-start; padding: 2px 8px; font: inherit; font-size: 11.5px; color: var(--dim); background: transparent;
+  border: 1px solid var(--border); border-radius: 4px; cursor: pointer; line-height: 1.4; }
+.prefs .gear:hover, .prefs .gear.on { color: var(--strong); border-color: var(--accent); }
+.prefs .gear:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.settings { padding: 18px 22px; max-width: 640px; }
+.settings h2 { margin: 0 0 14px; font-size: 16px; color: var(--strong); }
+.settings fieldset { margin: 0 0 14px; padding: 8px 12px 10px; border: 1px solid var(--border); border-radius: 6px; }
+.settings legend { padding: 0 4px; font-size: 11px; letter-spacing: .04em; color: var(--muted); }
+.settings-row { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; cursor: pointer; }
+.settings-row input { margin-top: 2px; accent-color: var(--accent); }
+.settings-hint { display: block; margin-top: 2px; font-size: 11px; color: var(--dim); }
+.settings-err { color: var(--danger); font-size: 12px; }

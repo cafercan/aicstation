@@ -7,6 +7,7 @@ import SessionMark from "./SessionMark";
 export type View =
   | "dashboard"
   | "history"
+  | "settings"
   | { session: string }
   | { terminal: number };
 
@@ -27,8 +28,8 @@ interface Props {
   onOpenWt: () => Promise<void>;
 }
 
-/** Language select and theme swatches at the bottom of the sidebar. */
-function Prefs() {
+/** Language select, theme swatches and the settings gear at the bottom of the sidebar. */
+function Prefs({ settingsOn, onSettings }: { settingsOn: boolean; onSettings: () => void }) {
   const t = useT();
   const lang = useLang();
   const theme = useTheme();
@@ -50,6 +51,8 @@ function Prefs() {
           );
         })}
       </div>
+      <button type="button" className={settingsOn ? "gear on" : "gear"} aria-pressed={settingsOn}
+        title={t("nav.settings")} onClick={onSettings}>⚙ {t("nav.settings")}</button>
     </div>
   );
 }
@@ -97,7 +100,7 @@ export default function Sidebar({ view, terminals, onSelect, onNew, onClose, onO
       <div className="item sub new" onClick={onNew}>{t("nav.newTerminal")}</div>
       <div className="item sub new" onClick={openWt} title={t("nav.openWtTitle")}>{t("nav.openWt")}</div>
       {wtError && <div className="side-err" role="alert">{wtError}</div>}
-      <Prefs />
+      <Prefs settingsOn={view === "settings"} onSettings={() => onSelect("settings")} />
       <About />
     </nav>
   );

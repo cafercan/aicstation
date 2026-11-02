@@ -147,3 +147,34 @@ export const openWindowsTerminal = () => invoke<void>("open_windows_terminal");
 export async function onSnapshot(cb: (s: Snapshot) => void): Promise<Unlisten> {
   return listen<Snapshot>("snapshot", (e) => cb(e.payload));
 }
+
+/** settings.json in the app data dir (Rust `Settings`). */
+export interface Settings {
+  notifyWaiting: boolean;
+  notifyFinished: boolean;
+  notifySubagent: boolean;
+  notifySound: boolean;
+  closeToTray: boolean;
+  /** Owned by the backend; a value sent here is ignored. */
+  trayNoticeShown: boolean;
+  /** UI language, for the texts the backend shows (toasts, tray). */
+  lang: string;
+}
+
+export const getSettings = () => invoke<Settings>("get_settings");
+/** Resolves to what was stored; rejects with an error code. */
+export const setSettings = (settings: Settings) => invoke<Settings>("set_settings", { settings });
+/** The session whose detail or embedded terminal is on screen, or null. */
+export const setFocusContext = (sessionId: string | null) => invoke<void>("set_focus_context", { sessionId });
+/** Hides the window to the tray (close with "minimize to tray" on). */
+export const hideToTray = () => invoke<void>("hide_to_tray");
+
+/** Tray menu / toast click: open a session's detail (or the dashboard when null). */
+export async function onNavigate(cb: (sessionId: string | null) => void): Promise<Unlisten> {
+  return listen<{ session: string | null }>("navigate", (e) => cb(e.payload?.session ?? null));
+}
+
+/** "Quit" chosen in the tray menu. */
+export async function onTrayQuit(cb: () => void): Promise<Unlisten> {
+  return listen("tray-quit", () => cb());
+}

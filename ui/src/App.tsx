@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getHistory, getSnapshot, onSnapshot, openWindowsTerminal, type HistoryView, type Snapshot } from "./api";
+import { hideToTray, onNavigate, onTrayQuit, setFocusContext } from "./api";
 import Sidebar, { type View } from "./components/Sidebar";
 import StatusBar from "./components/StatusBar";
 import Dashboard from "./pages/Dashboard";
 import History from "./pages/History";
 import SessionDetailPage from "./pages/SessionDetail";
 import TerminalView from "./pages/TerminalView";
+import SettingsPage from "./pages/Settings";
+import { currentSettings, loadSettings, pushLang } from "./settings";
 import { statusKind } from "./format";
-import { useT } from "./i18n";
+import { useLang, useT } from "./i18n";
 import { useTheme } from "./theme";
 import {
   allTerminalIds, closeTerminal, confirmClose, killOrphans, openResumeTerminal, openTerminal, sessionsIn,
@@ -49,21 +52,42 @@ export default function App() {
   const snapRef = useRef(snapshot);
   snapRef.current = snapshot;
 
+  // Settings live in the backend; it also needs the UI language (toasts, tray).
+  const lang = useLang();
+  useEffect(() => { void loadSettings(); }, []);
+  useEffect(() => { pushLang(lang).catch(() => {}); }, [lang]);
+
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     let alive = true;
+    /** Real exit (window close without tray, or "Quit" in the tray menu). */
+    const exitApp = () => {
+      if (!confirmClose(allTerminalIds(), snapRef.current.sessions)) return;
+      allTerminalIds().forEach((id) => { void closeTerminal(id); });
+      // Destroy explicitly so a rejected destroy is logged, not swallowed.
+      getCurrentWindow().destroy().catch((err) => console.error("Pencere kapatılamadı:", err));
+    };
+    const unlistens: Promise<() => void>[] = [onTrayQuit(exitApp)];
     try {
-      getCurrentWindow()
-        .onCloseRequested((e) => {
-          // Destroy explicitly so a rejected destroy is logged, not swallowed.
-          e.preventDefault();
-          if (!confirmClose(allTerminalIds(), snapRef.current.sessions)) return;
-          allTerminalIds().forEach((id) => { void closeTerminal(id); });
-          getCurrentWindow().destroy().catch((err) => console.error("Pencere kapatılamadı:", err));
-        })
-        .then((u) => { if (alive) unlisten = u; else u(); })
-        .catch(() => {});
+      unlistens.push(getCurrentWindow().onCloseRequested((e) => {
+        e.preventDefault();
+        if (!currentSettings()?.closeToTray) return exitApp();
+        hideToTray().catch((err) => { console.error("Tepsiye küçültülemedi:", err); exitApp(); });
+      }));
     } catch { /* not running inside Tauri */ }
+    const all = Promise.all(unlistens);
+    all.then((us) => { if (alive) unlisten = () => us.forEach((u) => u()); else us.forEach((u) => u()); })
+      .catch(() => {});
+    return () => { alive = false; unlisten?.(); };
+  }, []);
+
+  // Tray menu and toast clicks open a session's detail or the dashboard.
+  useEffect(() => {
+    let alive = true;
+    let unlisten: (() => void) | undefined;
+    onNavigate((id) => setView(id ? { session: id } : "dashboard"))
+      .then((u) => { if (alive) unlisten = u; else u(); })
+      .catch(() => {});
     return () => { alive = false; unlisten?.(); };
   }, []);
 
@@ -86,6 +110,11 @@ export default function App() {
   });
 
   const selectedId = typeof view === "object" && "session" in view ? view.session : null;
+  // The session on screen (detail, or the Claude session inside the shown
+  // terminal): the backend holds back its notifications while focused.
+  const termEntry = terminals.find((t) => t.id === termId);
+  const focusId = selectedId ?? (termEntry ? sessionsIn(termEntry, snapshot.sessions)[0]?.sessionId ?? null : null);
+  useEffect(() => { setFocusContext(focusId).catch(() => {}); }, [focusId]);
 
   let page;
   if (view === "dashboard") {
@@ -94,6 +123,8 @@ export default function App() {
   } else if (view === "history") {
     page = <History onOpen={(id) => setView({ session: id })} onResume={onResume}
       onTerminal={(id) => setView({ terminal: id })} />;
+  } else if (view === "settings") {
+    page = <SettingsPage />;
   } else if ("session" in view) {
     page = <SessionDetailPage key={view.session} sessionId={view.session}
       live={snapshot.sessions.some((s) => s.sessionId === view.session)} onResume={onResume}
