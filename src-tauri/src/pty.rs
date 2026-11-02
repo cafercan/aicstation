@@ -4,6 +4,7 @@
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use serde::Serialize;
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 
@@ -52,6 +53,20 @@ fn unknown(id: u32) -> String {
 
 fn poisoned<T>(_: T) -> String {
     "iç kilit hatası".to_string()
+}
+
+/// The child's environment: this process's environment minus the markers a
+/// parent Claude Code session sets (`CLAUDE_CODE_*`, `CLAUDECODE`,
+/// `CLAUDE_SESSION_ID`, `CLAUDE_PID`; names compared case-insensitively as on
+/// Windows). Inherited, they make `claude` in the terminal act as a child of
+/// that session (no transcript, wrong session id). Everything else is kept,
+/// including the user's own NO_COLOR / FORCE_COLOR.
+pub fn child_env(vars: impl IntoIterator<Item = (OsString, OsString)>) -> Vec<(OsString, OsString)> {
+    fn is_marker(key: &OsString) -> bool {
+        let k = key.to_string_lossy().to_ascii_uppercase();
+        k.starts_with("CLAUDE_CODE_") || matches!(k.as_str(), "CLAUDECODE" | "CLAUDE_SESSION_ID" | "CLAUDE_PID")
+    }
+    vars.into_iter().filter(|(k, _)| !is_marker(k)).collect()
 }
 
 impl PtyManager {
@@ -117,6 +132,10 @@ impl PtyManager {
             g.next_id += 1;
             g.next_id
         };
+        cmd.env_clear();
+        for (k, v) in child_env(std::env::vars_os()) {
+            cmd.env(k, v);
+        }
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
 
@@ -228,6 +247,7 @@ impl PtyManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsString;
     use std::sync::mpsc;
     use std::time::Duration;
 
@@ -385,6 +405,78 @@ mod tests {
         rx.recv_timeout(T).expect("orphaned terminal must exit");
         assert!(m.list().is_empty());
         assert!(m.kill(info.id).is_err());
+    }
+
+    fn kv(pairs: &[(&str, &str)]) -> Vec<(OsString, OsString)> {
+        pairs.iter().map(|(k, v)| (OsString::from(k), OsString::from(v))).collect()
+    }
+
+    #[test]
+    fn child_env_drops_claude_session_markers_only() {
+        let input = kv(&[
+            ("PATH", r"C:\Windows"),
+            ("CLAUDE_CODE_CHILD_SESSION", "1"),
+            ("claude_code_session_id", "x"),
+            ("Claude_Code_Entrypoint", "cli"),
+            ("CLAUDECODE", "1"),
+            ("ClaudeCode", "1"),
+            ("CLAUDE_SESSION_ID", "x"),
+            ("CLAUDE_PID", "42"),
+            ("claude_pid", "42"),
+            ("CLAUDE_CONFIG_DIR", r"D:\cfg"),
+            ("CLAUDE_EFFORT", "high"),
+            ("CLAUDECODE_X", "keep"),
+            ("NO_COLOR", "1"),
+            ("FORCE_COLOR", "1"),
+            ("USERPROFILE", r"C:\Users\u"),
+        ]);
+        let kept: Vec<String> =
+            child_env(input).into_iter().map(|(k, _)| k.to_string_lossy().into_owned()).collect();
+        assert_eq!(
+            kept,
+            vec!["PATH", "CLAUDE_CONFIG_DIR", "CLAUDE_EFFORT", "CLAUDECODE_X", "NO_COLOR", "FORCE_COLOR", "USERPROFILE"]
+        );
+    }
+
+    #[test]
+    fn spawned_child_does_not_see_claude_markers() {
+        // Set in this process; the child must not inherit it.
+        std::env::set_var("CLAUDE_CODE_PANO_TEST_MARKER", "sizdi");
+        let m = PtyManager::new();
+        let (tx, rx) = mpsc::channel();
+        let tx2 = tx.clone();
+        let info = m
+            .spawn_cmd(
+                "cmd.exe",
+                &["/c", "echo [%CLAUDE_CODE_PANO_TEST_MARKER%]"],
+                80,
+                24,
+                move |b| tx.send(Ev::Out(b.to_vec())).is_ok(),
+                move |c| {
+                    let _ = tx2.send(Ev::Exit(c));
+                },
+            )
+            .unwrap();
+        let text = collect_output(&m, info.id, &rx);
+        assert!(!text.contains("sizdi"), "marker leaked: {text:?}");
+        assert!(text.contains("[%CLAUDE_CODE_PANO_TEST_MARKER%]"), "output: {text:?}");
+    }
+
+    /// Output until exit, answering ConPTY's cursor-position query.
+    fn collect_output(m: &PtyManager, id: u32, rx: &mpsc::Receiver<Ev>) -> String {
+        let mut text = String::new();
+        loop {
+            match rx.recv_timeout(T).expect("timed out") {
+                Ev::Out(b) => {
+                    text.push_str(&String::from_utf8_lossy(&b));
+                    if text.contains("\x1b[6n") {
+                        text = text.replace("\x1b[6n", "");
+                        let _ = m.write(id, "\x1b[1;1R");
+                    }
+                }
+                Ev::Exit(_) => return text,
+            }
+        }
     }
 
     #[test]
