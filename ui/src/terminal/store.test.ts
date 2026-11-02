@@ -17,19 +17,24 @@ let dataCb: (d: string) => void = () => {};
 vi.mock("@xterm/xterm", () => ({
   Terminal: class {
     cols = 80; rows = 24;
-    constructor(public opts: unknown) {}
+    addons: unknown[] = [];
+    unicode = { activeVersion: "6" };
+    options: Record<string, unknown>;
+    constructor(public opts: Record<string, unknown>) { this.options = { ...opts }; }
     onData(cb: (d: string) => void) { dataCb = cb; return { dispose() {} }; }
     write(d: unknown) { writes.push(d); }
     dispose() {}
-    loadAddon() {}
+    loadAddon(a: unknown) { this.addons.push(a); }
     open() {}
   },
 }));
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: class { fit() {} } }));
+vi.mock("@xterm/addon-unicode11", () => ({ Unicode11Addon: class { kind = "unicode11"; } }));
+vi.mock("@xterm/addon-search", () => ({ SearchAddon: class { kind = "search"; } }));
 
-import { ubuntuTheme, terminalFont } from "./theme";
+import { ubuntuTheme, terminalFont, renderOptions } from "./theme";
 import {
-  confirmClose, getTerminals, killOrphans, openTerminal, resetTerminals, terminalForPid, terminalName,
+  confirmClose, getTerminals, killOrphans, openTerminal, resetTerminals, setFontSize, terminalForPid, terminalName,
 } from "./store";
 import type { SessionCard } from "../api";
 
@@ -58,7 +63,39 @@ test("tema spec değerleriyle birebir", () => {
     brightBlue: "#8FBEFF", brightMagenta: "#AD7FA8", brightCyan: "#34E2E2", brightWhite: "#EEEEEC",
   });
   expect(Object.keys(ubuntuTheme)).toHaveLength(20);
-  expect(terminalFont).toEqual({ fontFamily: "Consolas", fontSize: 13 });
+  expect(terminalFont).toEqual({
+    fontFamily: '"Cascadia Mono", "Cascadia Code", Consolas, monospace', fontSize: 13,
+  });
+});
+
+test("render ayarları: hücre ızgarası sıkı, renkler değiştirilmez", () => {
+  expect(renderOptions).toEqual({
+    customGlyphs: true, lineHeight: 1, letterSpacing: 0, fontWeight: "normal", fontWeightBold: "bold",
+    drawBoldTextInBrightColors: false, minimumContrastRatio: 1, allowTransparency: false,
+  });
+});
+
+test("xterm seçenekleri: 10.000 satır geçmiş, unicode 11 genişlikleri, arama eklentisi", async () => {
+  const t = await openTerminal();
+  const term = t.term as unknown as {
+    opts: Record<string, unknown>; unicode: { activeVersion: string }; addons: { kind?: string }[];
+  };
+  expect(term.opts).toMatchObject({
+    ...terminalFont, ...renderOptions, theme: ubuntuTheme, scrollback: 10000, allowProposedApi: true,
+  });
+  expect(term.unicode.activeVersion).toBe("11");
+  expect(term.addons.map((a) => a.kind).filter(Boolean)).toEqual(["unicode11", "search"]);
+  expect((t.search as unknown as { kind: string }).kind).toBe("search");
+});
+
+test("setFontSize: 8–32 aralığında uygular, yeniden sığdırır ve pty_resize gönderir", async () => {
+  const t = await openTerminal();
+  const opts = (t.term as unknown as { options: { fontSize: number } }).options;
+  expect(setFontSize(t, 40)).toBe(32);
+  expect(opts.fontSize).toBe(32);
+  expect(invoke).toHaveBeenCalledWith("pty_resize", { id: 7, cols: 80, rows: 24 });
+  expect(setFontSize(t, 2)).toBe(8);
+  expect(opts.fontSize).toBe(8);
 });
 
 test("terminal adı: içindeki oturumun adı, yoksa \"PowerShell N\"", async () => {

@@ -24,5 +24,27 @@ export const ubuntuTheme: ITheme = {
   brightWhite: "#EEEEEC",
 };
 
-/** Spec says 10pt (Windows Terminal), which is 13px in CSS. */
-export const terminalFont = { fontFamily: "Consolas", fontSize: 13 } as const;
+/**
+ * Spec says 10pt (Windows Terminal), which is 13px in CSS. Cascadia ships
+ * with Windows Terminal (local font, no web font); Consolas is the fallback.
+ */
+export const terminalFont = {
+  fontFamily: '"Cascadia Mono", "Cascadia Code", Consolas, monospace',
+  fontSize: 13,
+} as const;
+
+/**
+ * Cell-exact rendering for TUIs such as Claude Code's banner: xterm draws
+ * box-drawing/block characters itself (customGlyphs, WebGL renderer), rows
+ * are exactly one cell high and colours are used as sent.
+ */
+export const renderOptions = {
+  customGlyphs: true,
+  lineHeight: 1,
+  letterSpacing: 0,
+  fontWeight: "normal",
+  fontWeightBold: "bold",
+  drawBoldTextInBrightColors: false,
+  minimumContrastRatio: 1,
+  allowTransparency: false,
+} as const;

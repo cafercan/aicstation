@@ -1,9 +1,12 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon } from "@xterm/addon-search";
+import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { Terminal } from "@xterm/xterm";
 import { useSyncExternalStore } from "react";
 import type { SessionCard } from "../api";
-import { ubuntuTheme, terminalFont } from "./theme";
+import { clampFontSize } from "./keys";
+import { renderOptions, ubuntuTheme, terminalFont } from "./theme";
 
 export interface TerminalEntry {
   id: number;
@@ -12,6 +15,7 @@ export interface TerminalEntry {
   n: number;
   term: Terminal;
   fit: FitAddon;
+  search: SearchAddon;
 }
 
 interface PtyInfo { id: number; pid: number }
@@ -69,11 +73,19 @@ let spawning = 0;
 
 export async function openTerminal(): Promise<TerminalEntry> {
   const term = new Terminal({
-    ...terminalFont, theme: ubuntuTheme, cursorBlink: true, scrollback: 5000,
+    ...terminalFont, ...renderOptions, theme: ubuntuTheme, cursorBlink: true, scrollback: 10000,
     linkHandler: NO_LINKS, windowsPty: { backend: "conpty" },
+    // term.unicode (width tables) is a proposed API in xterm 6.
+    allowProposedApi: true,
   });
   const fit = new FitAddon();
   term.loadAddon(fit);
+  // Unicode 11 widths: emoji/CJK/symbols in Claude Code's TUI take the same
+  // number of cells as in ConPTY, so the right edge of boxes lines up.
+  term.loadAddon(new Unicode11Addon());
+  term.unicode.activeVersion = "11";
+  const search = new SearchAddon();
+  term.loadAddon(search);
 
   const onOutput = new Channel<number[]>();
   const onExit = new Channel<number>();
@@ -102,7 +114,7 @@ export async function openTerminal(): Promise<TerminalEntry> {
   id = info.id;
   for (const d of queued.splice(0)) send(d);
 
-  const entry: TerminalEntry = { id, pid: info.pid, n: ++counter, term, fit };
+  const entry: TerminalEntry = { id, pid: info.pid, n: ++counter, term, fit, search };
   terminals = [...terminals, entry];
   emit();
   // The shell may have exited before pty_spawn resolved.
@@ -113,6 +125,14 @@ export async function openTerminal(): Promise<TerminalEntry> {
 export function resizeTerminal(t: TerminalEntry): void {
   try { t.fit.fit(); } catch { return; }
   invoke("pty_resize", { id: t.id, cols: t.term.cols, rows: t.term.rows }).catch(() => {});
+}
+
+/** Applies a font size (clamped to 8–32), refits and resizes the PTY. */
+export function setFontSize(t: TerminalEntry, size: number): number {
+  const n = clampFontSize(size);
+  t.term.options.fontSize = n;
+  resizeTerminal(t);
+  return n;
 }
 
 export async function closeTerminal(id: number): Promise<void> {
