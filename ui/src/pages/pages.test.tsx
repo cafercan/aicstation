@@ -389,3 +389,31 @@ test("Geçmiş Azerbaycanca: başlıklar ve tarih yerel ayarla", async () => {
   expect(within(trA).getByText(new Date(0).toLocaleString("az-Latn-AZ"))).toBeTruthy();
   expect(screen.getByLabelText("Qovluq filtri")).toBeTruthy();
 });
+
+test("devam ettiren terminal açıksa: ayrıntıda uyarı ve Sekmeye git o terminale geçer", async () => {
+  invoke.mockResolvedValue(closed());
+  const onTerminal = vi.fn();
+  const onResume = vi.fn().mockRejectedValueOnce("session_resume_terminal_open:5");
+  render(<SessionDetailPage sessionId="s1" onBack={() => {}} onResume={onResume} onTerminal={onTerminal} />);
+  fireEvent.click(await screen.findByText("▶ Devam et"));
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("Devam edilemedi: Bu oturum, onu devam ettiren terminalde hâlâ açık");
+  fireEvent.click(within(alert).getByRole("button", { name: "Sekmeye git" }));
+  expect(onTerminal).toHaveBeenCalledWith(5);
+});
+
+test("devam ettiren terminal açıksa: geçmiş satırında Sekmeye git o terminale geçer, satırı açmaz", async () => {
+  invoke.mockResolvedValue({ rows: [row("a", "C:/a", true)], todayCost: 0, todayComplete: true, indexing: false });
+  const onOpen = vi.fn();
+  const onTerminal = vi.fn();
+  const onResume = vi.fn().mockRejectedValueOnce("session_resume_terminal_open:9");
+  render(<History onOpen={onOpen} onResume={onResume} onTerminal={onTerminal} />);
+  const tr = (await screen.findByText("ad-a")).closest("tr")!;
+  fireEvent.click(within(tr).getByText("▶ Devam et"));
+  const alert = await within(tr).findByRole("alert");
+  expect(alert.textContent).toContain("Bu oturum, onu devam ettiren terminalde hâlâ açık");
+  expect(alert.textContent).not.toContain(":9");
+  fireEvent.click(within(alert).getByRole("button", { name: "Sekmeye git" }));
+  expect(onTerminal).toHaveBeenCalledWith(9);
+  expect(onOpen).not.toHaveBeenCalled();
+});

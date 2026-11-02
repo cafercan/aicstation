@@ -8,6 +8,9 @@
 
 pub const SESSION_INVALID: &str = "session_invalid";
 pub const SESSION_LIVE: &str = "session_live";
+/// `session_resume_terminal_open[:<pty id>]`: claude runs (or is starting) in
+/// the app terminal that resumed the session; the UI offers to switch to it.
+pub const SESSION_RESUME_TERMINAL_OPEN: &str = "session_resume_terminal_open";
 pub const SESSION_UNKNOWN: &str = "session_unknown";
 pub const SESSION_NOT_LIVE: &str = "session_not_live";
 pub const SESSION_FOLDER: &str = "session_folder";
@@ -47,7 +50,7 @@ pub fn with(code: &str, detail: impl std::fmt::Display) -> String {
 
 #[cfg(test)]
 pub const ALL: &[&str] = &[
-    SESSION_INVALID, SESSION_LIVE, SESSION_UNKNOWN, SESSION_NOT_LIVE, SESSION_FOLDER,
+    SESSION_INVALID, SESSION_LIVE, SESSION_RESUME_TERMINAL_OPEN, SESSION_UNKNOWN, SESSION_NOT_LIVE, SESSION_FOLDER,
     FOLDER_UNKNOWN, FOLDER_NETWORK, FOLDER_INVALID, FOLDER_RELATIVE, FOLDER_MISSING, FOLDER_OPEN_FAILED,
     PTY_UNKNOWN, PTY_LIMIT, PTY_TOO_LARGE, PTY_SPAWN_FAILED, PTY_IO, INTERNAL_LOCK, TASK_FAILED,
     WT_NOT_FOUND, WT_OPEN_FAILED, WT_HOME_INVALID, WT_HOME_MISSING, WT_POWERSHELL_INVALID,

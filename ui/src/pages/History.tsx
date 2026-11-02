@@ -1,20 +1,23 @@
 import { useEffect, useState } from "react";
 import { getHistory, type HistoryRow, type HistoryView } from "../api";
 import { fmtCost, fmtElapsed } from "../format";
-import { errorText, locale, useT } from "../i18n";
+import { resumeError } from "../gotoTab";
+import { locale, useT } from "../i18n";
 
 interface Props {
   onOpen: (sessionId: string) => void;
   /** "▶ Resume": new terminal resuming the session; a rejection is shown on the row. */
   onResume?: (sessionId: string, name: string) => Promise<unknown>;
+  /** "Go to tab" when the session still runs in the app terminal that resumed it. */
+  onTerminal?: (id: number) => void;
 }
 
 const rowCwd = (r: HistoryRow) => r.summary?.cwd ?? r.cwd ?? "";
 
-export default function History({ onOpen, onResume }: Props) {
+export default function History({ onOpen, onResume, onTerminal }: Props) {
   const t = useT();
   const [view, setView] = useState<HistoryView | null>(null);
-  const [rowErr, setRowErr] = useState<{ id: string; msg: string } | null>(null);
+  const [rowErr, setRowErr] = useState<{ id: string; msg: string; terminal: number | null } | null>(null);
   /** Rows whose resume call is still pending (button disabled). */
   const [pending, setPending] = useState<Set<string>>(() => new Set());
   const [folder, setFolder] = useState("");
@@ -76,11 +79,24 @@ export default function History({ onOpen, onResume }: Props) {
                         setRowErr(null);
                         setPending((p) => new Set(p).add(r.sessionId));
                         onResume(r.sessionId, name)
-                          .catch((err) => setRowErr({ id: r.sessionId, msg: errorText(err) }))
+                          .catch((err) => {
+                            const e = resumeError(err);
+                            setRowErr({ id: r.sessionId, msg: e.text, terminal: e.terminal });
+                          })
                           .finally(() => setPending((p) => { const n = new Set(p); n.delete(r.sessionId); return n; }));
                       }}>{t("hist.resume")}</button>
                     )}
-                    {rowErr?.id === r.sessionId && <div className="r" role="alert">{rowErr.msg}</div>}
+                    {rowErr?.id === r.sessionId && (
+                      <div className="r" role="alert">
+                        {rowErr.msg}
+                        {rowErr.terminal !== null && onTerminal && (
+                          <>{" "}<button className="btn" onClick={(e) => {
+                            e.stopPropagation();
+                            onTerminal(rowErr.terminal!);
+                          }}>{t("detail.goto")}</button></>
+                        )}
+                      </div>
+                    )}
                   </td>
                 </tr>
               );

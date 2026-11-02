@@ -3,7 +3,7 @@ import { expect, test, vi } from "vitest";
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...a: unknown[]) => invoke(...a) }));
 
-import { goToTab, gotoTarget } from "./gotoTab";
+import { goToTab, gotoTarget, resumeError } from "./gotoTab";
 import { setLang } from "./i18n";
 
 test("gotoTarget: gömülü terminal önce, sonra Windows Terminal, yoksa null", () => {
@@ -32,4 +32,20 @@ test("goToTab: gömülü onTerminal, WT focus_session_tab notu, hata metni", asy
   invoke.mockRejectedValueOnce("tab_not_found");
   await expect(goToTab("s1", { kind: "windowsTerminal" }, onTerminal)).rejects.toThrow("Could not go to tab: Tab not found");
   expect(await goToTab("s1", null, onTerminal)).toBeNull();
+});
+
+test("resumeError: devam ettiren terminal açıksa metin + terminal kimliği; diğer hatalar düz metin", () => {
+  setLang("tr");
+  expect(resumeError("session_resume_terminal_open:5")).toEqual({
+    text: "Bu oturum, onu devam ettiren terminalde hâlâ açık", terminal: 5,
+  });
+  // Spawn still in flight: no terminal to switch to yet.
+  expect(resumeError("session_resume_terminal_open")).toEqual({
+    text: "Bu oturum, onu devam ettiren terminalde hâlâ açık", terminal: null,
+  });
+  expect(resumeError("session_resume_terminal_open:x")).toMatchObject({ terminal: null });
+  expect(resumeError("session_live")).toEqual({ text: "Bu oturum zaten açık", terminal: null });
+  setLang("en");
+  expect(resumeError("session_resume_terminal_open:5").text).toBe("This session is still open in the terminal that resumed it");
+  setLang("tr");
 });

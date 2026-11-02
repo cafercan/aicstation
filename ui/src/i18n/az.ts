@@ -114,6 +114,7 @@ export const az: Dict = {
 
   "err.session_invalid": "Yanlış sessiya identifikatoru",
   "err.session_live": "Bu sessiya artıq açıqdır",
+  "err.session_resume_terminal_open": "Bu sessiya onu davam etdirən terminalda hələ açıqdır",
   "err.session_unknown": "Naməlum sessiya və ya qovluğu yoxdur",
   "err.session_not_live": "Sessiya açıq deyil",
   "err.session_folder": "Sessiyanın qovluğundan istifadə etmək olmur",

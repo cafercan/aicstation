@@ -114,6 +114,7 @@ export const en: Dict = {
 
   "err.session_invalid": "Invalid session id",
   "err.session_live": "This session is already open",
+  "err.session_resume_terminal_open": "This session is still open in the terminal that resumed it",
   "err.session_unknown": "Unknown session, or it has no folder",
   "err.session_not_live": "The session is not running",
   "err.session_folder": "The session's folder cannot be used",

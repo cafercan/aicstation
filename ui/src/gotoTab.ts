@@ -15,6 +15,21 @@ export function gotoTarget(card: Pick<SessionCard, "pid" | "hostKind">, terminal
   return null;
 }
 
+const RESUME_TERMINAL_OPEN = /^session_resume_terminal_open(?::(\d+))?$/;
+
+/**
+ * Text for a rejected resume, plus the app terminal to offer "Go to tab" for
+ * when the session is still running in the terminal that resumed it
+ * (`session_resume_terminal_open:<terminal id>`; no id while that spawn is
+ * still in flight).
+ */
+export function resumeError(e: unknown): { text: string; terminal: number | null } {
+  const s = typeof e === "string" ? e : e instanceof Error ? e.message : String(e);
+  const m = RESUME_TERMINAL_OPEN.exec(s);
+  if (!m) return { text: errorText(e), terminal: null };
+  return { text: t("err.session_resume_terminal_open"), terminal: m[1] === undefined ? null : Number(m[1]) };
+}
+
 /**
  * Switches to the embedded terminal or asks the backend (session id only) to
  * focus the Windows Terminal tab. Resolves to a note code (see errorText) or

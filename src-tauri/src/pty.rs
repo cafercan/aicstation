@@ -9,6 +9,7 @@ use std::ffi::{OsStr, OsString};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 pub const MAX_PTYS: usize = 32;
 pub const MAX_WRITE: usize = 64 * 1024;
@@ -38,9 +39,74 @@ struct Inner {
 #[derive(Default)]
 pub struct PtyManager {
     inner: Arc<Mutex<Inner>>,
-    /// Session ids resumed by a terminal that has not exited yet: a second
-    /// resume before the new `claude` registers would run the session twice.
-    resumed: Arc<Mutex<HashSet<String>>>,
+    /// Session ids held by the terminal that resumed them (see `Resumed`).
+    resumed: Arc<Mutex<Resumed>>,
+}
+
+/// How long a resumed `claude` may take to appear in the session registry
+/// before its hold is dropped (it failed to start).
+pub const RESUME_START_GRACE: Duration = Duration::from_secs(30);
+
+struct ResumeHold {
+    /// Identifies this hold, so an exiting terminal never drops a newer one.
+    token: u64,
+    /// The terminal, once the spawn succeeded.
+    pty: Option<u32>,
+    since: Instant,
+    seen_live: bool,
+}
+
+/// Sessions resumed by an app terminal. A second resume before the new
+/// `claude` registers would run the session twice, so the id is held from
+/// the spawn until `claude` has been seen live and then left the live set
+/// (the -NoExit shell stays open after it), or until it failed to appear
+/// within `RESUME_START_GRACE`, or until the terminal exits.
+#[derive(Default)]
+struct Resumed {
+    next: u64,
+    held: HashMap<String, ResumeHold>,
+}
+
+impl Resumed {
+    /// Atomic insert-or-refuse. Err carries the holding terminal (None while
+    /// its spawn is still in flight).
+    fn try_hold(&mut self, sid: &str, now: Instant) -> Result<u64, Option<u32>> {
+        if let Some(h) = self.held.get(sid) {
+            return Err(h.pty);
+        }
+        self.next += 1;
+        self.held.insert(sid.to_string(), ResumeHold { token: self.next, pty: None, since: now, seen_live: false });
+        Ok(self.next)
+    }
+
+    fn attach(&mut self, sid: &str, token: u64, pty: u32) {
+        if let Some(h) = self.held.get_mut(sid).filter(|h| h.token == token) {
+            h.pty = Some(pty);
+        }
+    }
+
+    fn release(&mut self, sid: &str, token: u64) {
+        if self.held.get(sid).is_some_and(|h| h.token == token) {
+            self.held.remove(sid);
+        }
+    }
+
+    /// One snapshot's live session ids.
+    fn observe(&mut self, live: &HashSet<String>, now: Instant) {
+        self.held.retain(|sid, h| {
+            if live.contains(sid) {
+                h.seen_live = true;
+                true
+            } else {
+                !h.seen_live && now.saturating_duration_since(h.since) < RESUME_START_GRACE
+            }
+        });
+    }
+
+    #[cfg(test)]
+    fn holder(&self, sid: &str) -> Option<u32> {
+        self.held.get(sid).and_then(|h| h.pty)
+    }
 }
 
 fn size(cols: u16, rows: u16) -> PtySize {
@@ -62,6 +128,13 @@ fn spawn_failed(e: impl std::fmt::Display) -> String {
 
 fn io_failed(e: impl std::fmt::Display) -> String {
     crate::errors::with(crate::errors::PTY_IO, e)
+}
+
+fn resume_terminal_open(pty: Option<u32>) -> String {
+    match pty {
+        Some(id) => crate::errors::with(crate::errors::SESSION_RESUME_TERMINAL_OPEN, id),
+        None => crate::errors::SESSION_RESUME_TERMINAL_OPEN.into(),
+    }
 }
 
 fn poisoned<T>(_: T) -> String {
@@ -181,8 +254,8 @@ impl PtyManager {
         self.spawn_resume_in(powershell_exe().as_os_str(), &args, cwd, session_id, cols, rows, on_output, on_exit)
     }
 
-    /// `spawn_in` guarded by the resumed-session set: refused while another
-    /// terminal resuming `session_id` is alive; the id is released on exit.
+    /// `spawn_in` guarded by the resumed-session holds (see `Resumed`):
+    /// refused with `session_resume_terminal_open[:<terminal>]` while held.
     #[allow(clippy::too_many_arguments)]
     pub fn spawn_resume_in(
         &self,
@@ -195,15 +268,18 @@ impl PtyManager {
         on_output: impl Fn(&[u8]) -> bool + Send + 'static,
         on_exit: impl FnOnce(i32) + Send + 'static,
     ) -> Result<PtyInfo, String> {
-        if !self.resumed.lock().map_err(poisoned)?.insert(session_id.to_string()) {
-            return Err(crate::errors::SESSION_LIVE.into());
-        }
+        let token = self
+            .resumed
+            .lock()
+            .map_err(poisoned)?
+            .try_hold(session_id, Instant::now())
+            .map_err(resume_terminal_open)?;
         let release = {
             let resumed = Arc::clone(&self.resumed);
             let sid = session_id.to_string();
             move || {
                 if let Ok(mut r) = resumed.lock() {
-                    r.remove(&sid);
+                    r.release(&sid, token);
                 }
             }
         };
@@ -212,10 +288,42 @@ impl PtyManager {
             release_on_exit();
             on_exit(code);
         });
-        if res.is_err() {
-            release();
+        match &res {
+            Ok(info) => {
+                if let Ok(mut r) = self.resumed.lock() {
+                    r.attach(session_id, token, info.id);
+                }
+            }
+            Err(_) => release(),
         }
         res
+    }
+
+    /// The app terminal holding `session_id` (claude runs or starts there).
+    #[cfg(test)]
+    pub fn resume_terminal(&self, session_id: &str) -> Option<u32> {
+        self.resumed.lock().ok()?.holder(session_id)
+    }
+
+    /// `Err` for a resume of a session held by one of our terminals.
+    pub fn check_resume_terminal(&self, session_id: &str) -> Result<(), String> {
+        let held = self.resumed.lock().map_err(poisoned)?.held.get(session_id).map(|h| h.pty);
+        match held {
+            Some(pty) => Err(resume_terminal_open(pty)),
+            None => Ok(()),
+        }
+    }
+
+    /// Feeds one snapshot's live session ids to the resume holds (called by
+    /// the snapshot thread after every refresh).
+    pub fn observe_live(&self, live: &HashSet<String>) {
+        self.observe_live_at(live, Instant::now());
+    }
+
+    pub fn observe_live_at(&self, live: &HashSet<String>, now: Instant) {
+        if let Ok(mut r) = self.resumed.lock() {
+            r.observe(live, now);
+        }
     }
 
     /// `program args` in `cwd`; shared by `spawn_resume` and tests (stub program).
@@ -386,7 +494,7 @@ mod tests {
     use std::collections::HashSet;
     use std::ffi::OsString;
     use std::sync::mpsc;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     const T: Duration = Duration::from_secs(20);
 
@@ -685,6 +793,70 @@ mod tests {
         }
     }
 
+    const A: &str = "11111111-2222-4333-8444-555555555555";
+    const B: &str = "aaaaaaaa-2222-4333-8444-555555555555";
+
+    fn live(ids: &[&str]) -> HashSet<String> {
+        ids.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn resume_guard_is_insert_or_refuse() {
+        let t0 = Instant::now();
+        let mut r = Resumed::default();
+        let tok = r.try_hold(A, t0).unwrap();
+        assert_eq!(r.try_hold(A, t0), Err(None), "spawn still in flight: no terminal yet");
+        r.attach(A, tok, 7);
+        assert_eq!(r.try_hold(A, t0), Err(Some(7)));
+        assert_eq!(r.holder(A), Some(7));
+        assert!(r.try_hold(B, t0).is_ok(), "another session is not blocked");
+    }
+
+    #[test]
+    fn resume_guard_released_after_the_session_was_live_and_left() {
+        let t0 = Instant::now();
+        let mut r = Resumed::default();
+        let tok = r.try_hold(A, t0).unwrap();
+        r.attach(A, tok, 1);
+        r.observe(&live(&[]), t0 + Duration::from_secs(2));
+        assert_eq!(r.holder(A), Some(1), "not seen live yet: still starting");
+        r.observe(&live(&[A]), t0 + Duration::from_secs(3));
+        r.observe(&live(&[A]), t0 + Duration::from_secs(600));
+        assert_eq!(r.holder(A), Some(1), "live: held however long it runs");
+        // The user quit claude; PowerShell (-NoExit) keeps the terminal open.
+        r.observe(&live(&[]), t0 + Duration::from_secs(601));
+        assert_eq!(r.holder(A), None);
+        assert!(r.try_hold(A, t0 + Duration::from_secs(602)).is_ok());
+    }
+
+    #[test]
+    fn resume_guard_released_when_claude_never_shows_up() {
+        let t0 = Instant::now();
+        let mut r = Resumed::default();
+        let tok = r.try_hold(A, t0).unwrap();
+        r.attach(A, tok, 1);
+        r.observe(&live(&[]), t0 + RESUME_START_GRACE - Duration::from_millis(1));
+        assert_eq!(r.holder(A), Some(1));
+        r.observe(&live(&[]), t0 + RESUME_START_GRACE);
+        assert_eq!(r.holder(A), None, "claude failed to start");
+    }
+
+    #[test]
+    fn resume_guard_exit_releases_only_its_own_hold() {
+        let t0 = Instant::now();
+        let mut r = Resumed::default();
+        let old = r.try_hold(A, t0).unwrap();
+        r.attach(A, old, 1);
+        r.observe(&live(&[A]), t0);
+        r.observe(&live(&[]), t0); // released while terminal 1 stays open
+        let new = r.try_hold(A, t0).unwrap();
+        r.attach(A, new, 2);
+        r.release(A, old); // terminal 1 is closed later
+        assert_eq!(r.holder(A), Some(2), "the newer terminal keeps its hold");
+        r.release(A, new);
+        assert_eq!(r.holder(A), None);
+    }
+
     #[test]
     fn a_session_is_resumed_by_one_live_terminal_at_a_time() {
         const SID: &str = "11111111-2222-4333-8444-555555555555";
@@ -698,7 +870,11 @@ mod tests {
             })
         };
         let first = start(tx.clone()).unwrap();
-        assert_eq!(start(tx.clone()).unwrap_err(), crate::errors::SESSION_LIVE);
+        assert_eq!(m.resume_terminal(SID), Some(first.id));
+        assert_eq!(
+            start(tx.clone()).unwrap_err(),
+            format!("{}:{}", crate::errors::SESSION_RESUME_TERMINAL_OPEN, first.id)
+        );
         // Another session is not blocked.
         let other = m
             .spawn_resume_in(OsStr::new("cmd.exe"), &args, &dir, "aaaaaaaa-2222-4333-8444-555555555555", 80, 24, |_| true, |_| {})
@@ -711,7 +887,25 @@ mod tests {
         // A failed spawn does not leave the id behind.
         let bad = m.spawn_resume_in(OsStr::new("yok-boyle-bir-program.exe"), &args, &dir, "bbbbbbbb-2222-4333-8444-555555555555", 80, 24, |_| true, |_| {});
         assert!(bad.is_err());
-        assert!(!m.resumed.lock().unwrap().contains("bbbbbbbb-2222-4333-8444-555555555555"));
+        assert_eq!(m.resume_terminal("bbbbbbbb-2222-4333-8444-555555555555"), None);
+    }
+
+    #[test]
+    fn resume_guard_follows_the_live_set_while_the_terminal_stays_open() {
+        const SID: &str = "cccccccc-2222-4333-8444-555555555555";
+        let m = PtyManager::new();
+        let dir = std::env::temp_dir();
+        let args = vec!["/k".to_string()];
+        let start = || m.spawn_resume_in(OsStr::new("cmd.exe"), &args, &dir, SID, 80, 24, |_| true, |_| {});
+        let first = start().unwrap();
+        m.observe_live_at(&live(&[SID]), Instant::now());
+        assert!(start().is_err(), "claude runs in the resume terminal");
+        m.observe_live_at(&live(&[]), Instant::now());
+        // claude quit; the -NoExit shell (terminal `first`) is still open.
+        assert!(m.list().iter().any(|p| p.id == first.id));
+        let second = start().expect("released once the session left the live set");
+        m.kill(first.id).unwrap();
+        m.kill(second.id).unwrap();
     }
 
     #[test]

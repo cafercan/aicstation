@@ -22,8 +22,11 @@ const INDEX_BUDGET: Duration = Duration::from_millis(50);
 const INDEX_IDLE: Duration = Duration::from_secs(1);
 const MAX_INDEX_PANICS: u32 = 3;
 
+/// Refreshes, lets the resume holds follow the live set, then emits.
 fn emit_snapshot(app: &tauri::AppHandle) {
     let snap = app.state::<AppState>().refresh();
+    let live: std::collections::HashSet<String> = snap.sessions.iter().map(|s| s.session_id.clone()).collect();
+    app.state::<pty::PtyManager>().observe_live(&live);
     let _ = app.emit("snapshot", snap);
 }
 

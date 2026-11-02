@@ -718,6 +718,8 @@ pub fn pty_spawn(
 
 /// New terminal resuming a closed session: the UI sends only the session id;
 /// folder and command line are derived here (see `AppState::resume_target`).
+/// A session still held by the terminal that resumed it is refused with
+/// `session_resume_terminal_open:<terminal>` before the generic live check.
 #[tauri::command(async)]
 pub fn pty_spawn_resume(
     app: tauri::State<'_, AppState>,
@@ -728,6 +730,7 @@ pub fn pty_spawn_resume(
     on_output: Channel<Vec<u8>>,
     on_exit: Channel<i32>,
 ) -> Result<PtyInfo, String> {
+    state.check_resume_terminal(&session_id)?;
     let (id, cwd) = app.resume_target(&session_id)?;
     state.spawn_resume(
         &cwd,

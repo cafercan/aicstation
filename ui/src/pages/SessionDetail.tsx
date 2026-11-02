@@ -3,7 +3,7 @@ import { getSessionDetail, onSnapshot, openFolder, type AgentNode, type SessionD
 import { fmtContext, fmtCost, fmtElapsed, fmtTokens, statusColor, statusKind, statusLabel } from "../format";
 import ClaudeMark from "../components/ClaudeMark";
 import { terminalForPid } from "../terminal/store";
-import { goToTab, gotoTarget } from "../gotoTab";
+import { goToTab, gotoTarget, resumeError } from "../gotoTab";
 import { errorText, locale, t, useT } from "../i18n";
 
 interface Props {
@@ -80,7 +80,7 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal, live 
   const [detail, setDetail] = useState<SessionDetail | null | undefined>(undefined);
   const [sel, setSel] = useState(MAIN);
   const [folderErr, setFolderErr] = useState<string | null>(null);
-  const [resumeErr, setResumeErr] = useState<string | null>(null);
+  const [resumeErr, setResumeErr] = useState<{ text: string; terminal: number | null } | null>(null);
   const [resuming, setResuming] = useState(false);
   const [gotoErr, setGotoErr] = useState<string | null>(null);
   const [gotoNote, setGotoNote] = useState<string | null>(null);
@@ -171,7 +171,10 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal, live 
               setResumeErr(null);
               setResuming(true);
               onResume(card.sessionId, card.name)
-                .catch((e) => setResumeErr(tx("detail.resumeFailed", { err: errorText(e) })))
+                .catch((e) => {
+                  const r = resumeError(e);
+                  setResumeErr({ text: tx("detail.resumeFailed", { err: r.text }), terminal: r.terminal });
+                })
                 .finally(() => setResuming(false));
             }}>{tx("detail.resume")}</button>
           )}
@@ -182,7 +185,14 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal, live 
         </div>
       </div>
       {folderErr && <div className="meta r" role="alert">{folderErr}</div>}
-      {resumeErr && <div className="meta r" role="alert">{resumeErr}</div>}
+      {resumeErr && (
+        <div className="meta r" role="alert">
+          {resumeErr.text}
+          {resumeErr.terminal !== null && onTerminal && (
+            <>{" "}<button className="btn" onClick={() => onTerminal(resumeErr.terminal!)}>{tx("detail.goto")}</button></>
+          )}
+        </div>
+      )}
       {gotoErr && <div className="meta r" role="alert">{gotoErr}</div>}
       {gotoNote && <div className="meta" role="status">{errorText(gotoNote)}</div>}
       <div className="meta">
