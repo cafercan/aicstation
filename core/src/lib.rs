@@ -9,3 +9,4 @@ pub mod agents;
 pub mod monitor;
 pub mod history;
 pub mod host;
+pub mod small_file;

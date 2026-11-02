@@ -1,5 +1,5 @@
 //! JSONL transcript line parsing and an incremental, read-only reader.
-use crate::model::{ToolCall, ToolState, Usage};
+use crate::model::{cap_display, cap_path, ToolCall, ToolState, Usage};
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 use std::fs::File;
@@ -131,8 +131,8 @@ pub fn parse_line(line: &str) -> Vec<Entry> {
             if let (Some(msg), Some(at)) = (v.get("message"), at) {
                 out.push(Entry::Assistant {
                     message_id: str_of(msg, "id").unwrap_or_default().to_string(),
-                    model: str_of(msg, "model").map(String::from),
-                    requested_model: str_of(&v, "requestedModel").map(String::from),
+                    model: str_of(msg, "model").map(cap_display),
+                    requested_model: str_of(&v, "requestedModel").map(cap_display),
                     usage: usage_of(msg),
                     tool_uses: tool_uses_of(msg, at),
                     at,
@@ -162,20 +162,20 @@ pub fn parse_line(line: &str) -> Vec<Entry> {
         }
         Some("custom-title") => {
             if let Some(t) = str_of(&v, "customTitle") {
-                out.push(Entry::Title(t.to_string()));
+                out.push(Entry::Title(cap_display(t)));
             }
         }
         Some("agent-name") => {
             if let Some(t) = str_of(&v, "agentName") {
-                out.push(Entry::Title(t.to_string()));
+                out.push(Entry::Title(cap_display(t)));
             }
         }
         _ => {}
     }
 
     if matches!(kind, Some("assistant" | "user" | "system" | "attachment")) {
-        let cwd = str_of(&v, "cwd").map(String::from);
-        let git_branch = str_of(&v, "gitBranch").map(String::from);
+        let cwd = str_of(&v, "cwd").and_then(cap_path);
+        let git_branch = str_of(&v, "gitBranch").map(cap_display);
         if cwd.is_some() || git_branch.is_some() {
             out.push(Entry::Meta { cwd, git_branch, at });
         }
@@ -350,6 +350,36 @@ mod tests {
     fn title_from_custom_title() {
         let e = parse_line(r#"{"type":"custom-title","customTitle":"Pusula","sessionId":"s"}"#);
         assert_eq!(e, vec![Entry::Title("Pusula".into())]);
+    }
+
+    #[test]
+    fn display_strings_are_capped_at_ingestion() {
+        use crate::model::MAX_DISPLAY;
+        let long = "t".repeat(5000);
+        let e = parse_line(&format!(r#"{{"type":"custom-title","customTitle":"{long}"}}"#));
+        assert_eq!(e, vec![Entry::Title("t".repeat(MAX_DISPLAY))]);
+        let e = parse_line(&format!(r#"{{"type":"agent-name","agentName":"{long}"}}"#));
+        assert_eq!(e, vec![Entry::Title("t".repeat(MAX_DISPLAY))]);
+        let l = format!(
+            r#"{{"type":"assistant","timestamp":"2026-11-02T07:12:52Z","gitBranch":"{long}","requestedModel":"{long}","message":{{"id":"m","model":"{long}","content":[]}}}}"#
+        );
+        let e = parse_line(&l);
+        let Entry::Assistant { model, requested_model, .. } = &e[0] else { panic!() };
+        assert_eq!(model.as_ref().unwrap().chars().count(), MAX_DISPLAY);
+        assert_eq!(requested_model.as_ref().unwrap().chars().count(), MAX_DISPLAY);
+        let Entry::Meta { git_branch, .. } = &e[1] else { panic!() };
+        assert_eq!(git_branch.as_ref().unwrap().chars().count(), MAX_DISPLAY);
+    }
+
+    #[test]
+    fn overlong_cwd_is_dropped_not_truncated() {
+        // A truncated path is a different (possibly existing) folder.
+        let long = format!(r"C:\\{}", "d".repeat(400));
+        let l = format!(r#"{{"type":"user","timestamp":"2026-11-02T07:12:52Z","cwd":"{long}","gitBranch":"main","message":{{"content":"x"}}}}"#);
+        let e = parse_line(&l);
+        assert!(matches!(&e[0], Entry::Meta { cwd: None, git_branch: Some(g), .. } if g == "main"));
+        let ok = r#"{"type":"user","timestamp":"2026-11-02T07:12:52Z","cwd":"C:\\demo","message":{"content":"x"}}"#;
+        assert!(matches!(&parse_line(ok)[0], Entry::Meta { cwd: Some(c), .. } if c == r"C:\demo"));
     }
 
     fn msg_line(i: usize) -> String {

@@ -7,12 +7,18 @@ use std::collections::{BTreeMap, HashSet, VecDeque};
 
 /// Maximum number of tool calls kept in memory.
 pub const MAX_TOOL_CALLS: usize = 50;
+/// Assistant message ids remembered for usage dedupe. Lines sharing an id are
+/// adjacent in a transcript, so a recent window is enough.
+pub const MAX_SEEN_IDS: usize = 1024;
 
 #[derive(Debug, Clone, Default, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionStats {
     pub title: Option<String>,
+    /// Last recorded top-level cwd (display).
     pub cwd: Option<String>,
+    /// First recorded top-level cwd: the session's project folder (resume).
+    pub first_cwd: Option<String>,
     pub git_branch: Option<String>,
     pub model: Option<String>,
     pub requested_model: Option<String>,
@@ -26,9 +32,27 @@ pub struct SessionStats {
     pub last_at: Option<DateTime<Utc>>,
     #[serde(skip)]
     seen_ids: HashSet<String>,
+    /// Insertion order of `seen_ids`; the oldest id is forgotten first.
+    #[serde(skip)]
+    seen_order: VecDeque<String>,
 }
 
 impl SessionStats {
+    /// True the first time `id` is seen within the recent window.
+    fn first_sight(&mut self, id: &str) -> bool {
+        if self.seen_ids.contains(id) {
+            return false;
+        }
+        self.seen_ids.insert(id.to_string());
+        self.seen_order.push_back(id.to_string());
+        while self.seen_order.len() > MAX_SEEN_IDS {
+            if let Some(old) = self.seen_order.pop_front() {
+                self.seen_ids.remove(&old);
+            }
+        }
+        true
+    }
+
     fn touch(&mut self, at: DateTime<Utc>) {
         if self.first_at.is_none_or(|f| at < f) {
             self.first_at = Some(at);
@@ -49,7 +73,7 @@ impl SessionStats {
                     self.requested_model = requested_model.clone();
                 }
                 // Empty ids are never a dedupe key: such lines are always counted.
-                let first_time = message_id.is_empty() || self.seen_ids.insert(message_id.clone());
+                let first_time = message_id.is_empty() || self.first_sight(message_id);
                 if let Some(u) = usage {
                     self.last_usage = Some(*u);
                     if first_time {
@@ -88,6 +112,9 @@ impl SessionStats {
             Entry::Title(t) => self.title = Some(t.clone()),
             Entry::Meta { cwd, git_branch, at } => {
                 if cwd.is_some() {
+                    if self.first_cwd.is_none() {
+                        self.first_cwd = cwd.clone();
+                    }
                     self.cwd = cwd.clone();
                 }
                 if git_branch.is_some() {
@@ -157,6 +184,33 @@ mod tests {
         s.apply(&asst("", "claude-opus-5-5", None, u, vec![], at(10, 1)));
         s.apply(&asst("", "claude-opus-5-5", None, u, vec![], at(10, 2)));
         assert_eq!(s.tokens.input, 30);
+    }
+
+    #[test]
+    fn seen_ids_are_bounded_to_a_recent_window() {
+        let mut s = SessionStats::default();
+        let u = usage(1, 0, 0, 0);
+        for i in 0..(MAX_SEEN_IDS * 3) {
+            s.apply(&asst(&format!("m{i}"), "claude-opus-5-5", None, u, vec![], at(10, 0)));
+        }
+        assert!(s.seen_ids.len() <= MAX_SEEN_IDS);
+        assert_eq!(s.tokens.input, (MAX_SEEN_IDS * 3) as u64);
+        // A repeat of a recent id is still deduplicated.
+        let last = format!("m{}", MAX_SEEN_IDS * 3 - 1);
+        s.apply(&asst(&last, "claude-opus-5-5", None, u, vec![], at(10, 0)));
+        assert_eq!(s.tokens.input, (MAX_SEEN_IDS * 3) as u64);
+    }
+
+    #[test]
+    fn first_cwd_is_kept_while_cwd_follows_the_last_line() {
+        let mut s = SessionStats::default();
+        let meta = |c: &str| Entry::Meta { cwd: Some(c.into()), git_branch: None, at: None };
+        s.apply(&Entry::Meta { cwd: None, git_branch: Some("main".into()), at: None });
+        assert_eq!(s.first_cwd, None);
+        s.apply(&meta(r"C:\demo\proj"));
+        s.apply(&meta(r"C:\demo\proj\other"));
+        assert_eq!(s.first_cwd.as_deref(), Some(r"C:\demo\proj"));
+        assert_eq!(s.cwd.as_deref(), Some(r"C:\demo\proj\other"));
     }
 
     #[test]

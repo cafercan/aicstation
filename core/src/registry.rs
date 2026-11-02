@@ -65,7 +65,7 @@ fn parse_status(s: Option<String>) -> SessionStatus {
         Some("busy") => SessionStatus::Busy,
         Some("waiting") => SessionStatus::Waiting,
         Some("idle") => SessionStatus::Idle,
-        Some(o) => SessionStatus::Other(o.to_string()),
+        Some(o) => SessionStatus::Other(crate::model::cap_display(o)),
         None => SessionStatus::Other(String::new()),
     }
 }
@@ -87,7 +87,7 @@ pub fn read_live_sessions(sessions_dir: &Path, probe: &dyn ProcessProbe) -> Vec<
         if !is_json {
             continue;
         }
-        let Ok(text) = std::fs::read_to_string(&path) else {
+        let Some(text) = crate::small_file::read_small_file(&path) else {
             continue;
         };
         let Ok(raw) = serde_json::from_str::<RawSession>(&text) else {
@@ -104,10 +104,10 @@ pub fn read_live_sessions(sessions_dir: &Path, probe: &dyn ProcessProbe) -> Vec<
         out.push(LiveSession {
             pid: raw.pid,
             session_id: raw.session_id,
-            cwd: raw.cwd,
-            name: raw.name,
+            cwd: crate::model::cap_path(&raw.cwd).unwrap_or_default(),
+            name: raw.name.as_deref().map(crate::model::cap_display),
             status: parse_status(raw.status),
-            waiting_for: raw.waiting_for,
+            waiting_for: raw.waiting_for.as_deref().map(crate::model::cap_display),
             started_at_ms: started,
             status_updated_at_ms: raw.status_updated_at.or(raw.updated_at).unwrap_or(started),
             proc_start,
@@ -202,6 +202,51 @@ mod tests {
         fs::write(d.path().join("11.json"), neither).unwrap();
         let v = read_live_sessions(d.path(), &probe(11, 777));
         assert_eq!(v[0].status_updated_at_ms, 1000);
+    }
+
+    #[test]
+    fn registry_skips_oversized_files() {
+        let d = tempfile::tempdir().unwrap();
+        let pad = "p".repeat(crate::small_file::MAX_SMALL_FILE as usize);
+        fs::write(d.path().join("10.json"), json(10, "idle", &format!(r#","pad":"{pad}""#))).unwrap();
+        fs::write(d.path().join("11.json"), json(11, "idle", "")).unwrap();
+        let p = FakeProbe(HashMap::from([(10, 777), (11, 777)]));
+        let v = read_live_sessions(d.path(), &p);
+        assert_eq!(v.iter().map(|s| s.pid).collect::<Vec<_>>(), [11]);
+    }
+
+    #[test]
+    fn registry_skips_linked_json() {
+        let d = tempfile::tempdir().unwrap();
+        let secret = d.path().join("gizli.key");
+        fs::write(&secret, json(10, "idle", "")).unwrap();
+        let link = d.path().join("10.json");
+        #[cfg(windows)]
+        let made = std::os::windows::fs::symlink_file(&secret, &link).is_ok();
+        #[cfg(unix)]
+        let made = std::os::unix::fs::symlink(&secret, &link).is_ok();
+        if !made {
+            eprintln!("symlink creation not permitted here; skipping");
+            return;
+        }
+        assert!(read_live_sessions(d.path(), &probe(10, 777)).is_empty(), "a link is never followed");
+    }
+
+    #[test]
+    fn registry_strings_are_capped() {
+        let d = tempfile::tempdir().unwrap();
+        let long_name = "n".repeat(5000);
+        let long_cwd = format!(r"C:\\{}", "c".repeat(400));
+        let text = json(10, "idle", r#","waitingFor":"WAIT""#)
+            .replace(r#""name":"ornek""#, &format!(r#""name":"{long_name}""#))
+            .replace(r#""cwd":"D:\\Projects\\ornek""#, &format!(r#""cwd":"{long_cwd}""#))
+            .replace("WAIT", &"w".repeat(5000));
+        fs::write(d.path().join("10.json"), text).unwrap();
+        let v = read_live_sessions(d.path(), &probe(10, 777));
+        let max = crate::model::MAX_DISPLAY;
+        assert_eq!(v[0].name.as_ref().unwrap().chars().count(), max);
+        assert_eq!(v[0].waiting_for.as_ref().unwrap().chars().count(), max);
+        assert_eq!(v[0].cwd, "", "an overlong path is dropped, not cut");
     }
 
     #[test]
