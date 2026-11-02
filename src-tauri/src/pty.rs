@@ -659,10 +659,10 @@ mod tests {
     #[test]
     fn resume_args_exact() {
         assert_eq!(
-            resume_args("0f864996-1f75-464e-b101-a3ceed5d79d9").unwrap(),
-            vec!["-NoLogo", "-NoExit", "-Command", "claude --resume 0f864996-1f75-464e-b101-a3ceed5d79d9"]
+            resume_args("f00dcafe-0000-4000-8000-000000000001").unwrap(),
+            vec!["-NoLogo", "-NoExit", "-Command", "claude --resume f00dcafe-0000-4000-8000-000000000001"]
         );
-        for bad in ["", "x; calc", "0F864996-1F75-464E-B101-A3CEED5D79D9", "0f864996-1f75-464e-b101-a3ceed5d79d9 & calc"] {
+        for bad in ["", "x; calc", "F00DCAFE-0000-4000-8000-000000000001", "f00dcafe-0000-4000-8000-000000000001 & calc"] {
             assert!(resume_args(bad).is_err(), "{bad}");
         }
     }

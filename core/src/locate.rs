@@ -117,12 +117,12 @@ mod tests {
     #[test]
     fn finds_transcript_under_non_ascii_project_dir() {
         let t = tempfile::tempdir().unwrap();
-        let p = t.path().join("D--Workspaces-AI-SeyahatB-t-e").join(format!("{ID_A}.jsonl"));
-        write(&p, "{\"cwd\":\"D:\\Workspaces\\AI\\SeyahatBütçe\"}\n");
+        let p = t.path().join("C--demo-B-t-e").join(format!("{ID_A}.jsonl"));
+        write(&p, "{\"cwd\":\"C:\\demo\\Bütçe\"}\n");
         let mut l = Locator::new(t.path().to_path_buf());
         let found = l.transcript(ID_A).unwrap();
         assert_eq!(found, p);
-        assert!(fs::read_to_string(found).unwrap().contains("SeyahatBütçe"));
+        assert!(fs::read_to_string(found).unwrap().contains("Bütçe"));
     }
 
     #[test]

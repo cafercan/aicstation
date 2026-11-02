@@ -203,10 +203,10 @@ test("devam terminali: yalnız oturum kimliği gönderilir, ad oturum adı, ayn�
     dataCb("\x1b[1;1R"); // answered before the spawn resolves: queued
     return { id: 11, pid: 99 };
   });
-  const t = await openResumeTerminal("0f864996-1f75-464e-b101-a3ceed5d79d9", "projem");
+  const t = await openResumeTerminal("f00dcafe-0000-4000-8000-000000000001", "projem");
   const call = invoke.mock.calls.find((c) => c[0] === "pty_spawn_resume")!;
   expect(Object.keys(call[1] as object).sort()).toEqual(["cols", "onExit", "onOutput", "rows", "sessionId"]);
-  expect(call[1]).toMatchObject({ sessionId: "0f864996-1f75-464e-b101-a3ceed5d79d9", cols: 80, rows: 24 });
+  expect(call[1]).toMatchObject({ sessionId: "f00dcafe-0000-4000-8000-000000000001", cols: 80, rows: 24 });
   expect(invoke).toHaveBeenCalledWith("pty_write", { id: 11, data: "\x1b[1;1R" });
   expect(getTerminals().map((x) => x.id)).toEqual([11]);
   expect(terminalName(t, [])).toBe("projem");
@@ -221,18 +221,18 @@ test("devam terminali: yalnız oturum kimliği gönderilir, ad oturum adı, ayn�
 
 test("devam terminali: ad yoksa \"Devam: <kısa id>\"; hata atılır ve terminal eklenmez", async () => {
   invoke.mockImplementation(async (cmd: string) => (cmd === "pty_spawn_resume" ? { id: 12, pid: 5 } : undefined));
-  const t = await openResumeTerminal("0f864996-1f75-464e-b101-a3ceed5d79d9");
-  expect(terminalName(t, [])).toBe("Devam: 0f864996");
+  const t = await openResumeTerminal("f00dcafe-0000-4000-8000-000000000001");
+  expect(terminalName(t, [])).toBe("Devam: f00dcafe");
   // The fallback title follows the language (key + params, not a frozen string).
   setLang("en");
-  expect(terminalName(t, [])).toBe("Resume: 0f864996");
+  expect(terminalName(t, [])).toBe("Resume: f00dcafe");
   setLang("az");
-  expect(terminalName(t, [])).toBe("Davam: 0f864996");
+  expect(terminalName(t, [])).toBe("Davam: f00dcafe");
   setLang("tr");
   invoke.mockImplementation(async (cmd: string) => {
     if (cmd === "pty_spawn_resume") throw "session_live";
     return undefined;
   });
-  await expect(openResumeTerminal("0f864996-1f75-464e-b101-a3ceed5d79d9", "x")).rejects.toBe("session_live");
+  await expect(openResumeTerminal("f00dcafe-0000-4000-8000-000000000001", "x")).rejects.toBe("session_live");
   expect(getTerminals().map((x) => x.id)).toEqual([12]);
 });
