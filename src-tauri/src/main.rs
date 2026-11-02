@@ -158,8 +158,25 @@ fn indexer_loop(app: tauri::AppHandle) {
     }
 }
 
+/// The dev server URL the webview may navigate to: only under `tauri dev`
+/// (`is_dev`, i.e. tauri's `custom-protocol` feature is off). `tauri build
+/// --debug` (debug-preview) loads the bundled assets like a release build, so
+/// `debug_assertions` alone must not open the dev origin.
+fn dev_origin(is_dev: bool, dev_url: Option<tauri::Url>) -> Option<tauri::Url> {
+    dev_url.filter(|_| is_dev)
+}
+
+/// `window.open` / `target=_blank` never open a window, whatever the URL.
+/// wry 0.57 on WebView2 already marks a new-window request handled (no
+/// window) when no handler is set; the explicit deny keeps that from
+/// depending on a runtime default (WebView2's own default is a popup that
+/// bypasses the navigation guard).
+fn new_window_allowed(_url: &tauri::Url) -> bool {
+    false
+}
+
 /// The app's own origin (`tauri://localhost`, `http(s)://tauri.localhost`)
-/// and, in debug builds, the dev server's origin. Everything else is refused.
+/// and, under `tauri dev`, the dev server's origin. Everything else is refused.
 fn navigation_allowed(url: &tauri::Url, dev: Option<&tauri::Url>) -> bool {
     let app_origin = match url.scheme() {
         "tauri" => url.host_str() == Some("localhost"),
@@ -195,10 +212,17 @@ fn main() {
                 .find(|w| w.label == "main")
                 .cloned()
                 .ok_or("main penceresi yapılandırmada yok")?;
-            let dev_url = if cfg!(debug_assertions) { app.config().build.dev_url.clone() } else { None };
+            let dev_url = dev_origin(tauri::is_dev(), app.config().build.dev_url.clone());
             tauri::WebviewWindowBuilder::from_config(app.handle(), &main_conf)?
                 .enable_clipboard_access()
                 .on_navigation(move |url| navigation_allowed(url, dev_url.as_ref()))
+                .on_new_window(|url, _features| {
+                    if new_window_allowed(&url) {
+                        tauri::webview::NewWindowResponse::Allow
+                    } else {
+                        tauri::webview::NewWindowResponse::Deny
+                    }
+                })
                 .build()?;
             let handle = app.handle().clone();
             std::thread::spawn(move || snapshot_loop(handle, dir));
@@ -257,6 +281,32 @@ mod tests {
         let dev = u("http://localhost:1420");
         assert!(navigation_allowed(&u("http://localhost:1420/src/main.tsx"), Some(&dev)));
         assert!(!navigation_allowed(&u("http://localhost:1421/"), Some(&dev)));
+    }
+
+    #[test]
+    fn dev_server_origin_only_under_tauri_dev() {
+        let dev = Some(u("http://localhost:1420"));
+        // `tauri dev`: the UI comes from the dev server.
+        assert_eq!(dev_origin(true, dev.clone()), dev);
+        // `tauri build` (release or --debug, e.g. debug-preview): bundled
+        // assets, so the dev origin is refused even with debug_assertions.
+        assert_eq!(dev_origin(false, dev), None);
+        assert_eq!(dev_origin(true, None), None);
+        assert!(!navigation_allowed(&u("http://localhost:1420/"), dev_origin(false, Some(u("http://localhost:1420"))).as_ref()));
+    }
+
+    #[test]
+    fn new_windows_are_never_opened() {
+        for url in [
+            "https://example.com/",
+            "tauri://localhost/",
+            "http://tauri.localhost/",
+            "http://localhost:1420/",
+            "about:blank",
+            "javascript:alert(1)",
+        ] {
+            assert!(!new_window_allowed(&u(url)), "{url}");
+        }
     }
 
     #[test]
