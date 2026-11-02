@@ -28,6 +28,8 @@ pub struct HistorySummary {
 #[serde(rename_all = "camelCase")]
 pub struct HistoryRow {
     pub session_id: String,
+    /// Not sent to the UI (unused there; a non-UTF-8 path would fail serialization).
+    #[serde(skip)]
     pub path: PathBuf,
     pub modified_ms: u64,
     pub size: u64,
@@ -52,10 +54,26 @@ pub struct HistoryIndex {
     cache: HashMap<PathBuf, (u64, u64, HistorySummary)>,
     /// Files that could not be read; skipped so `step` cannot spin on them.
     failed: HashSet<PathBuf>,
+    /// Sessions live at the last `rescan`; `step` leaves them alone (a growing
+    /// transcript is indexed once, after it closes).
+    live: HashSet<String>,
 }
 
 fn ms(t: SystemTime) -> u64 {
     t.duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
+}
+
+fn new_row(path: &Path, md: &fs::Metadata) -> Option<HistoryRow> {
+    let stem = path.file_stem().and_then(|s| s.to_str())?;
+    Some(HistoryRow {
+        session_id: stem.to_string(),
+        modified_ms: md.modified().map_or(0, ms),
+        size: md.len(),
+        name: stem.to_string(),
+        cwd: path.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()),
+        summary: None,
+        path: path.to_path_buf(),
+    })
 }
 
 fn load_cache(path: &Path) -> HashMap<PathBuf, (u64, u64, HistorySummary)> {
@@ -124,18 +142,8 @@ impl HistoryIndex {
         let mut cache = HashMap::new();
         let mut rows = Vec::new();
         for (path, md) in locator.all_transcripts() {
-            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else { continue };
-            let size = md.len();
-            let modified_ms = md.modified().map_or(0, ms);
-            let mut row = HistoryRow {
-                session_id: stem.to_string(),
-                modified_ms,
-                size,
-                name: stem.to_string(),
-                cwd: path.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()),
-                summary: None,
-                path: path.clone(),
-            };
+            let Some(mut row) = new_row(&path, &md) else { continue };
+            let (size, modified_ms) = (row.size, row.modified_ms);
             if let Some((s, m, sum)) = cached.get(&path) {
                 if *s == size && *m == modified_ms {
                     row.name = sum.name.clone();
@@ -146,7 +154,53 @@ impl HistoryIndex {
             }
             rows.push(row);
         }
-        Self { cache_path, rows, cache, failed: HashSet::new() }
+        Self { cache_path, rows, cache, failed: HashSet::new(), live: HashSet::new() }
+    }
+
+    /// Re-lists the transcripts: adds new files, drops vanished ones and marks
+    /// closed files whose size/mtime changed for re-indexing. Ids in `live_ids`
+    /// are left untouched and skipped by `step` until they close.
+    /// Returns true when `step` has work afterwards.
+    pub fn rescan(&mut self, locator: &Locator, live_ids: &HashSet<String>) -> bool {
+        self.live = live_ids.clone();
+        let files = locator.all_transcripts();
+        let present: HashSet<&PathBuf> = files.iter().map(|(p, _)| p).collect();
+        self.rows.retain(|r| present.contains(&r.path));
+        let mut at: HashMap<PathBuf, usize> =
+            self.rows.iter().enumerate().map(|(i, r)| (r.path.clone(), i)).collect();
+        for (path, md) in &files {
+            let Some(fresh) = new_row(path, md) else { continue };
+            if live_ids.contains(&fresh.session_id) {
+                continue;
+            }
+            match at.get(path) {
+                Some(&i) => {
+                    let r = &mut self.rows[i];
+                    if r.size != fresh.size || r.modified_ms != fresh.modified_ms {
+                        r.size = fresh.size;
+                        r.modified_ms = fresh.modified_ms;
+                        r.summary = None;
+                        self.cache.remove(path);
+                        self.failed.remove(path);
+                    }
+                }
+                None => {
+                    at.insert(path.clone(), self.rows.len());
+                    self.rows.push(fresh);
+                }
+            }
+        }
+        self.has_work()
+    }
+
+    fn pending(&self, i: usize) -> bool {
+        let r = &self.rows[i];
+        r.summary.is_none() && !self.failed.contains(&r.path) && !self.live.contains(&r.session_id)
+    }
+
+    /// Whether `step` has anything left to index.
+    pub fn has_work(&self) -> bool {
+        (0..self.rows.len()).any(|i| self.pending(i))
     }
 
     /// Index unsummarized files, newest first, until the budget is spent. The budget is
@@ -154,9 +208,7 @@ impl HistoryIndex {
     /// Returns true while work remains.
     pub fn step(&mut self, budget: Duration) -> bool {
         let start = Instant::now();
-        let mut pending: Vec<usize> = (0..self.rows.len())
-            .filter(|&i| self.rows[i].summary.is_none() && !self.failed.contains(&self.rows[i].path))
-            .collect();
+        let mut pending: Vec<usize> = (0..self.rows.len()).filter(|&i| self.pending(i)).collect();
         pending.sort_by(|&a, &b| self.rows[b].modified_ms.cmp(&self.rows[a].modified_ms));
         // Locator rooted at the projects dir, derived per file (subagents_dir needs it).
         for (n, &i) in pending.iter().enumerate() {
@@ -224,9 +276,10 @@ impl HistoryIndex {
         v
     }
 
-    /// (cost on that local day across all sessions, whether every file that could
-    /// hold that day - modified on/after its local midnight - has been indexed).
-    pub fn cost_on(&self, day: NaiveDate) -> (f64, bool) {
+    /// (cost on that local day across all sessions except `live_ids` - the caller
+    /// adds those from the live monitor -, whether every such file that could hold
+    /// that day - modified on/after its local midnight - has been indexed).
+    pub fn cost_on(&self, day: NaiveDate, live_ids: &HashSet<String>) -> (f64, bool) {
         let midnight = day
             .and_time(NaiveTime::MIN)
             .and_local_timezone(Local)
@@ -234,7 +287,7 @@ impl HistoryIndex {
             .map_or(0, |t| t.timestamp_millis().max(0) as u64);
         let mut total = 0.0;
         let mut complete = true;
-        for r in &self.rows {
+        for r in self.rows.iter().filter(|r| !live_ids.contains(&r.session_id)) {
             match &r.summary {
                 Some(s) => total += s.cost_by_day.get(&day).copied().unwrap_or(0.0),
                 None => {
@@ -390,20 +443,112 @@ mod tests {
         let old = now() - CDur::days(5);
         put(t.path(), "d--z", ID_C, &(line(old, "m3", 3000) + "\n"), 5 * 86400);
         let mut idx = load(t.path(), &t.path().join("c.json"));
-        assert!(!idx.cost_on(today).1, "unindexed -> incomplete");
+        assert!(!idx.cost_on(today, &HashSet::new()).1, "unindexed -> incomplete");
         idx.step(Duration::ZERO); // newest only
-        let (partial, done) = idx.cost_on(today);
+        let (partial, done) = idx.cost_on(today, &HashSet::new());
         assert!(!done && partial > 0.0);
         idx.step(Duration::ZERO); // second file
-        let (total, done) = idx.cost_on(today);
+        let (total, done) = idx.cost_on(today, &HashSet::new());
         assert!(done, "all of today's files indexed; the old one is irrelevant");
         assert!(total > partial);
         while idx.step(Duration::from_secs(5)) {}
-        let (total2, done2) = idx.cost_on(today);
+        let (total2, done2) = idx.cost_on(today, &HashSet::new());
         assert!(done2);
         assert!((total2 - total).abs() < 1e-12, "old session adds nothing to today");
-        let (old_cost, _) = idx.cost_on(old.date_naive());
+        let (old_cost, _) = idx.cost_on(old.date_naive(), &HashSet::new());
         assert!(old_cost > 0.0);
+    }
+
+    fn loc(root: &Path) -> Locator {
+        Locator::new(root.to_path_buf())
+    }
+
+    #[test]
+    fn rescan_adds_new_files() {
+        let t = tempfile::tempdir().unwrap();
+        put(t.path(), "d--x", ID_A, &(line(now(), "m1", 1) + "\n"), 50);
+        let mut idx = load(t.path(), &t.path().join("c.json"));
+        while idx.step(Duration::from_secs(5)) {}
+        assert!(!idx.rescan(&loc(t.path()), &HashSet::new()), "nothing new");
+        put(t.path(), "d--y", ID_B, &(line(now(), "m2", 1) + "\n"), 10);
+        assert!(idx.rescan(&loc(t.path()), &HashSet::new()), "new file -> work");
+        let rows = idx.rows(&HashSet::new());
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].session_id, ID_B);
+        assert!(rows[0].summary.is_none());
+        assert!(rows[1].summary.is_some(), "indexed row kept");
+        while idx.step(Duration::from_secs(5)) {}
+        assert!(idx.rows(&HashSet::new())[0].summary.is_some());
+        // a vanished file disappears from the rows
+        fs::remove_file(t.path().join("d--x").join(format!("{ID_A}.jsonl"))).unwrap();
+        idx.rescan(&loc(t.path()), &HashSet::new());
+        assert_eq!(idx.rows(&HashSet::new()).len(), 1);
+    }
+
+    #[test]
+    fn rescan_skips_live_ids() {
+        let t = tempfile::tempdir().unwrap();
+        let mut idx = load(t.path(), &t.path().join("c.json"));
+        put(t.path(), "d--x", ID_A, &(line(now(), "m1", 1) + "\n"), 10);
+        let live: HashSet<String> = [ID_A.to_string()].into();
+        assert!(!idx.rescan(&loc(t.path()), &live), "a live file is not work");
+        assert!(!idx.step(Duration::from_secs(5)));
+        assert!(idx.rows(&HashSet::new()).is_empty(), "not added while live");
+        // live at launch (row exists from load): step leaves it alone
+        put(t.path(), "d--x", ID_B, &(line(now(), "m2", 1) + "\n"), 10);
+        let mut idx = load(t.path(), &t.path().join("c.json"));
+        let live: HashSet<String> = [ID_A.to_string(), ID_B.to_string()].into();
+        assert!(!idx.rescan(&loc(t.path()), &live));
+        assert!(!idx.step(Duration::from_secs(5)));
+        assert!(idx.rows(&HashSet::new()).iter().all(|r| r.summary.is_none()));
+        // once closed it is indexed
+        assert!(idx.rescan(&loc(t.path()), &HashSet::new()));
+        while idx.step(Duration::from_secs(5)) {}
+        assert!(idx.rows(&HashSet::new()).iter().all(|r| r.summary.is_some()));
+    }
+
+    #[test]
+    fn rescan_invalidates_changed_closed_file() {
+        let t = tempfile::tempdir().unwrap();
+        let p = put(t.path(), "d--x", ID_A, &(line(now(), "m1", 1000) + "\n"), 50);
+        let mut idx = load(t.path(), &t.path().join("c.json"));
+        while idx.step(Duration::from_secs(5)) {}
+        let old = idx.rows(&HashSet::new())[0].summary.clone().unwrap().cost_usd;
+        fs::write(&p, line(now(), "m1", 1000) + "\n" + &line(now(), "m2", 1000) + "\n").unwrap();
+        assert!(idx.rescan(&loc(t.path()), &HashSet::new()));
+        assert!(idx.rows(&HashSet::new())[0].summary.is_none(), "stale summary dropped");
+        while idx.step(Duration::from_secs(5)) {}
+        let new = idx.rows(&HashSet::new())[0].summary.clone().unwrap().cost_usd;
+        assert!(new > old * 1.5, "{new} vs {old}");
+        idx.save().unwrap();
+        let idx2 = load(t.path(), &t.path().join("c.json"));
+        assert!(idx2.rows(&HashSet::new())[0].summary.is_some(), "re-indexed summary cached");
+    }
+
+    #[test]
+    fn cost_on_excludes_live_ids_and_their_completeness() {
+        let t = tempfile::tempdir().unwrap();
+        let today = now().date_naive();
+        put(t.path(), "d--x", ID_A, &(line(now(), "m1", 1000) + "\n"), 10);
+        put(t.path(), "d--y", ID_B, &(line(now(), "m2", 1000) + "\n"), 20);
+        let mut idx = load(t.path(), &t.path().join("c.json"));
+        let live: HashSet<String> = [ID_A.to_string()].into();
+        idx.rescan(&loc(t.path()), &live);
+        while idx.step(Duration::from_secs(5)) {}
+        let (closed, done) = idx.cost_on(today, &live);
+        assert!(done, "the unindexed live file does not make today incomplete");
+        assert!(closed > 0.0);
+        assert!(!idx.cost_on(today, &HashSet::new()).1, "without exclusion it is incomplete");
+    }
+
+    #[test]
+    fn rows_do_not_serialize_path() {
+        let t = tempfile::tempdir().unwrap();
+        put(t.path(), "d--x", ID_A, "{}\n", 10);
+        let idx = load(t.path(), &t.path().join("c.json"));
+        let v = serde_json::to_value(idx.rows(&HashSet::new())[0]).unwrap();
+        assert!(v.get("path").is_none());
+        assert!(v.get("sessionId").is_some());
     }
 
     #[test]

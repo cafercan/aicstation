@@ -72,7 +72,7 @@ impl AppState {
     pub fn publish_history(&self) {
         let cache = {
             let h = lock(&self.history);
-            let (today_cost, today_complete) = h.cost_on(chrono::Local::now().date_naive());
+            let (today_cost, today_complete) = h.cost_on(chrono::Local::now().date_naive(), &HashSet::new());
             HistoryCache {
                 rows: h.rows(&HashSet::new()).into_iter().cloned().collect(),
                 today_cost,
