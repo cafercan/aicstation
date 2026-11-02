@@ -221,6 +221,6 @@ table.hist tbody tr:hover { background: var(--hover); }
   padding: 1px 7px; color: var(--text); background: transparent; border: 0; border-radius: 4px; cursor: pointer;
 }
 .term-search button:hover { background: var(--selected); }
-.card .goto { flex: none; background: none; border: 1px solid var(--border-strong); border-radius: 4px; color: var(--dim); font-size: 11px; line-height: 1; padding: 2px 5px; cursor: pointer; }
+.card .goto { flex: none; background: none; border: 1px solid var(--muted); border-radius: 4px; color: var(--dim); font-size: 11px; line-height: 1; padding: 2px 5px; cursor: pointer; }
 .card .goto:hover { color: var(--strong); border-color: var(--accent); }
 .card .goto-note { font-size: 11px; color: var(--dim); margin-top: 4px; }

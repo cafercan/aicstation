@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest";
 import appCss from "../app.css?raw";
 import {
-  THEME_IDS, THEMES, TOKENS, applyTheme, cssVar, getTheme, loadTheme, setTheme, type ThemeId,
+  THEME_IDS, THEMES, TOKENS, applyTheme, cssVar, getTheme, loadTheme, setTheme, type ThemeId, type Token,
 } from "./index";
 
 afterEach(() => { vi.restoreAllMocks(); });
@@ -97,4 +97,31 @@ test("applyTheme bilinmeyen kimliği yok sayar; localStorage hata atsa da çalı
   expect(() => setTheme("nord-dark")).not.toThrow();
   expect(document.documentElement.dataset.theme).toBe("nord-dark");
   expect(loadTheme()).toBe("pano-dark");
+});
+
+/** Token behind `prop: var(--x)` in the first rule for `selector` in app.css. */
+function cssToken(selector: string, prop: string): Token {
+  const start = appCss.indexOf(`\n${selector} {`);
+  expect(start, selector).toBeGreaterThanOrEqual(0);
+  const body = appCss.slice(appCss.indexOf("{", start) + 1, appCss.indexOf("}", start));
+  const decl = body.split(";").map((d) => d.trim()).find((d) => d.startsWith(`${prop}:`));
+  const v = /var\((--[\w-]+)\)/.exec(decl ?? "")?.[1];
+  const token = TOKENS.find((n) => cssVar(n) === v);
+  expect(token, `${selector} ${prop} -> ${v}`).toBeTruthy();
+  return token!;
+}
+
+test("kart Sekmeye git: not metni ≥ 4.5, düğme metni ≥ 4.5 ve kenarlığı ≥ 3 (kart yüzeyinde, altı temada)", () => {
+  const note = cssToken(".card .goto-note", "color");
+  const label = cssToken(".card .goto", "color");
+  const border = cssToken(".card .goto", "border");
+  for (const id of THEME_IDS) {
+    const k = THEMES[id].tokens;
+    // The card background is a surfaceA -> surfaceB gradient.
+    for (const under of [k.surfaceA, k.surfaceB]) {
+      expect(contrast(k[note], under), `${id} goto note`).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(k[label], under), `${id} goto label`).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(k[border], under), `${id} goto border`).toBeGreaterThanOrEqual(3);
+    }
+  }
 });
