@@ -252,7 +252,20 @@ impl TranscriptReader {
     /// (its position is somewhere inside the last read chunk) and must not be
     /// read again. Returns true when `f` stopped the read.
     pub fn read_lines(&mut self, f: impl FnMut(&str) -> ControlFlow<()>) -> io::Result<bool> {
-        self.scan(u64::MAX, || {}, f).map(|(_, stopped)| stopped)
+        self.read_lines_checked(|_| ControlFlow::Continue(()), f)
+    }
+
+    /// [`read_lines`](Self::read_lines) with `on_chunk(bytes)` called after
+    /// every chunk read from disk, before its lines are handed out. It also
+    /// runs while an over-long line is being skipped (when no line is
+    /// delivered for a long time), so a caller can stop on cancellation or a
+    /// byte budget there too. A Break stops the read like one from `f`.
+    pub fn read_lines_checked(
+        &mut self,
+        on_chunk: impl FnMut(u64) -> ControlFlow<()>,
+        f: impl FnMut(&str) -> ControlFlow<()>,
+    ) -> io::Result<bool> {
+        self.scan_with(u64::MAX, || {}, on_chunk, f).map(|(_, stopped)| stopped)
     }
 
     /// Shared line splitter of [`read_each_limited`](Self::read_each_limited)
@@ -260,7 +273,17 @@ impl TranscriptReader {
     fn scan(
         &mut self,
         max_bytes: u64,
+        on_reset: impl FnMut(),
+        on_line: impl FnMut(&str) -> ControlFlow<()>,
+    ) -> io::Result<(bool, bool)> {
+        self.scan_with(max_bytes, on_reset, |_| ControlFlow::Continue(()), on_line)
+    }
+
+    fn scan_with(
+        &mut self,
+        max_bytes: u64,
         mut on_reset: impl FnMut(),
+        mut on_chunk: impl FnMut(u64) -> ControlFlow<()>,
         mut on_line: impl FnMut(&str) -> ControlFlow<()>,
     ) -> io::Result<(bool, bool)> {
         let mut file = File::open(&self.path)?;
@@ -281,6 +304,9 @@ impl TranscriptReader {
             }
             read += n as u64;
             self.offset += n as u64;
+            if on_chunk(n as u64).is_break() {
+                return Ok((self.offset < len, true));
+            }
             let mut chunk = &buf[..n];
             if self.skipping {
                 match chunk.iter().position(|&b| b == b'\n') {
@@ -362,6 +388,45 @@ mod tests {
             .unwrap();
         assert!(stopped);
         assert_eq!(n, 2);
+    }
+
+    #[test]
+    fn read_lines_checked_polls_per_chunk_even_while_skipping_an_overlong_line() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join("t.jsonl");
+        // One line far longer than max_line: no line is ever delivered.
+        std::fs::write(&p, "x".repeat(5 * READ_BUF) + "
+kısa
+").unwrap();
+        let mut r = TranscriptReader::new(p.clone());
+        r.max_line = 1000;
+        let mut chunks = 0;
+        let mut lines = 0;
+        let stopped = r
+            .read_lines_checked(
+                |n| {
+                    assert!(n > 0);
+                    chunks += 1;
+                    if chunks == 2 { ControlFlow::Break(()) } else { ControlFlow::Continue(()) }
+                },
+                |_| {
+                    lines += 1;
+                    ControlFlow::Continue(())
+                },
+            )
+            .unwrap();
+        assert!(stopped);
+        assert_eq!((chunks, lines), (2, 0));
+        // Unchecked, the long line is skipped and the short one delivered.
+        let mut r = TranscriptReader::new(p);
+        r.max_line = 1000;
+        let mut seen = Vec::new();
+        r.read_lines(|l| {
+            seen.push(l.to_string());
+            ControlFlow::Continue(())
+        })
+        .unwrap();
+        assert_eq!(seen, ["kısa"]);
     }
 
     const ASSISTANT: &str = r#"{"type":"assistant","timestamp":"2026-11-02T07:12:52.197Z","requestedModel":"claude-opus-5-5[1m]","message":{"id":"msg_1","model":"claude-opus-5-5","content":[{"type":"tool_use","id":"toolu_A","name":"Read","input":{"file_path":"C:\\demo\\adc.c"}}],"usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":100,"cache_creation_input_tokens":20}}}"#;

@@ -7,8 +7,10 @@ use crate::transcript::TranscriptReader;
 use chrono::DateTime;
 use serde::Serialize;
 use serde_json::Value;
+use std::cell::{Cell, RefCell};
 use std::ops::ControlFlow;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 pub const MIN_QUERY_CHARS: usize = 2;
 pub const MAX_QUERY_CHARS: usize = 200;
@@ -18,6 +20,29 @@ pub const MAX_HITS: usize = 50;
 pub const MAX_HITS_PER_SESSION: usize = 3;
 /// Characters of a snippet (before + match + after).
 pub const SNIPPET_CHARS: usize = 120;
+/// Wall-clock budget of one search; it then returns what it found, truncated.
+pub const MAX_SEARCH_TIME: Duration = Duration::from_secs(8);
+/// Bytes read at most by one search (2 GiB); then it returns truncated.
+pub const MAX_SEARCH_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+
+/// Budgets of one search. Reaching any of them returns early with
+/// `truncated: true`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Limits {
+    pub max_hits: usize,
+    pub max_bytes: u64,
+    pub max_time: Duration,
+}
+
+impl Limits {
+    /// The app's limits: 50 hits, 2 GiB, 8 s.
+    pub const DEFAULT: Limits = Limits { max_hits: MAX_HITS, max_bytes: MAX_SEARCH_BYTES, max_time: MAX_SEARCH_TIME };
+
+    /// Only a hit limit (no byte or time budget).
+    pub fn hits(max_hits: usize) -> Limits {
+        Limits { max_hits, max_bytes: u64::MAX, max_time: Duration::MAX }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -50,7 +75,7 @@ pub struct SearchHit {
 #[serde(rename_all = "camelCase")]
 pub struct SearchOutcome {
     pub hits: Vec<SearchHit>,
-    /// The hit limit was reached; more matches may exist.
+    /// A limit (hits, bytes read or time) was reached; more matches may exist.
     pub truncated: bool,
     /// A newer search cancelled this one; `hits` is partial.
     pub cancelled: bool,
@@ -178,66 +203,100 @@ pub fn search_transcripts(
     max_hits: usize,
     cancelled: &dyn Fn() -> bool,
 ) -> SearchOutcome {
+    search_transcripts_limited(files, query, Limits::hits(max_hits), cancelled)
+}
+
+/// [`search_transcripts`] under hit, byte and time budgets. `cancelled` and
+/// the budgets are checked per file, per chunk read (also while an over-long
+/// line is being skipped) and per line.
+pub fn search_transcripts_limited(
+    files: &[(String, PathBuf)],
+    query: &str,
+    limits: Limits,
+    cancelled: &dyn Fn() -> bool,
+) -> SearchOutcome {
     let needle_s = fold(query);
     let needle: Vec<char> = needle_s.chars().collect();
     // JSON escapes `"` and `\`; for other queries a match in the decoded text
     // is also a match in the folded raw line, which is much cheaper to test
     // than parsing every line.
     let prefilter = !query.contains(['"', '\\']);
-    let mut out = SearchOutcome::default();
+    let deadline = Instant::now().checked_add(limits.max_time);
+    let scanned = Cell::new(0u64);
+    let out = RefCell::new(SearchOutcome::default());
+    // True when the whole search must stop (the reason is flagged on `out`).
+    let must_stop = || -> bool {
+        if cancelled() {
+            out.borrow_mut().cancelled = true;
+            return true;
+        }
+        if scanned.get() >= limits.max_bytes || deadline.is_some_and(|d| Instant::now() >= d) {
+            out.borrow_mut().truncated = true;
+            return true;
+        }
+        false
+    };
     let mut folded_line = String::new();
     for (id, path) in files {
-        if cancelled() {
-            out.cancelled = true;
-            return out;
+        if must_stop() {
+            return out.into_inner();
         }
         let mut in_session = 0;
-        let mut stop = false;
-        let _ = TranscriptReader::new(path.clone()).read_lines(|line| {
-            if cancelled() {
-                out.cancelled = true;
-                stop = true;
-                return ControlFlow::Break(());
-            }
-            if prefilter {
-                folded_line.clear();
-                folded_line.extend(line.chars().map(fold_char));
-                if !folded_line.contains(&needle_s) {
-                    return ControlFlow::Continue(());
+        let stop = Cell::new(false);
+        let _ = TranscriptReader::new(path.clone()).read_lines_checked(
+            |n| {
+                scanned.set(scanned.get().saturating_add(n));
+                if must_stop() {
+                    stop.set(true);
+                    return ControlFlow::Break(());
                 }
-            }
-            let Some((role, at_ms, text)) = message_text(line) else { return ControlFlow::Continue(()) };
-            let chars: Vec<char> = text.chars().collect();
-            let hay: Vec<char> = chars.iter().map(|&c| fold_char(c)).collect();
-            let Some(pos) = find(&hay, &needle) else { return ControlFlow::Continue(()) };
-            if out.hits.len() >= max_hits {
-                out.truncated = true;
-                stop = true;
-                return ControlFlow::Break(());
-            }
-            out.hits.push(SearchHit {
-                session_id: id.clone(),
-                at_ms,
-                role,
-                snippet: snippet(&chars, pos, needle.len()),
-            });
-            in_session += 1;
-            if in_session >= MAX_HITS_PER_SESSION {
-                return ControlFlow::Break(());
-            }
-            ControlFlow::Continue(())
-        });
-        if stop {
-            return out;
+                ControlFlow::Continue(())
+            },
+            |line| {
+                if must_stop() {
+                    stop.set(true);
+                    return ControlFlow::Break(());
+                }
+                if prefilter {
+                    folded_line.clear();
+                    folded_line.extend(line.chars().map(fold_char));
+                    if !folded_line.contains(&needle_s) {
+                        return ControlFlow::Continue(());
+                    }
+                }
+                let Some((role, at_ms, text)) = message_text(line) else { return ControlFlow::Continue(()) };
+                let chars: Vec<char> = text.chars().collect();
+                let hay: Vec<char> = chars.iter().map(|&c| fold_char(c)).collect();
+                let Some(pos) = find(&hay, &needle) else { return ControlFlow::Continue(()) };
+                let mut out = out.borrow_mut();
+                if out.hits.len() >= limits.max_hits {
+                    out.truncated = true;
+                    stop.set(true);
+                    return ControlFlow::Break(());
+                }
+                out.hits.push(SearchHit {
+                    session_id: id.clone(),
+                    at_ms,
+                    role,
+                    snippet: snippet(&chars, pos, needle.len()),
+                });
+                in_session += 1;
+                if in_session >= MAX_HITS_PER_SESSION {
+                    return ControlFlow::Break(());
+                }
+                ControlFlow::Continue(())
+            },
+        );
+        if stop.get() {
+            return out.into_inner();
         }
     }
-    out
+    out.into_inner()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::Cell;
     use std::fs;
 
     fn user(text: &str, ts: &str) -> String {
@@ -385,6 +444,55 @@ mod tests {
         assert!(out.cancelled);
         assert!(out.hits.len() < 3 * MAX_HITS_PER_SESSION);
         assert!(polls.get() <= 6, "stopped promptly, polled {}", polls.get());
+    }
+
+    #[test]
+    fn byte_budget_returns_early_and_truncated() {
+        let tmp = tempfile::tempdir().unwrap();
+        let filler = user(&"dolgu ".repeat(2000), "2026-11-02T10:00:00Z");
+        let mut lines: Vec<String> = (0..40).map(|_| filler.clone()).collect();
+        lines.push(user("en sonda hedef", "2026-11-02T10:00:00Z"));
+        let files: Vec<_> = (0..3).map(|i| write(tmp.path(), &format!("s{i}"), &lines)).collect();
+        let all = search_transcripts_limited(&files, "hedef", Limits::DEFAULT, &|| false);
+        assert_eq!((all.hits.len(), all.truncated), (3, false));
+        // Less than one file's worth of bytes: the first file is not finished.
+        let limits = Limits { max_bytes: 64 * 1024, ..Limits::DEFAULT };
+        let out = search_transcripts_limited(&files, "hedef", limits, &|| false);
+        assert!(out.truncated && !out.cancelled);
+        assert!(out.hits.is_empty());
+    }
+
+    #[test]
+    fn time_budget_returns_early_and_truncated() {
+        let tmp = tempfile::tempdir().unwrap();
+        let a = write(tmp.path(), "a", &[user("hedef", "2026-11-02T10:00:00Z")]);
+        let limits = Limits { max_time: Duration::ZERO, ..Limits::DEFAULT };
+        let out = search_transcripts_limited(&[a.clone()], "hedef", limits, &|| false);
+        assert!(out.truncated && !out.cancelled && out.hits.is_empty());
+        let out = search_transcripts_limited(&[a], "hedef", Limits::DEFAULT, &|| false);
+        assert_eq!((out.hits.len(), out.truncated), (1, false));
+    }
+
+    #[test]
+    fn cancellation_is_seen_while_skipping_an_overlong_line() {
+        let tmp = tempfile::tempdir().unwrap();
+        // One line longer than MAX_LINE and no newline: no line callback runs.
+        let p = tmp.path().join("big.jsonl");
+        {
+            use std::io::Write;
+            let mut f = std::io::BufWriter::new(fs::File::create(&p).unwrap());
+            let block = vec![b'x'; 1024 * 1024];
+            for _ in 0..(crate::transcript::MAX_LINE / block.len() + 4) {
+                f.write_all(&block).unwrap();
+            }
+        }
+        let polls = Cell::new(0);
+        let out = search_transcripts(&[("big".into(), p)], "hedef", 50, &|| {
+            polls.set(polls.get() + 1);
+            polls.get() > 3
+        });
+        assert!(out.cancelled);
+        assert!(polls.get() <= 5, "stopped within a few chunks, polled {}", polls.get());
     }
 
     #[test]

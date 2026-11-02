@@ -7,7 +7,7 @@ use crate::registry::{read_live_sessions, LiveSession, ProcessProbe, SessionStat
 use crate::stats::SessionStats;
 use crate::transcript::{ReadEvent, TranscriptReader};
 use serde::Serialize;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
@@ -259,6 +259,30 @@ impl Monitor {
             total += agents_on(&st.tree.roots, day);
         }
         (total, self.states.keys().cloned().collect())
+    }
+
+    /// Cost per local day of each session live at the last refresh (main
+    /// transcript plus agents), by session id. The Geçmiş charts add these to
+    /// the closed sessions' rows (which exclude live ids).
+    pub fn live_cost_by_day(&self) -> HashMap<String, BTreeMap<chrono::NaiveDate, f64>> {
+        fn add_agents(nodes: &[AgentNode], out: &mut BTreeMap<chrono::NaiveDate, f64>) {
+            for n in nodes {
+                if n.kind == AgentKind::Agent {
+                    for (d, c) in &n.stats.cost_by_day {
+                        *out.entry(*d).or_insert(0.0) += c;
+                    }
+                }
+                add_agents(&n.children, out);
+            }
+        }
+        self.states
+            .iter()
+            .map(|(id, st)| {
+                let mut by_day = st.stats.cost_by_day.clone();
+                add_agents(&st.tree.roots, &mut by_day);
+                (id.clone(), by_day)
+            })
+            .collect()
     }
 
     pub fn refresh(&mut self, probe: &dyn ProcessProbe, now: SystemTime) -> Snapshot {
@@ -669,6 +693,11 @@ mod tests {
         assert!((cost - 2.0 * main).abs() < 1e-9, "{cost} vs {main}");
         assert_eq!(ids, HashSet::from([sid.clone()]));
         assert_eq!(m.live_cost_on(day.succ_opt().unwrap()).0, 0.0);
+        // Per day and session: the same total, on the same day.
+        let by_day = m.live_cost_by_day();
+        assert_eq!(by_day.len(), 1);
+        assert_eq!(by_day[&sid].len(), 1);
+        assert!((by_day[&sid][&day] - cost).abs() < 1e-9);
     }
 
     #[test]
