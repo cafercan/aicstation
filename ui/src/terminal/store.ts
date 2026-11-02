@@ -61,8 +61,17 @@ function removeEntry(id: number): void {
 }
 
 /** Starts a PowerShell PTY; the xterm instance lives here so it survives tab switches. */
+/** OSC 8 links in terminal output never open a window or browser. */
+const NO_LINKS = { activate: () => {} };
+
+/** Spawns in flight; `killOrphans` must not kill a PTY whose id is not known yet. */
+let spawning = 0;
+
 export async function openTerminal(): Promise<TerminalEntry> {
-  const term = new Terminal({ ...terminalFont, theme: ubuntuTheme, cursorBlink: true, scrollback: 5000 });
+  const term = new Terminal({
+    ...terminalFont, theme: ubuntuTheme, cursorBlink: true, scrollback: 5000,
+    linkHandler: NO_LINKS, windowsPty: { backend: "conpty" },
+  });
   const fit = new FitAddon();
   term.loadAddon(fit);
 
@@ -73,16 +82,25 @@ export async function openTerminal(): Promise<TerminalEntry> {
   let exited = false;
   onExit.onmessage = () => { exited = true; if (id >= 0) removeEntry(id); };
 
+  // Wired before the spawn: ConPTY asks ESC[6n and powershell waits for the
+  // reply, which xterm may produce before pty_spawn resolves. Data is queued
+  // until the id is known, then sent in order.
+  const queued: string[] = [];
+  const send = (d: string) => { invoke("pty_write", { id, data: d }).catch(() => {}); };
+  term.onData((d) => { if (id < 0) queued.push(d); else send(d); });
+
   let info: PtyInfo;
+  spawning++;
   try {
     info = await invoke<PtyInfo>("pty_spawn", { cols: term.cols, rows: term.rows, onOutput, onExit });
   } catch (e) {
     term.dispose();
     throw e;
+  } finally {
+    spawning--;
   }
   id = info.id;
-  // Must be wired right away: ConPTY asks ESC[6n and powershell waits for the reply.
-  term.onData((d) => { invoke("pty_write", { id, data: d }).catch(() => {}); });
+  for (const d of queued.splice(0)) send(d);
 
   const entry: TerminalEntry = { id, pid: info.pid, n: ++counter, term, fit };
   terminals = [...terminals, entry];
@@ -115,3 +133,19 @@ export function confirmClose(ids: number[], sessions: SessionCard[]): boolean {
 }
 
 export function allTerminalIds(): number[] { return terminals.map((t) => t.id); }
+
+/**
+ * After a webview reload the backend may still run PTYs this page has no
+ * handle to; kill every PTY that is not one of ours. Skipped while a spawn is
+ * in flight (its id is not known yet, so it would look like an orphan).
+ */
+export async function killOrphans(): Promise<void> {
+  if (spawning > 0) return;
+  let list: PtyInfo[];
+  try { list = await invoke<PtyInfo[]>("pty_list"); } catch { return; }
+  if (spawning > 0 || !Array.isArray(list)) return;
+  const known = new Set(terminals.map((t) => t.id));
+  await Promise.all(
+    list.filter((p) => !known.has(p.id)).map((p) => invoke("pty_kill", { id: p.id }).catch(() => {})),
+  );
+}

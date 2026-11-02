@@ -29,7 +29,7 @@ vi.mock("@xterm/addon-fit", () => ({ FitAddon: class { fit() {} } }));
 
 import { ubuntuTheme, terminalFont } from "./theme";
 import {
-  confirmClose, getTerminals, openTerminal, resetTerminals, terminalForPid, terminalName,
+  confirmClose, getTerminals, killOrphans, openTerminal, resetTerminals, terminalForPid, terminalName,
 } from "./store";
 import type { SessionCard } from "../api";
 
@@ -102,6 +102,43 @@ test("süreç çıkınca terminal menüden düşer", async () => {
   FakeChannel.all[1].onmessage(0 as never);
   expect(getTerminals()).toHaveLength(0);
   expect(terminalForPid(4242)).toBeUndefined();
+});
+
+test("spawn çözülmeden gelen klavye/yanıt verisi kaybolmaz, sırayla iletilir", async () => {
+  invoke.mockImplementation(async (cmd: string) => {
+    if (cmd !== "pty_spawn") return undefined;
+    // ConPTY's ESC[6n is answered by xterm before pty_spawn resolves.
+    dataCb("\x1b[1;1R");
+    dataCb("a");
+    return { id: 9, pid: 55 };
+  });
+  await openTerminal();
+  dataCb("b");
+  const w = invoke.mock.calls.filter((c) => c[0] === "pty_write").map((c) => c[1]);
+  expect(w).toEqual([
+    { id: 9, data: "\x1b[1;1R" }, { id: 9, data: "a" }, { id: 9, data: "b" },
+  ]);
+});
+
+test("xterm: bağlantılar pencere açmaz, ConPTY arka ucu bildirilir", async () => {
+  const open = vi.spyOn(window, "open").mockReturnValue(null);
+  const t = await openTerminal();
+  const opts = (t.term as unknown as { opts: Record<string, unknown> }).opts;
+  expect(opts.windowsPty).toEqual({ backend: "conpty" });
+  const lh = opts.linkHandler as { activate: (e: unknown, text: string) => void };
+  expect(typeof lh.activate).toBe("function");
+  lh.activate(new MouseEvent("click"), "https://example.invalid/");
+  expect(open).not.toHaveBeenCalled();
+  open.mockRestore();
+});
+
+test("yeniden yüklemede sahipsiz PTY'ler kapatılır, bilinenler kalır", async () => {
+  await openTerminal(); // id 7 is ours
+  invoke.mockImplementation(async (cmd: string) =>
+    cmd === "pty_list" ? [{ id: 3, pid: 30 }, { id: 7, pid: 4242 }, { id: 5, pid: 50 }] : undefined);
+  await killOrphans();
+  const kills = invoke.mock.calls.filter((c) => c[0] === "pty_kill").map((c) => c[1]);
+  expect(kills).toEqual([{ id: 3 }, { id: 5 }]);
 });
 
 test("exit_before_spawn_resolves_removes_terminal", async () => {

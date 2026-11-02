@@ -9,7 +9,8 @@ import SessionDetailPage from "./pages/SessionDetail";
 import TerminalView from "./pages/TerminalView";
 import { statusClass } from "./format";
 import {
-  allTerminalIds, closeTerminal, confirmClose, openTerminal, sessionsIn, terminalName, useTerminals,
+  allTerminalIds, closeTerminal, confirmClose, killOrphans, openTerminal, sessionsIn, terminalName,
+  useTerminals,
 } from "./terminal/store";
 import "./app.css";
 
@@ -34,6 +35,9 @@ export default function App() {
     const tick = setInterval(() => setNow(Date.now()), 30000);
     return () => { alive = false; unlisten?.(); clearInterval(hist); clearInterval(tick); };
   }, []);
+
+  // PTYs left over from before a webview reload have no handle here.
+  useEffect(() => { void killOrphans(); }, []);
 
   const terminals = useTerminals();
   const snapRef = useRef(snapshot);
