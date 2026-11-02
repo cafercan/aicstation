@@ -36,7 +36,7 @@ jobs:
       - run: node --test scripts/gen-notices.test.mjs
       - run: node scripts/gen-notices.mjs --check
 
-      - run: cargo install cargo-audit --locked --version 0.21.2
+      - run: cargo install cargo-audit --locked --version 0.22.2
       - run: cargo audit
       - run: npm audit --audit-level=high
       - run: npm --prefix ui audit --audit-level=high
