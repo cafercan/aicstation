@@ -8,7 +8,7 @@ reporting: open the repository's **Security** tab and choose
 
 ## Scope
 
-In scope: the Claude Pano application (`core/`, `src-tauri/`, `ui/`) and its
+In scope: the SessionStation application (`core/`, `src-tauri/`, `ui/`) and its
 build/CI configuration, for example:
 
 - writes to, or reads beyond what is documented from, the Claude Code
@@ -21,5 +21,8 @@ Out of scope: vulnerabilities in Claude Code itself, WebView2, or Windows.
 
 ## Privacy statement
 
-Claude Pano makes no network requests, sends no telemetry, opens no listening
+SessionStation makes no network requests, sends no telemetry, opens no listening
 ports and installs no hooks. It only reads local Claude Code files.
+
+SessionStation is unofficial; it is not affiliated with or endorsed by
+Anthropic. Claude and Claude Code are trademarks of Anthropic.

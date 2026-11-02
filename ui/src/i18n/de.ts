@@ -109,12 +109,15 @@ export const de: Dict = {
   "search.next": "Weiter (Eingabe)",
   "search.close": "Schließen (Esc)",
 
-  "theme.pano-dark": "Pano Dunkel",
+  "theme.station-dark": "Station Dunkel",
   "theme.slate-dark": "Obsidian Dunkel",
   "theme.nord-dark": "Nord Frost",
   "theme.minimal-light": "Klassisch Hell",
   "theme.github-light": "GitHub Hell",
   "theme.sepia-light": "Sepia",
+
+  "about.tagline": "Sitzungen, Agenten und Terminals für Claude Code",
+  "about.disclaimer": "Inoffiziell; nicht mit Anthropic verbunden und nicht von Anthropic unterstützt. Claude und Claude Code sind Marken von Anthropic.",
 
   "err.session_invalid": "Ungültige Sitzungs-ID",
   "err.session_live": "Diese Sitzung ist bereits geöffnet",

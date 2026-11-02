@@ -2,8 +2,8 @@
 //! exe name via a Toolhelp32 snapshot that is cached for a short TTL (Monitor
 //! asks once per session per tick; one snapshot serves them all). The host
 //! kind of each pid is computed once per snapshot.
-use pano_core::host::{find_host, Host, HostKind, ProcInfo};
-use pano_core::registry::ProcessProbe;
+use station_core::host::{find_host, Host, HostKind, ProcInfo};
+use station_core::registry::ProcessProbe;
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};

@@ -157,3 +157,19 @@ fn capability_is_narrowed_to_what_the_ui_uses() {
     want.sort();
     assert_eq!(got, want);
 }
+
+/// Product identity: "SessionStation", never a "Claude" product name.
+#[test]
+fn product_is_session_station() {
+    let conf: serde_json::Value = serde_json::from_str(&read("tauri.conf.json")).unwrap();
+    assert_eq!(conf["productName"], "SessionStation");
+    assert_eq!(conf["identifier"], "com.cafercan.sessionstation");
+    let main = conf["app"]["windows"].as_array().unwrap().iter().find(|w| w["label"] == "main").unwrap();
+    assert_eq!(main["title"], "SessionStation");
+    let cargo = read("Cargo.toml");
+    assert!(cargo.contains("name = \"session-station\""), "binary is session-station.exe");
+    assert!(cargo.contains("station-core = { path = \"../core\" }"));
+    for text in [conf.to_string(), cargo] {
+        assert!(!text.to_lowercase().contains("claude pano") && !text.contains("claude-pano") && !text.contains("claudepano"));
+    }
+}

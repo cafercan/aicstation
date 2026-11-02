@@ -5,7 +5,7 @@ import {
 } from "../format";
 import { errorText, useT } from "../i18n";
 import AgentDonut from "./AgentDonut";
-import ClaudeMark from "./ClaudeMark";
+import SessionMark from "./SessionMark";
 
 /** How long the "Go to tab" note stays on the card. */
 export const GOTO_NOTE_MS = 6000;
@@ -43,7 +43,7 @@ export default function SessionCardView({ card, now, onOpen, onGoto }: Props) {
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(card.sessionId); }
       }}>
       <div className="top">
-        <h4><ClaudeMark color={statusColor(kind)} /><span className="name">{card.name}</span></h4>
+        <h4><SessionMark color={statusColor(kind)} /><span className="name">{card.name}</span></h4>
         <div className="st">
           <span className="badge">{statusLabel(card.status, card.pid)}</span>
           {card.waitingFor ? <span className="waiting-for">{" "}{card.waitingFor}</span> : null}

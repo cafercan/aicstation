@@ -72,14 +72,14 @@ test("tool başarı oranı yalnız biten çağrılardan", () => {
   expect(screen.getByText("—")).toBeTruthy();
 });
 
-test("kart rengi ve Claude işareti durumu izler; kapanmış oturum gri", () => {
+test("kart rengi ve oturum işareti durumu izler; kapanmış oturum gri", () => {
   const { container, unmount } = render(<SessionCardView card={card({ status: "idle" })} now={0} onOpen={() => {}} />);
   expect(container.querySelector(".card")?.classList.contains("idle")).toBe(true);
-  expect(container.querySelector(".cmark circle")?.getAttribute("fill")).toBe("#ff9f43");
+  expect(container.querySelector(".smark circle")?.getAttribute("fill")).toBe("#ff9f43");
   unmount();
   const closed = render(<SessionCardView card={card({ status: "busy", pid: 0 })} now={0} onOpen={() => {}} />);
   expect(screen.getByText("kapandı")).toBeTruthy();
-  expect(closed.container.querySelector(".cmark circle")?.getAttribute("fill")).toBe("#7d8696");
+  expect(closed.container.querySelector(".smark circle")?.getAttribute("fill")).toBe("#7d8696");
 });
 
 test("bağlam yüzdesi 100'ü aşmaz", () => {
@@ -238,7 +238,7 @@ test("dil seçici: sekiz dil, seçim anında uygulanır ve kalıcıdır", () => 
     ["Türkçe", "Azərbaycan", "English", "Deutsch", "Русский", "Español", "Français", "简体中文"]);
   fireEvent.change(sel, { target: { value: "en" } });
   expect(getLang()).toBe("en");
-  expect(localStorage.getItem("pano.lang")).toBe("en");
+  expect(localStorage.getItem("station.lang")).toBe("en");
   expect(document.documentElement.lang).toBe("en");
   expect(screen.getByText("History")).toBeTruthy();
   expect(screen.getByText("＋ New terminal")).toBeTruthy();
@@ -248,7 +248,7 @@ test("dil seçici: sekiz dil, seçim anında uygulanır ve kalıcıdır", () => 
   expect(screen.getByText("Tarixçə")).toBeTruthy();
   expect(screen.getByTitle("Terminalı bağla")).toBeTruthy();
   fireEvent.change(screen.getByRole("combobox", { name: "Dil" }), { target: { value: "zh" } });
-  expect(localStorage.getItem("pano.lang")).toBe("zh");
+  expect(localStorage.getItem("station.lang")).toBe("zh");
   expect(screen.getByRole("img", { name: "Claude：正在执行命令" })).toBeTruthy();
 });
 
@@ -267,11 +267,11 @@ test("tema kalıpları: altı yuvarlak düğme, ipucu çevrilir, tıklanınca te
   expect(sepia.getAttribute("title")).toBe("Sepya");
   expect(sepia.getAttribute("style")).toContain("--sw-bg: #f4ecd8");
   expect(sepia.getAttribute("style")).toContain("--sw-ac: #a15c2b");
-  expect(screen.getByRole("button", { name: "Pano Koyu" }).classList.contains("on")).toBe(true);
+  expect(screen.getByRole("button", { name: "Station Koyu" }).classList.contains("on")).toBe(true);
   fireEvent.click(sepia);
   expect(getTheme()).toBe("sepia-light");
   expect(document.documentElement.dataset.theme).toBe("sepia-light");
-  expect(localStorage.getItem("pano.theme")).toBe("sepia-light");
+  expect(localStorage.getItem("station.theme")).toBe("sepia-light");
   expect(sepia.classList.contains("on")).toBe(true);
   expect(sepia.getAttribute("aria-pressed")).toBe("true");
   act(() => setLang("en"));
@@ -306,7 +306,7 @@ test("dil değişince kart, KPI ve status bar yeniden çizilir", () => {
 test('kart: "shell" durumunda yeşil şerit ve rozet', () => {
   const { container } = render(<SessionCardView card={card({ status: "shell" })} now={0} onOpen={() => {}} />);
   expect(container.querySelector(".card")?.classList.contains("shell")).toBe(true);
-  expect(container.querySelector(".cmark circle")?.getAttribute("fill")).toBe("#48c774");
+  expect(container.querySelector(".smark circle")?.getAttribute("fill")).toBe("#48c774");
 });
 
 test("Windows Terminal hata kodu seçili dilde gösterilir", async () => {
@@ -314,4 +314,27 @@ test("Windows Terminal hata kodu seçili dilde gösterilir", async () => {
   render(sidebar({ onOpenWt: () => Promise.reject("wt_not_found") }));
   fireEvent.click(screen.getByText("↗ Open in Windows Terminal"));
   expect((await screen.findByRole("alert")).textContent).toBe("Windows Terminal not found");
+});
+
+test("oturum işareti: durum renkli daire ve nötr bir üçgen; yıldız glifi yok", () => {
+  const { container } = render(<SessionCardView card={card({ status: "idle" })} now={0} onOpen={() => {}} />);
+  const mark = container.querySelector("svg.smark")!;
+  expect(mark.querySelector("circle")?.getAttribute("fill")).toBe("#ff9f43");
+  expect(mark.querySelector("text")).toBeNull();
+  expect(mark.querySelector("path")).toBeTruthy();
+  expect(mark.textContent ?? "").not.toMatch(/[\u2731-\u274B]/);
+});
+
+test("hakkında: ürün adı, slogan ve bağımsızlık notu seçili dilde", () => {
+  setLang("en");
+  render(sidebar());
+  const about = screen.getByRole("contentinfo");
+  expect(about.textContent).toContain("SessionStation");
+  expect(about.textContent).toContain("Sessions, agents and terminals for Claude Code");
+  const note = "Unofficial; not affiliated with or endorsed by Anthropic. Claude and Claude Code are trademarks of Anthropic.";
+  expect(about.textContent).toContain(note);
+  expect(about.getAttribute("title")).toBe(note);
+  act(() => setLang("tr"));
+  expect(screen.getByRole("contentinfo").textContent).toContain("Anthropic");
+  expect(screen.getByRole("contentinfo").textContent).toContain("Claude Code için");
 });

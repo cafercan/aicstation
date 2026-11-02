@@ -55,10 +55,10 @@ test("dil seçimi kalıcı, anında uygulanır; varsayılan Türkçe", () => {
   expect(loadLang()).toBe("tr");
   setLang("en");
   expect(getLang()).toBe("en");
-  expect(localStorage.getItem("pano.lang")).toBe("en");
+  expect(localStorage.getItem("station.lang")).toBe("en");
   expect(document.documentElement.lang).toBe("en");
   expect(loadLang()).toBe("en");
-  localStorage.setItem("pano.lang", "xx");
+  localStorage.setItem("station.lang", "xx");
   expect(loadLang()).toBe("tr");
 });
 
@@ -162,4 +162,13 @@ test("süre birimleri dile göre", () => {
 test("\"shell\" durum etiketi her dilde dolu ve farklı", () => {
   const labels = LANGS.map((l) => statusLabel("shell", undefined, l));
   expect(new Set(labels).size).toBe(8);
+});
+
+test("bağımsızlık notu ve slogan her dilde; Anthropic ve Claude Code adları korunur", () => {
+  for (const lang of LANGS) {
+    const d = DICTS[lang];
+    expect(String(d["about.disclaimer"]), lang).toContain("Anthropic");
+    expect(String(d["about.disclaimer"]), lang).toContain("Claude Code");
+    expect(String(d["about.tagline"]), lang).toContain("Claude Code");
+  }
 });

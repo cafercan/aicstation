@@ -25,8 +25,8 @@ function blend(fg: string, bg: string, alpha: number): string {
 const HEX = /^#[0-9a-f]{6}$/;
 
 test("altı tema, sırası ve varsayılanı", () => {
-  expect(THEME_IDS).toEqual(["pano-dark", "slate-dark", "nord-dark", "minimal-light", "github-light", "sepia-light"]);
-  expect(loadTheme()).toBe("pano-dark");
+  expect(THEME_IDS).toEqual(["station-dark", "slate-dark", "nord-dark", "minimal-light", "github-light", "sepia-light"]);
+  expect(loadTheme()).toBe("station-dark");
   expect(THEMES["slate-dark"].tokens.bg).toBe("#0f172a");
   expect(THEMES["slate-dark"].tokens.accent).toBe("#6366f1");
   expect(THEMES["nord-dark"].tokens.bg).toBe("#2e3440");
@@ -50,10 +50,10 @@ test("her tema her token'ı tanımlar; renkler #rrggbb", () => {
   }
 });
 
-test("pano-dark, app.css :root yedek değerleriyle aynı", () => {
+test("station-dark, app.css :root yedek değerleriyle aynı", () => {
   const root = /:root\s*\{([^}]*)\}/.exec(appCss)![1];
   const vars = Object.fromEntries([...root.matchAll(/(--[\w-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()]));
-  for (const name of TOKENS) expect(vars[cssVar(name)], name).toBe(THEMES["pano-dark"].tokens[name]);
+  for (const name of TOKENS) expect(vars[cssVar(name)], name).toBe(THEMES["station-dark"].tokens[name]);
 });
 
 test("okunabilirlik: metin ≥ 4.5, soluk metin ≥ 3, rozet ve status bar durum metni ≥ 3", () => {
@@ -83,20 +83,20 @@ test("tema uygulanınca dataset, CSS değişkenleri ve kalıcılık", () => {
   expect(root.style.getPropertyValue("--bg")).toBe("#f4ecd8");
   expect(root.style.getPropertyValue("--surface-a")).toBe(THEMES["sepia-light"].tokens.surfaceA);
   expect(root.style.colorScheme).toBe("light");
-  expect(localStorage.getItem("pano.theme")).toBe("sepia-light");
+  expect(localStorage.getItem("station.theme")).toBe("sepia-light");
   expect(loadTheme()).toBe("sepia-light");
-  localStorage.setItem("pano.theme", "pembe");
-  expect(loadTheme()).toBe("pano-dark");
+  localStorage.setItem("station.theme", "pembe");
+  expect(loadTheme()).toBe("station-dark");
 });
 
 test("applyTheme bilinmeyen kimliği yok sayar; localStorage hata atsa da çalışır", () => {
   applyTheme("yok" as ThemeId);
-  expect(document.documentElement.dataset.theme).toBe("pano-dark");
+  expect(document.documentElement.dataset.theme).toBe("station-dark");
   vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("blocked"); });
   vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); });
   expect(() => setTheme("nord-dark")).not.toThrow();
   expect(document.documentElement.dataset.theme).toBe("nord-dark");
-  expect(loadTheme()).toBe("pano-dark");
+  expect(loadTheme()).toBe("station-dark");
 });
 
 /** Token behind `prop: var(--x)` in the first rule for `selector` in app.css. */

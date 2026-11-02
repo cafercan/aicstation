@@ -4,7 +4,7 @@
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
-use pano_core::locate::is_session_id;
+use station_core::locate::is_session_id;
 use std::ffi::{OsStr, OsString};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -515,7 +515,7 @@ mod tests {
         let info = m
             .spawn_cmd(
                 "cmd.exe",
-                &["/c", "echo pano-ok"],
+                &["/c", "echo station-ok"],
                 80,
                 24,
                 move |b| tx.send(Ev::Out(b.to_vec())).is_ok(),
@@ -541,7 +541,7 @@ mod tests {
             }
         };
         assert_eq!(code, 0);
-        assert!(text.contains("pano-ok"), "output: {text:?}");
+        assert!(text.contains("station-ok"), "output: {text:?}");
         assert!(m.list().is_empty());
     }
 
@@ -773,7 +773,7 @@ mod tests {
     fn spawned_child_does_not_see_claude_markers() {
         // Set in this process (unique name, removed below); the child must not
         // inherit it: an unknown CLAUDE_CODE_* that is not persistent.
-        const VAR: &str = "CLAUDE_CODE_PANO_TEST_MARKER_7F3A9C";
+        const VAR: &str = "CLAUDE_CODE_STATION_TEST_MARKER_7F3A9C";
         std::env::set_var(VAR, "sizdi");
         let m = PtyManager::new();
         let (tx, rx) = mpsc::channel();
@@ -781,7 +781,7 @@ mod tests {
         let info = m
             .spawn_cmd(
                 "cmd.exe",
-                &["/c", "echo [%CLAUDE_CODE_PANO_TEST_MARKER_7F3A9C%] [%NoDefaultCurrentDirectoryInExePath%]"],
+                &["/c", "echo [%CLAUDE_CODE_STATION_TEST_MARKER_7F3A9C%] [%NoDefaultCurrentDirectoryInExePath%]"],
                 80,
                 24,
                 move |b| tx.send(Ev::Out(b.to_vec())).is_ok(),
@@ -793,7 +793,7 @@ mod tests {
         let text = collect_output(&m, info.id, &rx);
         std::env::remove_var(VAR);
         assert!(!text.contains("sizdi"), "marker leaked: {text:?}");
-        assert!(text.contains("[%CLAUDE_CODE_PANO_TEST_MARKER_7F3A9C%]"), "output: {text:?}");
+        assert!(text.contains("[%CLAUDE_CODE_STATION_TEST_MARKER_7F3A9C%]"), "output: {text:?}");
         assert!(text.contains("[1]"), "NoDefaultCurrentDirectoryInExePath not set: {text:?}");
     }
 

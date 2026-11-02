@@ -1,9 +1,9 @@
 //! "Sekmeye git" for a session in Windows Terminal: find the WindowsTerminal
 //! process above the Claude process, bring its window forward and select the
 //! session's tab with UI Automation. Best effort; not unit-tested (needs a
-//! desktop): the decisions are in `pano_core::host` and tested there.
+//! desktop): the decisions are in `station_core::host` and tested there.
 use super::windows::{host_of, snapshot_procs};
-use pano_core::host::{choose_tab, Host, TabChoice};
+use station_core::host::{choose_tab, Host, TabChoice};
 use windows::core::BOOL;
 use windows::Win32::Foundation::{HWND, LPARAM};
 use windows::Win32::System::Com::{

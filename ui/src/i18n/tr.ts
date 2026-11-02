@@ -115,7 +115,7 @@ export const tr = {
   "search.close": "Kapat (Esc)",
 
   // Themes (swatch tooltips)
-  "theme.pano-dark": "Pano Koyu",
+  "theme.station-dark": "Station Koyu",
   "theme.slate-dark": "Obsidyen Koyu",
   "theme.nord-dark": "Nord Buzu",
   "theme.minimal-light": "Klasik Açık",
@@ -123,6 +123,9 @@ export const tr = {
   "theme.sepia-light": "Sepya",
 
   // Backend error codes (src-tauri/src/errors.rs)
+  "about.tagline": "Claude Code için oturumlar, ajanlar ve terminaller",
+  "about.disclaimer": "Resmî değildir; Anthropic ile bağlantılı değildir ve Anthropic tarafından onaylanmamıştır. Claude ve Claude Code, Anthropic'in ticari markalarıdır.",
+
   "err.session_invalid": "Geçersiz oturum kimliği",
   "err.session_live": "Bu oturum zaten açık",
   "err.session_resume_terminal_open": "Bu oturum, onu devam ettiren terminalde hâlâ açık",

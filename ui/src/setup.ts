@@ -6,6 +6,6 @@ import { applyTheme } from "./theme";
 afterEach(() => {
   cleanup();
   // Preferences are global: every test starts in Turkish with empty storage.
-  act(() => { setLang("tr"); applyTheme("pano-dark"); });
+  act(() => { setLang("tr"); applyTheme("station-dark"); });
   try { localStorage.clear(); } catch { /* storage mocked away */ }
 });

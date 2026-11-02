@@ -1,11 +1,11 @@
 [package]
-name = "pano-core"
+name = "station-core"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
 
 [lib]
-name = "pano_core"
+name = "station_core"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

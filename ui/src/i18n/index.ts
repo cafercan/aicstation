@@ -3,7 +3,7 @@
  * reference: its keys are the `Key` type, so a key missing from another
  * dictionary is a compile error (and i18n.test.ts checks it at runtime).
  *
- * The chosen language is a per-device preference (localStorage "pano.lang",
+ * The chosen language is a per-device preference (localStorage "station.lang",
  * default Turkish) and applies without a reload: components read it through
  * `useT()` / `useLang()`, plain functions through `getLang()`.
  */
@@ -40,7 +40,7 @@ export const LANG_NAMES: Record<Lang, string> = {
   tr: "Türkçe", az: "Azərbaycan", en: "English", de: "Deutsch", ru: "Русский", es: "Español", fr: "Français", zh: "简体中文",
 };
 
-const STORAGE_KEY = "pano.lang";
+const STORAGE_KEY = "station.lang";
 const isLang = (v: unknown): v is Lang => typeof v === "string" && (LANGS as readonly string[]).includes(v);
 
 /** Stored language, or Turkish. */

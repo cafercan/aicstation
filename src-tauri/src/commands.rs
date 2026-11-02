@@ -2,10 +2,10 @@
 //! wrapper over a plain function on `AppState` so tests can call the handlers
 //! without a webview. All arguments from the UI are untrusted.
 use crate::errors;
-use pano_core::history::{cost_on_rows, HistoryIndex, HistoryRow};
-use pano_core::locate::{cwd_matches_project_dir, is_session_id, Locator};
-use pano_core::monitor::{ClosedKey, Monitor, SessionDetail, Snapshot};
-use pano_core::registry::ProcessProbe;
+use station_core::history::{cost_on_rows, HistoryIndex, HistoryRow};
+use station_core::locate::{cwd_matches_project_dir, is_session_id, Locator};
+use station_core::monitor::{ClosedKey, Monitor, SessionDetail, Snapshot};
+use station_core::registry::ProcessProbe;
 use serde::Serialize;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -693,7 +693,7 @@ mod tests {
         let other = work.join("other");
         fs::create_dir_all(&other).unwrap();
         let (w, o) = (work.to_string_lossy().into_owned(), other.to_string_lossy().into_owned());
-        let home = projects.join(pano_core::locate::project_dir_name(&w));
+        let home = projects.join(station_core::locate::project_dir_name(&w));
         write_session(&home, OK_ID, &[&w]);
         write_session(&home, MULTI_ID, &[&w, &o, &o]);
         write_session(&demo, UNC_ID, &[r"\\sunucu\pay"]);

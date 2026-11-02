@@ -106,12 +106,15 @@ export const zh: Dict = {
   "search.next": "下一个（Enter）",
   "search.close": "关闭（Esc）",
 
-  "theme.pano-dark": "Pano 深色",
+  "theme.station-dark": "Station 深色",
   "theme.slate-dark": "黑曜石深色",
   "theme.nord-dark": "Nord 霜蓝",
   "theme.minimal-light": "经典浅色",
   "theme.github-light": "GitHub 浅色",
   "theme.sepia-light": "护眼棕褐",
+
+  "about.tagline": "适用于 Claude Code 的会话、代理和终端",
+  "about.disclaimer": "非官方应用；与 Anthropic 无关联，也未获 Anthropic 认可。Claude 和 Claude Code 是 Anthropic 的商标。",
 
   "err.session_invalid": "会话 ID 无效",
   "err.session_live": "此会话已经打开",

@@ -109,12 +109,15 @@ export const es: Dict = {
   "search.next": "Siguiente (Intro)",
   "search.close": "Cerrar (Esc)",
 
-  "theme.pano-dark": "Pano Oscuro",
+  "theme.station-dark": "Station Oscuro",
   "theme.slate-dark": "Obsidiana Oscuro",
   "theme.nord-dark": "Nord Frost",
   "theme.minimal-light": "Clásico Claro",
   "theme.github-light": "GitHub Claro",
   "theme.sepia-light": "Sepia",
+
+  "about.tagline": "Sesiones, agentes y terminales para Claude Code",
+  "about.disclaimer": "No oficial; sin afiliación con Anthropic ni respaldo de Anthropic. Claude y Claude Code son marcas comerciales de Anthropic.",
 
   "err.session_invalid": "ID de sesión no válido",
   "err.session_live": "Esta sesión ya está abierta",

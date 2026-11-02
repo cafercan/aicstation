@@ -1,5 +1,5 @@
 //! Platform selection for the process probe, drive kinds and system paths.
-use pano_core::registry::ProcessProbe;
+use station_core::registry::ProcessProbe;
 use std::path::{Path, PathBuf};
 
 /// What kind of drive a local path (`X:\...`) is on.

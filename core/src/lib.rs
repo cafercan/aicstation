@@ -1,4 +1,4 @@
-//! pano-core: OS-independent core of Claude Pano.
+//! station-core: OS-independent core of SessionStation.
 pub mod model;
 pub mod transcript;
 pub mod pricing;

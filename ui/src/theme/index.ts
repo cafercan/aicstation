@@ -2,7 +2,7 @@
  * App-chrome color themes. The palettes live here as one token map per theme
  * (palettes adapted from the user's MDViewer themes); `applyTheme` sets
  * `<html data-theme>` and writes every token as a CSS custom property, which
- * app.css uses. app.css's `:root` holds the pano-dark values as the fallback
+ * app.css uses. app.css's `:root` holds the station-dark values as the fallback
  * before the first apply (theme.test.ts keeps the two equal).
  *
  * The embedded terminal is not themed: it keeps the Ubuntu scheme everywhere.
@@ -10,10 +10,10 @@
 import { createStore, readPref, writePref } from "../prefs";
 
 export const THEME_IDS = [
-  "pano-dark", "slate-dark", "nord-dark", "minimal-light", "github-light", "sepia-light",
+  "station-dark", "slate-dark", "nord-dark", "minimal-light", "github-light", "sepia-light",
 ] as const;
 export type ThemeId = (typeof THEME_IDS)[number];
-export const DEFAULT_THEME: ThemeId = "pano-dark";
+export const DEFAULT_THEME: ThemeId = "station-dark";
 
 export const TOKENS = [
   "bg", "surfaceA", "surfaceB", "raised", "hover", "selected", "border", "borderStrong",
@@ -32,7 +32,7 @@ const DARK_SHADOW = "0 1px 2px rgba(0, 0, 0, .35), 0 4px 14px rgba(0, 0, 0, .25)
 const LIGHT_SHADOW = "0 1px 2px rgba(15, 23, 42, .06), 0 4px 14px rgba(15, 23, 42, .07)";
 
 export const THEMES: Record<ThemeId, Theme> = {
-  "pano-dark": {
+  "station-dark": {
     scheme: "dark",
     tokens: {
       bg: "#0f1115", surfaceA: "#1b1f27", surfaceB: "#161a21", raised: "#20252e", hover: "#1d222b",
@@ -109,11 +109,11 @@ export const THEMES: Record<ThemeId, Theme> = {
 /** `surfaceA` → `--surface-a`. */
 export const cssVar = (token: Token): string => `--${token.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase())}`;
 
-const STORAGE_KEY = "pano.theme";
+const STORAGE_KEY = "station.theme";
 const isTheme = (v: unknown): v is ThemeId =>
   typeof v === "string" && (THEME_IDS as readonly string[]).includes(v);
 
-/** Stored theme, or pano-dark. */
+/** Stored theme, or station-dark. */
 export function loadTheme(): ThemeId {
   const v = readPref(STORAGE_KEY);
   return isTheme(v) ? v : DEFAULT_THEME;

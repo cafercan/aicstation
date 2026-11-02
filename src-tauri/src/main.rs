@@ -7,7 +7,7 @@ mod wt;
 
 use commands::AppState;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
-use pano_core::locate::claude_dir;
+use station_core::locate::claude_dir;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::time::{Duration, Instant};
@@ -245,7 +245,7 @@ fn main() {
             commands::focus_session_tab
         ])
         .build(tauri::generate_context!())
-        .expect("Claude Pano başlatılamadı")
+        .expect("SessionStation başlatılamadı")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 app.state::<pty::PtyManager>().kill_all();

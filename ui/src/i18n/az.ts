@@ -106,12 +106,15 @@ export const az: Dict = {
   "search.next": "Növbəti (Enter)",
   "search.close": "Bağla (Esc)",
 
-  "theme.pano-dark": "Pano Tünd",
+  "theme.station-dark": "Station Tünd",
   "theme.slate-dark": "Obsidian Tünd",
   "theme.nord-dark": "Nord Şaxtası",
   "theme.minimal-light": "Klassik Açıq",
   "theme.github-light": "GitHub Açıq",
   "theme.sepia-light": "Sepiya",
+
+  "about.tagline": "Claude Code üçün sessiyalar, agentlər və terminallar",
+  "about.disclaimer": "Rəsmi deyil; Anthropic ilə əlaqəli deyil və Anthropic tərəfindən təsdiqlənməyib. Claude və Claude Code Anthropic-in ticarət nişanlarıdır.",
 
   "err.session_invalid": "Yanlış sessiya identifikatoru",
   "err.session_live": "Bu sessiya artıq açıqdır",

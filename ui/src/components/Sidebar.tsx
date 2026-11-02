@@ -2,7 +2,7 @@ import { useState, type CSSProperties } from "react";
 import { statusColor, statusLabel, type StatusKind } from "../format";
 import { LANGS, LANG_NAMES, errorText, setLang, useLang, useT, type Lang } from "../i18n";
 import { THEME_IDS, THEMES, setTheme, useTheme } from "../theme";
-import ClaudeMark from "./ClaudeMark";
+import SessionMark from "./SessionMark";
 
 export type View =
   | "dashboard"
@@ -54,6 +54,19 @@ function Prefs() {
   );
 }
 
+/** Product name, tagline and the non-affiliation note (also the tooltip). */
+function About() {
+  const t = useT();
+  const note = t("about.disclaimer");
+  return (
+    <footer className="about" title={note}>
+      <div className="about-name">SessionStation</div>
+      <div className="about-tag">{t("about.tagline")}</div>
+      <div className="about-note">{note}</div>
+    </footer>
+  );
+}
+
 export default function Sidebar({ view, terminals, onSelect, onNew, onClose, onOpenWt }: Props) {
   const t = useT();
   const [wtError, setWtError] = useState<string | null>(null);
@@ -73,7 +86,7 @@ export default function Sidebar({ view, terminals, onSelect, onNew, onClose, onO
           className={typeof view === "object" && "terminal" in view && view.terminal === term.id ? "item sub on" : "item sub"}
           onClick={() => onSelect({ terminal: term.id })}>
           {term.status
-            ? <ClaudeMark color={statusColor(term.status)} size={12}
+            ? <SessionMark color={statusColor(term.status)} size={12}
               label={t("nav.claudeStatus", { status: statusLabel(term.status) })} />
             : <span className="dot none">○</span>}{" "}
           <span className="lbl">{term.label}</span>
@@ -85,6 +98,7 @@ export default function Sidebar({ view, terminals, onSelect, onNew, onClose, onO
       <div className="item sub new" onClick={openWt} title={t("nav.openWtTitle")}>{t("nav.openWt")}</div>
       {wtError && <div className="side-err" role="alert">{wtError}</div>}
       <Prefs />
+      <About />
     </nav>
   );
 }

@@ -117,12 +117,15 @@ export const ru: Dict = {
   "search.next": "Далее (Enter)",
   "search.close": "Закрыть (Esc)",
 
-  "theme.pano-dark": "Pano Тёмная",
+  "theme.station-dark": "Station Тёмная",
   "theme.slate-dark": "Обсидиан Тёмная",
   "theme.nord-dark": "Nord Frost",
   "theme.minimal-light": "Классическая светлая",
   "theme.github-light": "GitHub Светлая",
   "theme.sepia-light": "Сепия",
+
+  "about.tagline": "Сессии, агенты и терминалы для Claude Code",
+  "about.disclaimer": "Неофициальное приложение; не связано с Anthropic и не одобрено ею. Claude и Claude Code — товарные знаки Anthropic.",
 
   "err.session_invalid": "Недопустимый идентификатор сессии",
   "err.session_live": "Эта сессия уже открыта",

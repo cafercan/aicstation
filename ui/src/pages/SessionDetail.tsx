@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getSessionDetail, onSnapshot, openFolder, type AgentNode, type SessionDetail, type ToolCall } from "../api";
 import { fmtContext, fmtCost, fmtElapsed, fmtTokens, statusColor, statusKind, statusLabel } from "../format";
-import ClaudeMark from "../components/ClaudeMark";
+import SessionMark from "../components/SessionMark";
 import { terminalForPid } from "../terminal/store";
 import { goToTab, gotoTarget, resumeError } from "../gotoTab";
 import { errorText, locale, t, useT } from "../i18n";
@@ -152,7 +152,7 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal, live 
       <div className="hd">
         <h3>
           <span className="back" role="button" aria-label={tx("detail.backLabel")} onClick={onBack}>←</span>
-          <ClaudeMark color={statusColor(kind)} size={16} />
+          <SessionMark color={statusColor(kind)} size={16} />
           {card.name}{" "}
           <span className={`badge ${kind}`}>{statusLabel(card.status, card.pid)}</span>
         </h3>

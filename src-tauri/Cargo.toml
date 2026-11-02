@@ -1,16 +1,16 @@
 [package]
-name = "claude-pano"
+name = "session-station"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "Claude Pano: yerel Claude Code oturumlarını izler"
-default-run = "claude-pano"
+description = "SessionStation: sessions, agents and terminals for Claude Code"
+default-run = "session-station"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-pano-core = { path = "../core" }
+station-core = { path = "../core" }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

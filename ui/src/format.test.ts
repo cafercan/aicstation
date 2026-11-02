@@ -129,7 +129,7 @@ test("durum ve halka renkleri etkin temayı izler", () => {
   expect(statusColor("busy")).toBe("#1a7f37");
   expect(statusTextColor("waiting")).toBe("#cf222e");
   expect(donutSegments(1, 1).map((s) => s.color)).toEqual(["#1a7f37", "#0969da"]);
-  applyTheme("pano-dark");
+  applyTheme("station-dark");
   expect(statusTextColor("waiting")).toBe("#ff8193");
   expect(donutSegments(1, 1).map((s) => s.color)).toEqual(["#48c774", "#5aa0ff"]);
 });

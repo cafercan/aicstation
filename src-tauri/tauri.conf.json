@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Claude Pano",
+  "productName": "SessionStation",
   "version": "0.1.0",
-  "identifier": "com.cafercan.claudepano",
+  "identifier": "com.cafercan.sessionstation",
   "build": {
     "frontendDist": "../ui/dist",
     "devUrl": "http://localhost:1420",
@@ -14,7 +14,7 @@
       {
         "label": "main",
         "create": false,
-        "title": "Claude Pano",
+        "title": "SessionStation",
         "width": 1280,
         "height": 800
       }
