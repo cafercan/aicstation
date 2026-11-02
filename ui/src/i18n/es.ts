@@ -148,4 +148,5 @@ export const es: Dict = {
   "err.tab_ambiguous": "Ventana traída al frente; varias pestañas tienen el mismo nombre",
   "err.tab_no_match": "Ventana traída al frente; no se encontró la pestaña de la sesión",
   "err.tab_select_failed": "Ventana traída al frente; no se pudo seleccionar la pestaña de la sesión",
+  "err.search_query_invalid": "El texto de búsqueda debe tener entre 2 y 200 caracteres",
 };

@@ -145,4 +145,5 @@ export const zh: Dict = {
   "err.tab_ambiguous": "已将窗口置于前台；有多个标签页同名",
   "err.tab_no_match": "已将窗口置于前台；未找到该会话的标签页",
   "err.tab_select_failed": "已将窗口置于前台；无法选中该会话的标签页",
+  "err.search_query_invalid": "搜索文本须为 2–200 个字符",
 };

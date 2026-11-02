@@ -18,6 +18,7 @@
     "allow-pty-kill",
     "allow-pty-list",
     "allow-open-windows-terminal",
-    "allow-focus-session-tab"
+    "allow-focus-session-tab",
+    "allow-search-history"
   ]
 }

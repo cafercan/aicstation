@@ -147,3 +147,29 @@ export const openWindowsTerminal = () => invoke<void>("open_windows_terminal");
 export async function onSnapshot(cb: (s: Snapshot) => void): Promise<Unlisten> {
   return listen<Snapshot>("snapshot", (e) => cb(e.payload));
 }
+
+/** Snippet split around the match (the backend cuts it; at most 120 chars in all). */
+export interface SearchSnippet { before: string; hit: string; after: string }
+
+export interface SearchHit {
+  sessionId: string;
+  /** Message time (ms), 0 when unknown. */
+  atMs: number;
+  role: "user" | "assistant";
+  snippet: SearchSnippet;
+}
+
+export interface SearchOutcome {
+  hits: SearchHit[];
+  /** The 50-hit limit was reached. */
+  truncated: boolean;
+  /** A newer search replaced this one; ignore it. */
+  cancelled: boolean;
+}
+
+/**
+ * "İçerikte ara": streams the transcripts for user/assistant text. A call
+ * with a different `generation` stops a search still running.
+ */
+export const searchHistory = (query: string, generation: number) =>
+  invoke<SearchOutcome>("search_history", { query, generation });

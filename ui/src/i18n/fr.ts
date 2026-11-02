@@ -148,4 +148,5 @@ export const fr: Dict = {
   "err.tab_ambiguous": "Fenêtre mise au premier plan ; plusieurs onglets portent le même nom",
   "err.tab_no_match": "Fenêtre mise au premier plan ; l'onglet de la session est introuvable",
   "err.tab_select_failed": "Fenêtre mise au premier plan ; impossible de sélectionner l'onglet de la session",
+  "err.search_query_invalid": "Le texte recherché doit contenir de 2 à 200 caractères",
 };

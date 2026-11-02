@@ -145,4 +145,5 @@ export const en: Dict = {
   "err.tab_ambiguous": "Window brought forward; several tabs have the same name",
   "err.tab_no_match": "Window brought forward; the session's tab was not found",
   "err.tab_select_failed": "Window brought forward; the session's tab could not be selected",
+  "err.search_query_invalid": "The search text must be 2–200 characters",
 };

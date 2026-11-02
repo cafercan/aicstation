@@ -242,7 +242,8 @@ fn main() {
             commands::pty_kill,
             commands::pty_list,
             commands::open_windows_terminal,
-            commands::focus_session_tab
+            commands::focus_session_tab,
+            commands::search_history
         ])
         .build(tauri::generate_context!())
         .expect("SessionStation başlatılamadı")

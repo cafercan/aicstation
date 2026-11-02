@@ -145,4 +145,5 @@ export const az: Dict = {
   "err.tab_ambiguous": "Pəncərə önə gətirildi; eyni adlı bir neçə vərəq var",
   "err.tab_no_match": "Pəncərə önə gətirildi; sessiyanın vərəqi tapılmadı",
   "err.tab_select_failed": "Pəncərə önə gətirildi; sessiyanın vərəqi seçilə bilmədi",
+  "err.search_query_invalid": "Axtarış mətni 2–200 simvol olmalıdır",
 };

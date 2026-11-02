@@ -148,4 +148,5 @@ export const de: Dict = {
   "err.tab_ambiguous": "Fenster in den Vordergrund geholt; mehrere Tabs haben denselben Namen",
   "err.tab_no_match": "Fenster in den Vordergrund geholt; der Tab der Sitzung wurde nicht gefunden",
   "err.tab_select_failed": "Fenster in den Vordergrund geholt; der Tab der Sitzung konnte nicht ausgewählt werden",
+  "err.search_query_invalid": "Der Suchtext muss 2–200 Zeichen lang sein",
 };

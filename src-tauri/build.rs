@@ -15,6 +15,7 @@ const COMMANDS: &[&str] = &[
     "pty_list",
     "open_windows_terminal",
     "focus_session_tab",
+    "search_history",
 ];
 
 fn main() {
