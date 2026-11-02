@@ -53,6 +53,9 @@ pub const SETTINGS_INVALID: &str = "settings_invalid";
 /// `settings_save_failed:<OS message>`: settings.json could not be written.
 pub const SETTINGS_SAVE_FAILED: &str = "settings_save_failed";
 
+/// Content search query is not 2..=200 characters (or has control characters).
+pub const SEARCH_QUERY_INVALID: &str = "search_query_invalid";
+
 /// `code:detail`.
 pub fn with(code: &str, detail: impl std::fmt::Display) -> String {
     format!("{code}:{detail}")
@@ -65,7 +68,7 @@ pub const ALL: &[&str] = &[
     PTY_UNKNOWN, PTY_LIMIT, PTY_TOO_LARGE, PTY_SPAWN_FAILED, PTY_IO, PTY_RESIZE_FAILED, INTERNAL_LOCK, TASK_FAILED,
     WT_NOT_FOUND, WT_OPEN_FAILED, WT_HOME_INVALID, WT_HOME_MISSING, WT_POWERSHELL_INVALID,
     TAB_NOT_FOUND, TAB_AMBIGUOUS, TAB_NO_MATCH, TAB_SELECT_FAILED,
-    SETTINGS_INVALID, SETTINGS_SAVE_FAILED,
+    SETTINGS_INVALID, SETTINGS_SAVE_FAILED, SEARCH_QUERY_INVALID,
 ];
 
 #[cfg(test)]

@@ -20,7 +20,7 @@ vi.mock("../terminal/store", () => ({ terminalForPid: (p: number | null) => term
 
 import { setLang } from "../i18n";
 import SessionDetailPage from "./SessionDetail";
-import History from "./History";
+import History, { resetHistoryFilters } from "./History";
 
 const usage = { input: 1000, output: 500, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 };
 const call = (id: string, name: string, target: string, state: ToolCall["state"]): ToolCall =>
@@ -61,6 +61,7 @@ function detail(over: Partial<SessionDetail> = {}): SessionDetail {
 }
 
 beforeEach(() => {
+  resetHistoryFilters();
   invoke.mockReset();
   terminalForPid.mockReset();
   terminalForPid.mockReturnValue(undefined);

@@ -288,7 +288,8 @@ fn main() {
             commands::get_settings,
             commands::set_settings,
             commands::set_focus_context,
-            commands::hide_to_tray
+            commands::hide_to_tray,
+            commands::search_history
         ])
         .build(tauri::generate_context!())
         .expect("SessionStation başlatılamadı")

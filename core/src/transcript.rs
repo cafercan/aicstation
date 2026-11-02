@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use serde_json::Value;
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
+use std::ops::ControlFlow;
 use std::path::PathBuf;
 
 /// Read buffer size used by [`TranscriptReader`].
@@ -229,14 +230,46 @@ impl TranscriptReader {
     /// Like [`read_each`](Self::read_each) but stops once about `max_bytes` have been
     /// read in this call (the partial line stays in `carry`, so nothing is lost or
     /// repeated). Returns true when the file holds more unread bytes.
-    pub fn read_each_limited(&mut self, max_bytes: u64, mut f: impl FnMut(ReadEvent)) -> io::Result<bool> {
+    pub fn read_each_limited(&mut self, max_bytes: u64, f: impl FnMut(ReadEvent)) -> io::Result<bool> {
+        // Both callbacks deliver through `f`.
+        let f = std::cell::RefCell::new(f);
+        let (more, _) = self.scan(
+            max_bytes,
+            || (f.borrow_mut())(ReadEvent::Reset),
+            |s| {
+                for e in parse_line(s) {
+                    (f.borrow_mut())(ReadEvent::Entry(e));
+                }
+                ControlFlow::Continue(())
+            },
+        )?;
+        Ok(more)
+    }
+
+    /// Streams the raw text of every complete line (UTF-8, at most `MAX_LINE`
+    /// bytes) from the current offset to the end, without parsing it. `f` may
+    /// return `ControlFlow::Break` to stop early; the reader is then spent
+    /// (its position is somewhere inside the last read chunk) and must not be
+    /// read again. Returns true when `f` stopped the read.
+    pub fn read_lines(&mut self, f: impl FnMut(&str) -> ControlFlow<()>) -> io::Result<bool> {
+        self.scan(u64::MAX, || {}, f).map(|(_, stopped)| stopped)
+    }
+
+    /// Shared line splitter of [`read_each_limited`](Self::read_each_limited)
+    /// and [`read_lines`](Self::read_lines). Returns (more unread bytes, stopped).
+    fn scan(
+        &mut self,
+        max_bytes: u64,
+        mut on_reset: impl FnMut(),
+        mut on_line: impl FnMut(&str) -> ControlFlow<()>,
+    ) -> io::Result<(bool, bool)> {
         let mut file = File::open(&self.path)?;
         let len = file.metadata()?.len();
         if len < self.offset {
             self.offset = 0;
             self.carry.clear();
             self.skipping = false;
-            f(ReadEvent::Reset);
+            on_reset();
         }
         file.seek(SeekFrom::Start(self.offset))?;
         let mut buf = vec![0u8; READ_BUF];
@@ -269,13 +302,14 @@ impl TranscriptReader {
                 continue;
             };
             let rest = self.carry.split_off(start + pos + 1);
-            for line in self.carry.split(|&b| b == b'\n') {
+            // `carry` ends with the newline found above; the empty piece after it is not a line.
+            for line in self.carry[..self.carry.len() - 1].split(|&b| b == b'\n') {
                 if line.len() > self.max_line {
                     continue;
                 }
                 if let Ok(s) = std::str::from_utf8(line) {
-                    for e in parse_line(s) {
-                        f(ReadEvent::Entry(e));
+                    if on_line(s).is_break() {
+                        return Ok((self.offset < len, true));
                     }
                 }
             }
@@ -285,7 +319,7 @@ impl TranscriptReader {
                 self.skipping = true;
             }
         }
-        Ok(self.offset < len)
+        Ok((self.offset < len, false))
     }
 
     /// Collecting variant of [`read_each`](Self::read_each); only for small reads/tests.
@@ -303,6 +337,32 @@ impl TranscriptReader {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn read_lines_streams_raw_lines_and_stops_on_break() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join("t.jsonl");
+        std::fs::write(&p, "bir\n\niki\nüç\nyarım").unwrap();
+        let mut seen = Vec::new();
+        let stopped = TranscriptReader::new(p.clone())
+            .read_lines(|l| {
+                seen.push(l.to_string());
+                ControlFlow::Continue(())
+            })
+            .unwrap();
+        assert!(!stopped);
+        // The unterminated tail is not a line yet.
+        assert_eq!(seen, ["bir", "", "iki", "üç"]);
+        let mut n = 0;
+        let stopped = TranscriptReader::new(p)
+            .read_lines(|_| {
+                n += 1;
+                if n == 2 { ControlFlow::Break(()) } else { ControlFlow::Continue(()) }
+            })
+            .unwrap();
+        assert!(stopped);
+        assert_eq!(n, 2);
+    }
 
     const ASSISTANT: &str = r#"{"type":"assistant","timestamp":"2026-11-02T07:12:52.197Z","requestedModel":"claude-opus-5-5[1m]","message":{"id":"msg_1","model":"claude-opus-5-5","content":[{"type":"tool_use","id":"toolu_A","name":"Read","input":{"file_path":"C:\\demo\\adc.c"}}],"usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":100,"cache_creation_input_tokens":20}}}"#;
 

@@ -178,3 +178,29 @@ export async function onNavigate(cb: (sessionId: string | null) => void): Promis
 export async function onTrayQuit(cb: () => void): Promise<Unlisten> {
   return listen("tray-quit", () => cb());
 }
+
+/** Snippet split around the match (the backend cuts it; at most 120 chars in all). */
+export interface SearchSnippet { before: string; hit: string; after: string }
+
+export interface SearchHit {
+  sessionId: string;
+  /** Message time (ms), 0 when unknown. */
+  atMs: number;
+  role: "user" | "assistant";
+  snippet: SearchSnippet;
+}
+
+export interface SearchOutcome {
+  hits: SearchHit[];
+  /** The 50-hit limit was reached. */
+  truncated: boolean;
+  /** A newer search replaced this one; ignore it. */
+  cancelled: boolean;
+}
+
+/**
+ * "İçerikte ara": streams the transcripts for user/assistant text. A call
+ * with a different `generation` stops a search still running.
+ */
+export const searchHistory = (query: string, generation: number) =>
+  invoke<SearchOutcome>("search_history", { query, generation });

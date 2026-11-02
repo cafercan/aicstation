@@ -6,10 +6,11 @@ use station_core::history::{cost_on_rows, HistoryIndex, HistoryRow};
 use station_core::locate::{cwd_matches_project_dir, is_session_id, Locator};
 use station_core::monitor::{ClosedKey, Monitor, SessionDetail, Snapshot};
 use station_core::registry::ProcessProbe;
+use station_core::search::{search_transcripts, validate_query, SearchOutcome, MAX_HITS};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -59,6 +60,9 @@ pub struct AppState {
     history_dirty: AtomicBool,
     /// Last built closed-session detail, keyed by transcript (path, len, mtime).
     closed_cache: Mutex<Option<(ClosedKey, SessionDetail)>>,
+    /// Generation of the latest content search; a running search whose
+    /// generation differs stops at its next line.
+    search_gen: AtomicU32,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -84,6 +88,7 @@ impl AppState {
             index_disabled: AtomicBool::new(false),
             history_dirty: AtomicBool::new(false),
             closed_cache: Mutex::new(None),
+            search_gen: AtomicU32::new(0),
         };
         state.publish_history();
         state
@@ -304,6 +309,30 @@ impl AppState {
         })
     }
 
+    /// "İçerikte ara": streams every transcript (live ones too), newest file
+    /// first, for user/assistant text containing `query`. The latest call
+    /// wins: storing its generation makes any older search still running stop
+    /// at its next line and return `cancelled`. Last-writer-wins rather than
+    /// "highest wins" so a reloaded UI, whose counter restarts, is not locked
+    /// out by a higher number from before the reload.
+    pub fn search_history(&self, query: &str, generation: u32) -> Result<SearchOutcome, String> {
+        let query = validate_query(query).ok_or(errors::SEARCH_QUERY_INVALID)?;
+        self.search_gen.store(generation, Ordering::SeqCst);
+        let mut files: Vec<(u64, String, PathBuf)> = Locator::new(self.projects_dir.clone())
+            .all_transcripts()
+            .into_iter()
+            .filter_map(|(p, md)| {
+                let id = p.file_stem()?.to_str()?.to_string();
+                let modified = md.modified().ok()?.duration_since(SystemTime::UNIX_EPOCH).ok()?.as_millis() as u64;
+                Some((modified, id, p))
+            })
+            .collect();
+        files.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+        let files: Vec<(String, PathBuf)> = files.into_iter().map(|(_, id, p)| (id, p)).collect();
+        let gen = &self.search_gen;
+        Ok(search_transcripts(&files, &query, MAX_HITS, &|| gen.load(Ordering::SeqCst) != generation))
+    }
+
     pub fn open_folder(&self, path: &str) -> Result<(), String> {
         let mut known: Vec<String> =
             self.get_snapshot().sessions.iter().map(|c| c.cwd.clone()).collect();
@@ -400,6 +429,17 @@ pub async fn get_session_detail(
     tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().get_session_detail(&session_id))
         .await
         .map_err(|e| errors::with(errors::TASK_FAILED, e))
+}
+
+/// Content search on the blocking pool (it streams every transcript).
+/// Both arguments are untrusted: the query is validated (2..=200 chars), the
+/// generation is only compared.
+#[tauri::command]
+pub async fn search_history(app: tauri::AppHandle, query: String, generation: u32) -> Result<SearchOutcome, String> {
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().search_history(&query, generation))
+        .await
+        .map_err(|e| errors::with(errors::TASK_FAILED, e))?
 }
 
 #[tauri::command(async)]
@@ -873,6 +913,50 @@ mod tests {
 
         // open_folder refuses anything that is not a known history/live cwd.
         assert!(state.open_folder("C:\\Windows").is_err());
+    }
+
+    fn user_line(text: &str) -> String {
+        serde_json::json!({"type":"user","timestamp":"2026-11-02T10:00:00Z","message":{"content":text}}).to_string()
+    }
+
+    #[test]
+    fn search_history_validates_the_query_and_finds_live_and_closed_text() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, probe) = two_sessions(tmp.path(), 5);
+        let proj = claude.join("projects").join("C--demo");
+        fs::write(proj.join(format!("{CLOSED_ID}.jsonl")), user_line("Kalibrasyon ADC") + "\n").unwrap();
+        fs::write(proj.join(format!("{LIVE_ID}.jsonl")), user_line("ADC KALİBRASYONU") + "\n").unwrap();
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(probe));
+        assert_eq!(state.search_history("a", 1), Err(errors::SEARCH_QUERY_INVALID.into()));
+        assert_eq!(state.search_history(&"x".repeat(201), 1), Err(errors::SEARCH_QUERY_INVALID.into()));
+        let out = state.search_history("  kalibrasyon ", 2).unwrap();
+        let mut ids: Vec<&str> = out.hits.iter().map(|h| h.session_id.as_str()).collect();
+        ids.sort();
+        assert_eq!(ids, [LIVE_ID, CLOSED_ID]);
+        assert!(!out.cancelled);
+    }
+
+    #[test]
+    fn a_newer_search_generation_cancels_the_running_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, probe) = two_sessions(tmp.path(), 5);
+        let proj = claude.join("projects").join("C--demo");
+        // A large closed transcript so the first search is still running.
+        let body: String = (0..200_000).map(|i| user_line(&format!("satır {i}")) + "\n").collect();
+        fs::write(proj.join(format!("{CLOSED_ID}.jsonl")), body).unwrap();
+        let state = std::sync::Arc::new(AppState::new(claude, tmp.path().join("c.json"), Box::new(probe)));
+        let s1 = state.clone();
+        let first = std::thread::spawn(move || s1.search_history("bulunmayan metin", 1).unwrap());
+        // Wait until the first search has registered its generation.
+        while state.search_gen.load(Ordering::SeqCst) != 1 {
+            std::thread::yield_now();
+        }
+        let second = state.search_history("satır 5", 2).unwrap();
+        assert!(!second.cancelled);
+        assert!(!second.hits.is_empty());
+        assert!(first.join().unwrap().cancelled, "the older search stops");
+        // A stale generation arriving later still runs (last writer wins).
+        assert!(!state.search_history("satır 7", 1).unwrap().cancelled);
     }
 }
 

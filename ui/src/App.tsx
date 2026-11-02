@@ -7,7 +7,6 @@ import StatusBar from "./components/StatusBar";
 import Dashboard from "./pages/Dashboard";
 import History from "./pages/History";
 import SessionDetailPage from "./pages/SessionDetail";
-import TerminalView from "./pages/TerminalView";
 import SettingsPage from "./pages/Settings";
 import { currentSettings, loadSettings, pushLang } from "./settings";
 import { statusKind } from "./format";
@@ -19,6 +18,9 @@ import {
   useTerminals,
 } from "./terminal/store";
 import "./app.css";
+import "./features.css";
+import { splitAfterClose, type Split } from "./terminal/split";
+import { Overlays, TerminalArea, useShortcuts, useSplitCleanup, type Overlay } from "./workspace";
 
 const EMPTY: Snapshot = { sessions: [], runningAgents: 0, waitingCount: 0 };
 
@@ -49,6 +51,11 @@ export default function App() {
   useEffect(() => { void killOrphans(); }, []);
 
   const terminals = useTerminals();
+  const [split, setSplit] = useState<Split | null>(null);
+  const [overlay, setOverlay] = useState<Overlay>(null);
+  useSplitCleanup(terminals, split, setSplit, setView);
+  const splitRef = useRef(split);
+  splitRef.current = split;
   const snapRef = useRef(snapshot);
   snapRef.current = snapshot;
 
@@ -99,15 +106,27 @@ export default function App() {
     openResumeTerminal(sessionId, name).then((t) => setView({ terminal: t.id })), []);
   const onClose = useCallback((id: number) => {
     if (!confirmClose([id], snapRef.current.sessions)) return;
-    setView((v) => (typeof v === "object" && "terminal" in v && v.terminal === id ? "dashboard" : v));
+    // Closing a split pane leaves the other pane on screen.
+    const other = splitAfterClose(splitRef.current, id).show;
+    setView((v) => (typeof v === "object" && "terminal" in v && v.terminal === id ? (other !== null ? { terminal: other } : "dashboard") : v));
     void closeTerminal(id);
   }, []);
 
   const termId = typeof view === "object" && "terminal" in view ? view.terminal : null;
+  const splitShown = split !== null && (termId === split.left || termId === split.right);
   const sideTerms = terminals.map((t) => {
     const inside = sessionsIn(t, snapshot.sessions)[0];
-    return { id: t.id, label: terminalName(t, snapshot.sessions), status: inside ? statusKind(inside.status, inside.pid) : null };
+    return {
+      id: t.id, label: terminalName(t, snapshot.sessions), status: inside ? statusKind(inside.status, inside.pid) : null,
+      split: splitShown ? (t.id === split.left ? "left" as const : t.id === split.right ? "right" as const : undefined) : undefined,
+    };
   });
+  const area = {
+    terminals, labels: new Map(sideTerms.map((s) => [s.id, s.label])), termId, split, setSplit, setView,
+    newTerminal: () => openTerminal().then((t) => t.id),
+  };
+  const shortcuts = { ...area, sessions: snapshot.sessions, overlay, setOverlay, onNew, onClose };
+  useShortcuts(shortcuts);
 
   const selectedId = typeof view === "object" && "session" in view ? view.session : null;
   // The session on screen (detail, or the Claude session inside the shown
@@ -145,10 +164,11 @@ export default function App() {
           onOpenWt={openWindowsTerminal} />
         <main className="main">
           {page}
-          {terminals.map((t) => <TerminalView key={t.id} entry={t} visible={t.id === termId} />)}
+          <TerminalArea {...area} />
         </main>
       </div>
       <StatusBar sessions={snapshot.sessions} selectedId={selectedId} />
+      <Overlays {...shortcuts} />
     </div>
   );
 }

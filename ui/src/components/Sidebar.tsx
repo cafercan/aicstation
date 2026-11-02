@@ -16,6 +16,8 @@ export interface SidebarTerminal {
   label: string;
   /** Status of the Claude session inside, if any. */
   status: StatusKind | null;
+  /** Pane it is shown in while the terminal view is split. */
+  split?: "left" | "right";
 }
 
 interface Props {
@@ -93,6 +95,12 @@ export default function Sidebar({ view, terminals, onSelect, onNew, onClose, onO
               label={t("nav.claudeStatus", { status: statusLabel(term.status) })} />
             : <span className="dot none">○</span>}{" "}
           <span className="lbl">{term.label}</span>
+          {term.split && (
+            <span className="split-mark" title={t(term.split === "left" ? "nav.splitLeft" : "nav.splitRight")}
+              aria-label={t(term.split === "left" ? "nav.splitLeft" : "nav.splitRight")}>
+              {term.split === "left" ? "◧" : "◨"}
+            </span>
+          )}
           <span className="close" title={t("nav.closeTerminal")}
             onClick={(e) => { e.stopPropagation(); onClose(term.id); }}>×</span>
         </div>
