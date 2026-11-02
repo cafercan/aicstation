@@ -4,8 +4,10 @@
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use serde::Serialize;
 use std::collections::HashMap;
-use std::ffi::OsString;
+use pano_core::locate::is_session_id;
+use std::ffi::{OsStr, OsString};
 use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 pub const MAX_PTYS: usize = 32;
@@ -55,6 +57,26 @@ fn poisoned<T>(_: T) -> String {
     "iç kilit hatası".to_string()
 }
 
+/// Absolute path of Windows PowerShell (never resolved through PATH).
+fn powershell_exe() -> PathBuf {
+    let root = std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into());
+    PathBuf::from(root).join("System32").join("WindowsPowerShell").join("v1.0").join("powershell.exe")
+}
+
+/// PowerShell arguments for resuming a session. Only a lowercase UUID is
+/// accepted, so the `-Command` text can never carry anything else.
+pub fn resume_args(session_id: &str) -> Result<Vec<String>, String> {
+    if !is_session_id(session_id) {
+        return Err("Geçersiz oturum kimliği".into());
+    }
+    Ok(vec![
+        "-NoLogo".into(),
+        "-NoExit".into(),
+        "-Command".into(),
+        format!("claude --resume {session_id}"),
+    ])
+}
+
 /// The child's environment: this process's environment minus the markers a
 /// parent Claude Code session sets (`CLAUDE_CODE_*`, `CLAUDECODE`,
 /// `CLAUDE_SESSION_ID`, `CLAUDE_PID`; names compared case-insensitively as on
@@ -74,7 +96,7 @@ impl PtyManager {
         Self::default()
     }
 
-    /// The only shell the UI can start: `powershell.exe -NoLogo` (absolute path) in the home dir.
+    /// The plain shell: `powershell.exe -NoLogo` (absolute path) in the home dir.
     pub fn spawn_shell(
         &self,
         cols: u16,
@@ -82,13 +104,7 @@ impl PtyManager {
         on_output: impl Fn(&[u8]) -> bool + Send + 'static,
         on_exit: impl FnOnce(i32) + Send + 'static,
     ) -> Result<PtyInfo, String> {
-        let root = std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into());
-        let exe = std::path::PathBuf::from(root)
-            .join("System32")
-            .join("WindowsPowerShell")
-            .join("v1.0")
-            .join("powershell.exe");
-        let mut cmd = CommandBuilder::new(exe);
+        let mut cmd = CommandBuilder::new(powershell_exe());
         cmd.arg("-NoLogo");
         if let Some(home) = std::env::var_os("USERPROFILE")
             .or_else(|| std::env::var_os("HOME"))
@@ -97,6 +113,40 @@ impl PtyManager {
         {
             cmd.cwd(home);
         }
+        self.spawn_builder(cmd, cols, rows, on_output, on_exit)
+    }
+
+    /// `powershell.exe` in `cwd` running `claude --resume <session_id>`, left
+    /// open afterwards. The caller passes an already validated id and folder
+    /// (see `AppState::resume_target`); nothing else reaches the command line.
+    pub fn spawn_resume(
+        &self,
+        cwd: &Path,
+        session_id: &str,
+        cols: u16,
+        rows: u16,
+        on_output: impl Fn(&[u8]) -> bool + Send + 'static,
+        on_exit: impl FnOnce(i32) + Send + 'static,
+    ) -> Result<PtyInfo, String> {
+        let args = resume_args(session_id)?;
+        self.spawn_in(powershell_exe().as_os_str(), &args, cwd, cols, rows, on_output, on_exit)
+    }
+
+    /// `program args` in `cwd`; shared by `spawn_resume` and tests (stub program).
+    #[allow(clippy::too_many_arguments)]
+    pub fn spawn_in(
+        &self,
+        program: &OsStr,
+        args: &[String],
+        cwd: &Path,
+        cols: u16,
+        rows: u16,
+        on_output: impl Fn(&[u8]) -> bool + Send + 'static,
+        on_exit: impl FnOnce(i32) + Send + 'static,
+    ) -> Result<PtyInfo, String> {
+        let mut cmd = CommandBuilder::new(program);
+        cmd.args(args);
+        cmd.cwd(cwd);
         self.spawn_builder(cmd, cols, rows, on_output, on_exit)
     }
 
@@ -405,6 +455,24 @@ mod tests {
         rx.recv_timeout(T).expect("orphaned terminal must exit");
         assert!(m.list().is_empty());
         assert!(m.kill(info.id).is_err());
+    }
+
+    #[test]
+    fn resume_args_exact() {
+        assert_eq!(
+            resume_args("0f864996-1f75-464e-b101-a3ceed5d79d9").unwrap(),
+            vec!["-NoLogo", "-NoExit", "-Command", "claude --resume 0f864996-1f75-464e-b101-a3ceed5d79d9"]
+        );
+        for bad in ["", "x; calc", "0F864996-1F75-464E-B101-A3CEED5D79D9", "0f864996-1f75-464e-b101-a3ceed5d79d9 & calc"] {
+            assert!(resume_args(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn powershell_is_absolute() {
+        let p = powershell_exe();
+        assert!(p.is_absolute());
+        assert!(p.ends_with(Path::new("WindowsPowerShell").join("v1.0").join("powershell.exe")));
     }
 
     fn kv(pairs: &[(&str, &str)]) -> Vec<(OsString, OsString)> {

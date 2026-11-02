@@ -193,6 +193,7 @@ fn main() {
             commands::get_history,
             commands::open_folder,
             commands::pty_spawn,
+            commands::pty_spawn_resume,
             commands::pty_write,
             commands::pty_resize,
             commands::pty_kill,

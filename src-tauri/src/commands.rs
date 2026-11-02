@@ -2,7 +2,7 @@
 //! wrapper over a plain function on `AppState` so tests can call the handlers
 //! without a webview. All arguments from the UI are untrusted.
 use pano_core::history::{cost_on_rows, HistoryIndex, HistoryRow};
-use pano_core::locate::Locator;
+use pano_core::locate::{is_session_id, Locator};
 use pano_core::monitor::{ClosedKey, Monitor, SessionDetail, Snapshot};
 use pano_core::registry::ProcessProbe;
 use serde::Serialize;
@@ -231,6 +231,38 @@ impl AppState {
         }
     }
 
+    /// Session id and folder for `claude --resume`. The id must be a lowercase
+    /// UUID of a session that is not live; the folder is looked up here (history
+    /// rows, then the cached closed detail), never taken from the UI, and must be
+    /// an absolute, local, existing directory.
+    pub fn resume_target(&self, session_id: &str) -> Result<(String, PathBuf), String> {
+        if !is_session_id(session_id) {
+            return Err("Geçersiz oturum kimliği".into());
+        }
+        if self.live_ids().contains(session_id) {
+            return Err("Bu oturum zaten açık".into());
+        }
+        let cwd = self.known_cwd(session_id).ok_or("Bilinmeyen oturum ya da klasörü yok")?;
+        let dir = validate_open_folder(&cwd, std::slice::from_ref(&cwd))
+            .map_err(|e| format!("Oturumun klasörü kullanılamıyor: {e}"))?;
+        Ok((session_id.to_string(), dir))
+    }
+
+    fn known_cwd(&self, session_id: &str) -> Option<String> {
+        // Only an indexed row's cwd is the transcript's; an unindexed row only
+        // carries the project folder name.
+        let from_rows = lock(&self.history_rows)
+            .iter()
+            .find(|r| r.session_id == session_id)
+            .and_then(|r| r.summary.as_ref().and_then(|s| s.cwd.clone()));
+        from_rows.filter(|c| !c.is_empty()).or_else(|| {
+            lock(&self.closed_cache)
+                .as_ref()
+                .filter(|(_, d)| d.card.session_id == session_id && !d.card.cwd.is_empty())
+                .map(|(_, d)| d.card.cwd.clone())
+        })
+    }
+
     pub fn open_folder(&self, path: &str) -> Result<(), String> {
         let mut known: Vec<String> =
             self.get_snapshot().sessions.iter().map(|c| c.cwd.clone()).collect();
@@ -444,6 +476,106 @@ mod tests {
         assert!(!state.save_history_if_dirty().unwrap());
     }
 
+    const OK_ID: &str = "bbbbbbbb-2222-4333-8444-555555555555";
+    const UNC_ID: &str = "cccccccc-2222-4333-8444-555555555555";
+    const REL_ID: &str = "dddddddd-2222-4333-8444-555555555555";
+    const UNKNOWN_ID: &str = "eeeeeeee-2222-4333-8444-555555555555";
+
+    /// Live LIVE_ID plus closed sessions whose transcripts name `cwd`s: OK_ID an
+    /// existing folder, UNC_ID a network path, REL_ID a relative path.
+    fn resume_env(tmp: &Path) -> (AppState, PathBuf) {
+        let (claude, probe) = two_sessions(tmp, 5);
+        let proj = claude.join("projects").join("C--demo");
+        let work = tmp.join("is klasoru");
+        fs::create_dir_all(&work).unwrap();
+        let ts = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        for (id, cwd) in [(OK_ID, work.to_string_lossy().into_owned()), (UNC_ID, r"\\sunucu\pay".into()), (REL_ID, r"bagil\yol".into())] {
+            let cwd = serde_json::to_string(&cwd).unwrap();
+            fs::write(
+                proj.join(format!("{id}.jsonl")),
+                format!(r#"{{"type":"user","timestamp":"{ts}","cwd":{cwd},"message":{{"content":"x"}}}}"#) + "\n",
+            )
+            .unwrap();
+        }
+        (AppState::new(claude, tmp.join("c.json"), Box::new(probe)), work)
+    }
+
+    fn indexed(state: &AppState) {
+        state.rescan_history();
+        while state.index_step(Duration::from_secs(5)) {}
+    }
+
+    #[test]
+    fn resume_rejects_ids_that_are_not_lowercase_uuids() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, _) = resume_env(tmp.path());
+        indexed(&state);
+        for bad in ["", "../x", "BBBBBBBB-2222-4333-8444-555555555555", "bbbbbbbb-2222-4333-8444-55555555555", "x; calc"] {
+            assert!(state.resume_target(bad).unwrap_err().contains("Geçersiz"), "{bad}");
+        }
+    }
+
+    #[test]
+    fn resume_rejects_unknown_live_unc_and_relative() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, _) = resume_env(tmp.path());
+        indexed(&state);
+        assert!(state.resume_target(UNKNOWN_ID).unwrap_err().contains("Bilinmeyen"));
+        assert_eq!(state.resume_target(LIVE_ID).unwrap_err(), "Bu oturum zaten açık");
+        assert!(state.resume_target(UNC_ID).is_err());
+        assert!(state.resume_target(REL_ID).is_err());
+    }
+
+    #[test]
+    fn resume_cwd_comes_from_history_row() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, work) = resume_env(tmp.path());
+        indexed(&state);
+        let (id, dir) = state.resume_target(OK_ID).unwrap();
+        assert_eq!(id, OK_ID);
+        assert_eq!(dir.to_string_lossy().trim_end_matches('\\'), work.to_string_lossy());
+    }
+
+    #[test]
+    fn resume_cwd_comes_from_closed_detail_before_indexing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, work) = resume_env(tmp.path());
+        assert!(state.resume_target(OK_ID).is_err(), "nothing known yet");
+        assert_eq!(state.get_session_detail(OK_ID).unwrap().card.pid, 0);
+        assert_eq!(state.get_session_detail(OK_ID).unwrap().card.pid, 0);
+        let (_, dir) = state.resume_target(OK_ID).unwrap();
+        assert_eq!(dir.to_string_lossy().trim_end_matches('\\'), work.to_string_lossy());
+    }
+
+    #[test]
+    fn resume_happy_path_spawns_in_the_session_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, work) = resume_env(tmp.path());
+        indexed(&state);
+        let (id, dir) = state.resume_target(OK_ID).unwrap();
+        // Same code path as pty_spawn_resume, with a stub program instead of powershell/claude.
+        let ptys = PtyManager::new();
+        let (tx, rx) = std::sync::mpsc::channel::<Option<Vec<u8>>>();
+        let tx2 = tx.clone();
+        let args = vec!["/c".to_string(), format!("cd & echo {id}")];
+        let info = ptys
+            .spawn_in(std::ffi::OsStr::new("cmd.exe"), &args, &dir, 500, 24, move |b| tx.send(Some(b.to_vec())).is_ok(), move |_| {
+                let _ = tx2.send(None);
+            })
+            .unwrap();
+        let mut text = String::new();
+        while let Some(b) = rx.recv_timeout(Duration::from_secs(20)).expect("timed out") {
+            text.push_str(&String::from_utf8_lossy(&b));
+            if text.contains("\x1b[6n") {
+                text = text.replace("\x1b[6n", "");
+                let _ = ptys.write(info.id, "\x1b[1;1R");
+            }
+        }
+        let flat: String = text.chars().filter(|c| *c != '\r' && *c != '\n').collect();
+        assert!(flat.contains(&*work.to_string_lossy()), "cwd not used: {text:?}");
+        assert!(flat.contains(OK_ID), "{text:?}");
+    }
+
     #[test]
     fn handlers_report_fake_live_session_and_history() {
         let tmp = tempfile::tempdir().unwrap();
@@ -506,6 +638,31 @@ pub fn pty_spawn(
         rows,
         // A failed send means the webview side is gone (e.g. reload); the
         // manager then kills the orphaned terminal.
+        move |b| on_output.send(b.to_vec()).is_ok(),
+        move |code| {
+            let _ = on_exit.send(code);
+        },
+    )
+}
+
+/// New terminal resuming a closed session: the UI sends only the session id;
+/// folder and command line are derived here (see `AppState::resume_target`).
+#[tauri::command(async)]
+pub fn pty_spawn_resume(
+    app: tauri::State<'_, AppState>,
+    state: tauri::State<'_, PtyManager>,
+    session_id: String,
+    cols: u16,
+    rows: u16,
+    on_output: Channel<Vec<u8>>,
+    on_exit: Channel<i32>,
+) -> Result<PtyInfo, String> {
+    let (id, cwd) = app.resume_target(&session_id)?;
+    state.spawn_resume(
+        &cwd,
+        &id,
+        cols,
+        rows,
         move |b| on_output.send(b.to_vec()).is_ok(),
         move |code| {
             let _ = on_exit.send(code);

@@ -64,7 +64,7 @@ impl Locator {
 }
 
 /// Lowercase UUID: 8-4-4-4-12 hex. Blocks path traversal.
-fn is_session_id(s: &str) -> bool {
+pub fn is_session_id(s: &str) -> bool {
     let b = s.as_bytes();
     b.len() == 36
         && b.iter().enumerate().all(|(i, c)| match i {
