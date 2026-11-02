@@ -129,7 +129,7 @@ export const ru: Dict = {
   "err.session_resume_terminal_open": "Эта сессия всё ещё открыта в терминале, который её продолжил",
   "err.session_unknown": "Неизвестная сессия или у неё нет папки",
   "err.session_not_live": "Сессия не запущена",
-  "err.session_folder": "Папку сессии нельзя использовать",
+  "err.resume_folder_mismatch": "Невозможно продолжить в папке проекта сессии",
   "err.folder_unknown": "Неизвестная папка",
   "err.folder_network": "Сетевые пути не поддерживаются",
   "err.folder_invalid": "Недопустимый путь",

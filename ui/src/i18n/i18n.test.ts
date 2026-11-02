@@ -100,8 +100,8 @@ test("yerel ayarlar", () => {
 test("hata kodları çevrilir; bilinmeyen kod ve düz metin olduğu gibi kalır", () => {
   expect(errorText("session_live", "tr")).toBe("Bu oturum zaten açık");
   expect(errorText("session_live", "en")).toBe("This session is already open");
-  expect(errorText("session_folder:folder_network", "tr"))
-    .toBe("Oturumun klasörü kullanılamıyor: Ağ yolları desteklenmiyor");
+  expect(errorText("resume_folder_mismatch:folder_network", "tr"))
+    .toBe("Oturumun proje klasöründe devam edilemiyor: Ağ yolları desteklenmiyor");
   expect(errorText("pty_limit:32", "en")).toBe("At most 32 terminals can be open");
   expect(errorText("folder_open_failed:Erişim engellendi. (os error 5)", "tr"))
     .toBe("Klasör açılamadı: Erişim engellendi. (os error 5)");

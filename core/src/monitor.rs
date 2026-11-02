@@ -58,6 +58,9 @@ pub struct Snapshot {
 #[serde(rename_all = "camelCase")]
 pub struct SessionDetail {
     pub card: SessionCard,
+    /// First recorded cwd of the transcript (resume binding); not sent to the UI.
+    #[serde(skip)]
+    pub first_cwd: Option<String>,
     pub tokens: Usage,
     pub tool_call_count: u64,
     pub tree: AgentTree,
@@ -321,6 +324,7 @@ impl Monitor {
         let stats = &self.states[session_id].stats;
         Some(SessionDetail {
             card: make_card(session_id, Some(&l), probe.parent_pid(l.pid), probe.host_kind(l.pid), stats, &tree),
+            first_cwd: stats.first_cwd.clone(),
             tokens: stats.tokens,
             tool_call_count: stats.tool_call_count,
             main_tool_calls: stats.tool_calls.iter().cloned().collect(),
@@ -336,6 +340,7 @@ impl Monitor {
         match self.states.get(&card.session_id) {
             Some(st) => SessionDetail {
                 card: card.clone(),
+                first_cwd: st.stats.first_cwd.clone(),
                 tokens: st.stats.tokens,
                 tool_call_count: st.stats.tool_call_count,
                 main_tool_calls: st.stats.tool_calls.iter().cloned().collect(),
@@ -343,6 +348,7 @@ impl Monitor {
             },
             None => SessionDetail {
                 card: card.clone(),
+                first_cwd: None,
                 tokens: Usage::default(),
                 tool_call_count: 0,
                 main_tool_calls: Vec::new(),
@@ -396,6 +402,7 @@ impl ClosedJob {
         };
         Some(SessionDetail {
             card: make_card(session_id, None, None, HostKind::Other, &stats, &tree),
+            first_cwd: stats.first_cwd.clone(),
             tokens: stats.tokens,
             tool_call_count: stats.tool_call_count,
             main_tool_calls: stats.tool_calls.iter().cloned().collect(),

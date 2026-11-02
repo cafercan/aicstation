@@ -118,7 +118,7 @@ export const az: Dict = {
   "err.session_resume_terminal_open": "Bu sessiya onu davam etdirən terminalda hələ açıqdır",
   "err.session_unknown": "Naməlum sessiya və ya qovluğu yoxdur",
   "err.session_not_live": "Sessiya açıq deyil",
-  "err.session_folder": "Sessiyanın qovluğundan istifadə etmək olmur",
+  "err.resume_folder_mismatch": "Sessiyanın layihə qovluğunda davam etmək olmur",
   "err.folder_unknown": "Naməlum qovluq",
   "err.folder_network": "Şəbəkə yolları dəstəklənmir",
   "err.folder_invalid": "Yanlış yol",

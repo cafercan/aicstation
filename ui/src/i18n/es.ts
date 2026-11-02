@@ -121,7 +121,7 @@ export const es: Dict = {
   "err.session_resume_terminal_open": "Esta sesión sigue abierta en el terminal que la reanudó",
   "err.session_unknown": "Sesión desconocida o sin carpeta",
   "err.session_not_live": "La sesión no se está ejecutando",
-  "err.session_folder": "No se puede usar la carpeta de la sesión",
+  "err.resume_folder_mismatch": "No se puede reanudar en la carpeta del proyecto de la sesión",
   "err.folder_unknown": "Carpeta desconocida",
   "err.folder_network": "No se admiten rutas de red",
   "err.folder_invalid": "Ruta no válida",

@@ -3,7 +3,7 @@
 //! without a webview. All arguments from the UI are untrusted.
 use crate::errors;
 use pano_core::history::{cost_on_rows, HistoryIndex, HistoryRow};
-use pano_core::locate::{is_session_id, Locator};
+use pano_core::locate::{cwd_matches_project_dir, is_session_id, Locator};
 use pano_core::monitor::{ClosedKey, Monitor, SessionDetail, Snapshot};
 use pano_core::registry::ProcessProbe;
 use serde::Serialize;
@@ -34,6 +34,13 @@ struct SnapCache {
     snap: Snapshot,
     day: chrono::NaiveDate,
     live_cost: f64,
+}
+
+/// What a resume is bound to: the session's first recorded cwd and the name
+/// of the `projects/` folder its transcript is in.
+struct ResumeSource {
+    first_cwd: String,
+    project_dir: String,
 }
 
 pub struct AppState {
@@ -242,8 +249,11 @@ impl AppState {
 
     /// Session id and folder for `claude --resume`. The id must be a lowercase
     /// UUID of a session that is not live; the folder is looked up here (history
-    /// rows, then the cached closed detail), never taken from the UI, and must be
-    /// an absolute, local, existing directory.
+    /// rows, then the cached closed detail), never taken from the UI. It is the
+    /// session's FIRST recorded cwd, never a later one the session moved to, and
+    /// it must be an absolute, local, existing directory whose Claude Code
+    /// project-folder name is the folder the transcript sits in. Anything else
+    /// is refused with `resume_folder_mismatch[:<folder code>]`.
     pub fn resume_target(&self, session_id: &str) -> Result<(String, PathBuf), String> {
         if !is_session_id(session_id) {
             return Err(errors::SESSION_INVALID.into());
@@ -251,9 +261,12 @@ impl AppState {
         if self.live_ids().contains(session_id) {
             return Err(errors::SESSION_LIVE.into());
         }
-        let cwd = self.known_cwd(session_id).ok_or(errors::SESSION_UNKNOWN)?;
-        let dir = validate_open_folder(&cwd, std::slice::from_ref(&cwd))
-            .map_err(|e| errors::with(errors::SESSION_FOLDER, e))?;
+        let src = self.resume_source(session_id).ok_or(errors::SESSION_UNKNOWN)?;
+        let dir = validate_open_folder(&src.first_cwd, std::slice::from_ref(&src.first_cwd))
+            .map_err(|e| errors::with(errors::RESUME_FOLDER_MISMATCH, e))?;
+        if !cwd_matches_project_dir(&src.first_cwd, &src.project_dir) {
+            return Err(errors::RESUME_FOLDER_MISMATCH.into());
+        }
         Ok((session_id.to_string(), dir))
     }
 
@@ -273,18 +286,21 @@ impl AppState {
         .ok_or_else(|| errors::SESSION_NOT_LIVE.into())
     }
 
-    fn known_cwd(&self, session_id: &str) -> Option<String> {
-        // Only an indexed row's cwd is the transcript's; an unindexed row only
-        // carries the project folder name.
-        let from_rows = lock(&self.history_rows)
-            .iter()
-            .find(|r| r.session_id == session_id)
-            .and_then(|r| r.summary.as_ref().and_then(|s| s.cwd.clone()));
-        from_rows.filter(|c| !c.is_empty()).or_else(|| {
-            lock(&self.closed_cache)
-                .as_ref()
-                .filter(|(_, d)| d.card.session_id == session_id && !d.card.cwd.is_empty())
-                .map(|(_, d)| d.card.cwd.clone())
+    /// First cwd and transcript folder of a closed session. Only an indexed
+    /// row carries the transcript's cwd (an unindexed one only has the project
+    /// folder name); the cached closed detail is the fallback.
+    fn resume_source(&self, session_id: &str) -> Option<ResumeSource> {
+        fn folder_of(p: &Path) -> Option<String> {
+            p.parent().and_then(Path::file_name).map(|n| n.to_string_lossy().into_owned())
+        }
+        let from_rows = lock(&self.history_rows).iter().find(|r| r.session_id == session_id).and_then(|r| {
+            Some(ResumeSource { first_cwd: r.summary.as_ref()?.first_cwd.clone()?, project_dir: folder_of(&r.path)? })
+        });
+        from_rows.filter(|s| !s.first_cwd.is_empty()).or_else(|| {
+            let cache = lock(&self.closed_cache);
+            let (key, d) = cache.as_ref().filter(|(_, d)| d.card.session_id == session_id)?;
+            let first_cwd = d.first_cwd.clone().filter(|c| !c.is_empty())?;
+            Some(ResumeSource { first_cwd, project_dir: folder_of(&key.0)? })
         })
     }
 
@@ -552,27 +568,47 @@ mod tests {
         }
     }
 
-    const OK_ID: &str ="bbbbbbbb-2222-4333-8444-555555555555";
+    const OK_ID: &str = "bbbbbbbb-2222-4333-8444-555555555555";
     const UNC_ID: &str = "cccccccc-2222-4333-8444-555555555555";
     const REL_ID: &str = "dddddddd-2222-4333-8444-555555555555";
     const UNKNOWN_ID: &str = "eeeeeeee-2222-4333-8444-555555555555";
+    const MULTI_ID: &str = "ffffffff-2222-4333-8444-555555555555";
+    const MISMATCH_ID: &str = "abababab-2222-4333-8444-555555555555";
 
-    /// Live LIVE_ID plus closed sessions whose transcripts name `cwd`s: OK_ID an
-    /// existing folder, UNC_ID a network path, REL_ID a relative path.
+    /// `<dir>/<id>.jsonl` with one user line per cwd, in order.
+    fn write_session(dir: &Path, id: &str, cwds: &[&str]) {
+        fs::create_dir_all(dir).unwrap();
+        let ts = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let body: String = cwds
+            .iter()
+            .map(|c| {
+                let cwd = serde_json::to_string(c).unwrap();
+                format!(r#"{{"type":"user","timestamp":"{ts}","cwd":{cwd},"message":{{"content":"x"}}}}"#) + "\n"
+            })
+            .collect();
+        fs::write(dir.join(format!("{id}.jsonl")), body).unwrap();
+    }
+
+    /// Live LIVE_ID plus closed sessions:
+    /// - OK_ID in the project folder of an existing `work` folder;
+    /// - UNC_ID / REL_ID naming a network / relative path;
+    /// - MULTI_ID started in `work`, later moved to the existing `work\other`
+    ///   (the multi-cwd case from the audit's needs-validation note);
+    /// - MISMATCH_ID whose first cwd is `work` but which sits in `C--demo`.
     fn resume_env(tmp: &Path) -> (AppState, PathBuf) {
         let (claude, probe) = two_sessions(tmp, 5);
-        let proj = claude.join("projects").join("C--demo");
+        let projects = claude.join("projects");
+        let demo = projects.join("C--demo");
         let work = tmp.join("is klasoru");
-        fs::create_dir_all(&work).unwrap();
-        let ts = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-        for (id, cwd) in [(OK_ID, work.to_string_lossy().into_owned()), (UNC_ID, r"\\sunucu\pay".into()), (REL_ID, r"bagil\yol".into())] {
-            let cwd = serde_json::to_string(&cwd).unwrap();
-            fs::write(
-                proj.join(format!("{id}.jsonl")),
-                format!(r#"{{"type":"user","timestamp":"{ts}","cwd":{cwd},"message":{{"content":"x"}}}}"#) + "\n",
-            )
-            .unwrap();
-        }
+        let other = work.join("other");
+        fs::create_dir_all(&other).unwrap();
+        let (w, o) = (work.to_string_lossy().into_owned(), other.to_string_lossy().into_owned());
+        let home = projects.join(pano_core::locate::project_dir_name(&w));
+        write_session(&home, OK_ID, &[&w]);
+        write_session(&home, MULTI_ID, &[&w, &o, &o]);
+        write_session(&demo, UNC_ID, &[r"\\sunucu\pay"]);
+        write_session(&demo, REL_ID, &[r"bagil\yol"]);
+        write_session(&demo, MISMATCH_ID, &[&w]);
         (AppState::new(claude, tmp.join("c.json"), Box::new(probe)), work)
     }
 
@@ -598,8 +634,64 @@ mod tests {
         indexed(&state);
         assert_eq!(state.resume_target(UNKNOWN_ID).unwrap_err(), errors::SESSION_UNKNOWN);
         assert_eq!(state.resume_target(LIVE_ID).unwrap_err(), errors::SESSION_LIVE);
-        assert_eq!(state.resume_target(UNC_ID).unwrap_err(), "session_folder:folder_network");
-        assert_eq!(state.resume_target(REL_ID).unwrap_err(), "session_folder:folder_relative");
+        assert_eq!(state.resume_target(UNC_ID).unwrap_err(), "resume_folder_mismatch:folder_network");
+        assert_eq!(state.resume_target(REL_ID).unwrap_err(), "resume_folder_mismatch:folder_relative");
+    }
+
+    fn same_dir(dir: &Path, want: &Path) {
+        assert_eq!(dir.to_string_lossy().trim_end_matches('\\'), want.to_string_lossy());
+    }
+
+    #[test]
+    fn resume_uses_the_first_cwd_when_the_session_moved_later() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, work) = resume_env(tmp.path());
+        indexed(&state);
+        let (_, dir) = state.resume_target(MULTI_ID).unwrap();
+        same_dir(&dir, &work);
+    }
+
+    #[test]
+    fn resume_refuses_a_first_cwd_outside_the_project_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, _) = resume_env(tmp.path());
+        indexed(&state);
+        assert_eq!(state.resume_target(MISMATCH_ID).unwrap_err(), errors::RESUME_FOLDER_MISMATCH);
+    }
+
+    #[test]
+    fn resume_binding_also_applies_to_the_closed_detail_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, work) = resume_env(tmp.path());
+        // Not indexed: the cwd comes from the cached closed detail.
+        state.get_session_detail(MULTI_ID).unwrap();
+        let (_, dir) = state.resume_target(MULTI_ID).unwrap();
+        same_dir(&dir, &work);
+        state.get_session_detail(MISMATCH_ID).unwrap();
+        assert_eq!(state.resume_target(MISMATCH_ID).unwrap_err(), errors::RESUME_FOLDER_MISMATCH);
+    }
+
+    #[test]
+    fn resume_binding_applies_to_a_tampered_history_cache() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, work) = resume_env(tmp.path());
+        indexed(&state);
+        assert!(state.save_history_if_dirty().unwrap());
+        let cache = tmp.path().join("c.json");
+        // Someone rewrites the cached first cwd to another existing folder.
+        let other = work.join("other").to_string_lossy().into_owned();
+        let mut v: serde_json::Value = serde_json::from_str(&fs::read_to_string(&cache).unwrap()).unwrap();
+        for e in v["entries"].as_array_mut().unwrap() {
+            if e["path"].as_str().unwrap().contains(OK_ID) {
+                e["summary"]["firstCwd"] = other.clone().into();
+                e["summary"]["cwd"] = other.clone().into();
+            }
+        }
+        fs::write(&cache, v.to_string()).unwrap();
+        let (claude, probe) = (tmp.path().join("claude"), FakeProbe(HashMap::from([(4242, 777)])));
+        let reloaded = AppState::new(claude, cache, Box::new(probe));
+        assert_eq!(reloaded.get_history().rows.iter().find(|r| r.session_id == OK_ID).unwrap().cwd.as_deref(), Some(&*other));
+        assert_eq!(reloaded.resume_target(OK_ID).unwrap_err(), errors::RESUME_FOLDER_MISMATCH);
     }
 
     #[test]

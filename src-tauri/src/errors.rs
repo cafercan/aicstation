@@ -1,7 +1,7 @@
 //! Stable error codes for the UI. Commands return a code, never prose; the UI
 //! translates it (ui/src/i18n, keys `err.<code>`) and shows an unknown code
 //! as sent. Shape: `code` or `code:detail`, where the detail is a number, an
-//! OS message or another code (`session_folder:folder_network`).
+//! OS message or another code (`resume_folder_mismatch:folder_network`).
 //!
 //! ui/src/i18n/i18n.test.ts reads this file: every code below must have a
 //! translation in every UI language.
@@ -13,7 +13,9 @@ pub const SESSION_LIVE: &str = "session_live";
 pub const SESSION_RESUME_TERMINAL_OPEN: &str = "session_resume_terminal_open";
 pub const SESSION_UNKNOWN: &str = "session_unknown";
 pub const SESSION_NOT_LIVE: &str = "session_not_live";
-pub const SESSION_FOLDER: &str = "session_folder";
+/// `resume_folder_mismatch[:<folder code>]`: the session's first recorded cwd
+/// is not usable (detail) or is not the project folder its transcript is in.
+pub const RESUME_FOLDER_MISMATCH: &str = "resume_folder_mismatch";
 
 pub const FOLDER_UNKNOWN: &str = "folder_unknown";
 pub const FOLDER_NETWORK: &str = "folder_network";
@@ -53,7 +55,7 @@ pub fn with(code: &str, detail: impl std::fmt::Display) -> String {
 
 #[cfg(test)]
 pub const ALL: &[&str] = &[
-    SESSION_INVALID, SESSION_LIVE, SESSION_RESUME_TERMINAL_OPEN, SESSION_UNKNOWN, SESSION_NOT_LIVE, SESSION_FOLDER,
+    SESSION_INVALID, SESSION_LIVE, SESSION_RESUME_TERMINAL_OPEN, SESSION_UNKNOWN, SESSION_NOT_LIVE, RESUME_FOLDER_MISMATCH,
     FOLDER_UNKNOWN, FOLDER_NETWORK, FOLDER_INVALID, FOLDER_RELATIVE, FOLDER_MISSING, FOLDER_OPEN_FAILED,
     PTY_UNKNOWN, PTY_LIMIT, PTY_TOO_LARGE, PTY_SPAWN_FAILED, PTY_IO, PTY_RESIZE_FAILED, INTERNAL_LOCK, TASK_FAILED,
     WT_NOT_FOUND, WT_OPEN_FAILED, WT_HOME_INVALID, WT_HOME_MISSING, WT_POWERSHELL_INVALID,
@@ -77,6 +79,6 @@ mod tests {
     #[test]
     fn with_joins_code_and_detail() {
         assert_eq!(with(PTY_LIMIT, 32), "pty_limit:32");
-        assert_eq!(with(SESSION_FOLDER, FOLDER_NETWORK), "session_folder:folder_network");
+        assert_eq!(with(RESUME_FOLDER_MISMATCH, FOLDER_NETWORK), "resume_folder_mismatch:folder_network");
     }
 }

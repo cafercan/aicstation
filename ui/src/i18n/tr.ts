@@ -128,7 +128,7 @@ export const tr = {
   "err.session_resume_terminal_open": "Bu oturum, onu devam ettiren terminalde hâlâ açık",
   "err.session_unknown": "Bilinmeyen oturum ya da klasörü yok",
   "err.session_not_live": "Oturum açık değil",
-  "err.session_folder": "Oturumun klasörü kullanılamıyor",
+  "err.resume_folder_mismatch": "Oturumun proje klasöründe devam edilemiyor",
   "err.folder_unknown": "Bilinmeyen klasör",
   "err.folder_network": "Ağ yolları desteklenmiyor",
   "err.folder_invalid": "Geçersiz yol",

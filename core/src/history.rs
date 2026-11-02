@@ -15,7 +15,11 @@ use std::time::{Duration, Instant, SystemTime};
 #[serde(rename_all = "camelCase")]
 pub struct HistorySummary {
     pub name: String,
+    /// Last recorded cwd (display, folder filter).
     pub cwd: Option<String>,
+    /// First recorded cwd: the project folder a resume is bound to.
+    #[serde(default)]
+    pub first_cwd: Option<String>,
     pub model: Option<String>,
     pub first_at_ms: u64,
     pub last_at_ms: u64,
@@ -38,6 +42,10 @@ pub struct HistoryRow {
     /// `None` until indexed (the UI shows "?").
     pub summary: Option<HistorySummary>,
 }
+
+/// On-disk cache schema. A cache of any other version (or the bare array of
+/// version 1, which had no first cwd) is ignored and rebuilt.
+pub const CACHE_VERSION: u32 = 2;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -76,10 +84,19 @@ fn new_row(path: &Path, md: &fs::Metadata) -> Option<HistoryRow> {
     })
 }
 
+#[derive(Serialize, Deserialize)]
+struct CacheFile {
+    version: u32,
+    entries: Vec<CacheEntry>,
+}
+
 fn load_cache(path: &Path) -> HashMap<PathBuf, (u64, u64, HistorySummary)> {
     let Ok(text) = fs::read_to_string(path) else { return HashMap::new() };
-    let Ok(list) = serde_json::from_str::<Vec<CacheEntry>>(&text) else { return HashMap::new() };
-    list.into_iter().map(|e| (e.path, (e.size, e.modified_ms, e.summary))).collect()
+    let Ok(file) = serde_json::from_str::<CacheFile>(&text) else { return HashMap::new() };
+    if file.version != CACHE_VERSION {
+        return HashMap::new();
+    }
+    file.entries.into_iter().map(|e| (e.path, (e.size, e.modified_ms, e.summary))).collect()
 }
 
 /// Last component of a Windows or POSIX path.
@@ -125,6 +142,7 @@ fn summarize(path: &Path, locator: &mut Locator, id: &str) -> io::Result<History
     Ok(HistorySummary {
         name,
         cwd: stats.cwd.clone(),
+        first_cwd: stats.first_cwd.clone(),
         model: stats.model.clone(),
         first_at_ms: stats.first_at.map_or(0, |t| t.timestamp_millis().max(0) as u64),
         last_at_ms: stats.last_at.map_or(0, |t| t.timestamp_millis().max(0) as u64),
@@ -254,7 +272,7 @@ impl HistoryIndex {
                 summary: s.clone(),
             })
             .collect();
-        let json = serde_json::to_vec(&list).map_err(io::Error::other)?;
+        let json = serde_json::to_vec(&CacheFile { version: CACHE_VERSION, entries: list }).map_err(io::Error::other)?;
         if let Some(dir) = self.cache_path.parent() {
             fs::create_dir_all(dir)?;
         }
@@ -398,6 +416,50 @@ mod tests {
         assert_eq!(r.summary, before, "summary comes from cache, with name/cwd");
         assert_eq!(r.name, "proj-x");
         assert!(!idx2.step(Duration::from_secs(5)), "nothing to re-read");
+    }
+
+    #[test]
+    fn summary_keeps_first_and_last_cwd() {
+        let t = tempfile::tempdir().unwrap();
+        let first = line(now(), "m1", 1);
+        let last = line(now(), "m2", 1).replace(r"C:\\demo\\proj-x", r"C:\\demo\\proj-x\\sub");
+        put(t.path(), "C--demo-proj-x", ID_A, &(first + "\n" + &last + "\n"), 10);
+        let mut idx = load(t.path(), &t.path().join("c.json"));
+        while idx.step(Duration::from_secs(5)) {}
+        let s = idx.rows(&HashSet::new())[0].summary.clone().unwrap();
+        assert_eq!(s.first_cwd.as_deref(), Some(r"C:\demo\proj-x"));
+        assert_eq!(s.cwd.as_deref(), Some(r"C:\demo\proj-x\sub"));
+    }
+
+    #[test]
+    fn cache_of_an_older_schema_is_rebuilt() {
+        let t = tempfile::tempdir().unwrap();
+        let proj = t.path().join("projects");
+        let p = put(&proj, "d--x", ID_A, &(line(now(), "m1", 1) + "\n"), 50);
+        let md = fs::metadata(&p).unwrap();
+        let entry = serde_json::json!({
+            "path": p,
+            "size": md.len(),
+            "modifiedMs": md.modified().map_or(0, ms),
+            "summary": {"name": "eski", "cwd": "C:\\elsewhere", "model": null, "firstAtMs": 0,
+                        "lastAtMs": 0, "agentsTotal": 0, "costUsd": 0.0, "costByDay": {}}
+        });
+        // v1: a bare array of entries (no first cwd).
+        let cache = t.path().join("c.json");
+        fs::write(&cache, serde_json::to_string(&vec![entry.clone()]).unwrap()).unwrap();
+        assert!(load(&proj, &cache).rows(&HashSet::new())[0].summary.is_none(), "v1 cache ignored");
+        // An envelope with another version is ignored too.
+        let other = serde_json::json!({"version": CACHE_VERSION + 1, "entries": [entry]});
+        fs::write(&cache, other.to_string()).unwrap();
+        assert!(load(&proj, &cache).rows(&HashSet::new())[0].summary.is_none());
+        // The current version round-trips.
+        let mut idx = load(&proj, &cache);
+        while idx.step(Duration::from_secs(5)) {}
+        idx.save().unwrap();
+        let v: serde_json::Value = serde_json::from_str(&fs::read_to_string(&cache).unwrap()).unwrap();
+        assert_eq!(v["version"], CACHE_VERSION);
+        let again = load(&proj, &cache);
+        assert_eq!(again.rows(&HashSet::new())[0].summary.as_ref().unwrap().first_cwd.as_deref(), Some(r"C:\demo\proj-x"));
     }
 
     #[test]

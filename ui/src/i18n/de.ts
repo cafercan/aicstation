@@ -121,7 +121,7 @@ export const de: Dict = {
   "err.session_resume_terminal_open": "Diese Sitzung ist noch in dem Terminal offen, das sie fortgesetzt hat",
   "err.session_unknown": "Unbekannte Sitzung oder ohne Ordner",
   "err.session_not_live": "Die Sitzung läuft nicht",
-  "err.session_folder": "Der Ordner der Sitzung kann nicht verwendet werden",
+  "err.resume_folder_mismatch": "Fortsetzen im Projektordner der Sitzung nicht möglich",
   "err.folder_unknown": "Unbekannter Ordner",
   "err.folder_network": "Netzwerkpfade werden nicht unterstützt",
   "err.folder_invalid": "Ungültiger Pfad",
