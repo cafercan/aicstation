@@ -65,12 +65,13 @@ test("tema spec değerleriyle birebir", () => {
   expect(Object.keys(ubuntuTheme)).toHaveLength(20);
   expect(terminalFont).toEqual({
     fontFamily: '"Cascadia Mono", "Cascadia Code", Consolas, monospace', fontSize: 13,
+    fontWeight: 350, fontWeightBold: "bold",
   });
 });
 
 test("render ayarları: hücre ızgarası sıkı, renkler değiştirilmez", () => {
   expect(renderOptions).toEqual({
-    customGlyphs: true, lineHeight: 1, letterSpacing: 0, fontWeight: "normal", fontWeightBold: "bold",
+    customGlyphs: true, lineHeight: 1, letterSpacing: 0,
     drawBoldTextInBrightColors: false, minimumContrastRatio: 1, allowTransparency: false,
   });
 });
