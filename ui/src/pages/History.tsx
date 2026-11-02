@@ -13,6 +13,8 @@ const rowCwd = (r: HistoryRow) => r.summary?.cwd ?? r.cwd ?? "";
 export default function History({ onOpen, onResume }: Props) {
   const [view, setView] = useState<HistoryView | null>(null);
   const [rowErr, setRowErr] = useState<{ id: string; msg: string } | null>(null);
+  /** Rows whose resume call is still pending (button disabled). */
+  const [pending, setPending] = useState<Set<string>>(() => new Set());
   const [folder, setFolder] = useState("");
   const indexing = view?.indexing ?? false;
 
@@ -62,10 +64,14 @@ export default function History({ onOpen, onResume }: Props) {
                   <td>{s ? fmtCost(s.costUsd) : "?"}</td>
                   <td>
                     {onResume && (
-                      <button className="btn" onClick={(e) => {
+                      <button className="btn" disabled={pending.has(r.sessionId)} onClick={(e) => {
                         e.stopPropagation();
+                        if (pending.has(r.sessionId)) return;
                         setRowErr(null);
-                        onResume(r.sessionId, name).catch((err) => setRowErr({ id: r.sessionId, msg: String(err) }));
+                        setPending((p) => new Set(p).add(r.sessionId));
+                        onResume(r.sessionId, name)
+                          .catch((err) => setRowErr({ id: r.sessionId, msg: String(err) }))
+                          .finally(() => setPending((p) => { const n = new Set(p); n.delete(r.sessionId); return n; }));
                       }}>▶ Devam et</button>
                     )}
                     {rowErr?.id === r.sessionId && <div className="r" role="alert">{rowErr.msg}</div>}

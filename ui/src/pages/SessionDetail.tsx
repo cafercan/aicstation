@@ -79,6 +79,7 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal, live 
   const [sel, setSel] = useState(MAIN);
   const [folderErr, setFolderErr] = useState<string | null>(null);
   const [resumeErr, setResumeErr] = useState<string | null>(null);
+  const [resuming, setResuming] = useState(false);
   const [gotoErr, setGotoErr] = useState<string | null>(null);
   const [gotoNote, setGotoNote] = useState<string | null>(null);
   const liveRef = useRef(live);
@@ -163,9 +164,13 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal, live 
             }}>Sekmeye git</button>
           )}
           {kind === "closed" && !live && onResume && (
-            <button className="btn" onClick={() => {
+            <button className="btn" disabled={resuming} onClick={() => {
+              if (resuming) return;
               setResumeErr(null);
-              onResume(card.sessionId, card.name).catch((e) => setResumeErr(`Devam edilemedi: ${String(e)}`));
+              setResuming(true);
+              onResume(card.sessionId, card.name)
+                .catch((e) => setResumeErr(`Devam edilemedi: ${String(e)}`))
+                .finally(() => setResuming(false));
             }}>▶ Devam et</button>
           )}
           <button className="btn" onClick={() => {

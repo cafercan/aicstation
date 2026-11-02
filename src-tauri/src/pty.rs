@@ -38,6 +38,9 @@ struct Inner {
 #[derive(Default)]
 pub struct PtyManager {
     inner: Arc<Mutex<Inner>>,
+    /// Session ids resumed by a terminal that has not exited yet: a second
+    /// resume before the new `claude` registers would run the session twice.
+    resumed: Arc<Mutex<HashSet<String>>>,
 }
 
 fn size(cols: u16, rows: u16) -> PtySize {
@@ -167,7 +170,44 @@ impl PtyManager {
         on_exit: impl FnOnce(i32) + Send + 'static,
     ) -> Result<PtyInfo, String> {
         let args = resume_args(session_id)?;
-        self.spawn_in(powershell_exe().as_os_str(), &args, cwd, cols, rows, on_output, on_exit)
+        self.spawn_resume_in(powershell_exe().as_os_str(), &args, cwd, session_id, cols, rows, on_output, on_exit)
+    }
+
+    /// `spawn_in` guarded by the resumed-session set: refused while another
+    /// terminal resuming `session_id` is alive; the id is released on exit.
+    #[allow(clippy::too_many_arguments)]
+    pub fn spawn_resume_in(
+        &self,
+        program: &OsStr,
+        args: &[String],
+        cwd: &Path,
+        session_id: &str,
+        cols: u16,
+        rows: u16,
+        on_output: impl Fn(&[u8]) -> bool + Send + 'static,
+        on_exit: impl FnOnce(i32) + Send + 'static,
+    ) -> Result<PtyInfo, String> {
+        if !self.resumed.lock().map_err(poisoned)?.insert(session_id.to_string()) {
+            return Err("Bu oturum zaten açık".into());
+        }
+        let release = {
+            let resumed = Arc::clone(&self.resumed);
+            let sid = session_id.to_string();
+            move || {
+                if let Ok(mut r) = resumed.lock() {
+                    r.remove(&sid);
+                }
+            }
+        };
+        let release_on_exit = release.clone();
+        let res = self.spawn_in(program, args, cwd, cols, rows, on_output, move |code| {
+            release_on_exit();
+            on_exit(code);
+        });
+        if res.is_err() {
+            release();
+        }
+        res
     }
 
     /// `program args` in `cwd`; shared by `spawn_resume` and tests (stub program).
@@ -635,6 +675,35 @@ mod tests {
                 Ev::Exit(_) => return text,
             }
         }
+    }
+
+    #[test]
+    fn a_session_is_resumed_by_one_live_terminal_at_a_time() {
+        const SID: &str = "11111111-2222-4333-8444-555555555555";
+        let m = PtyManager::new();
+        let dir = std::env::temp_dir();
+        let args = vec!["/k".to_string()];
+        let (tx, rx) = mpsc::channel();
+        let start = |tx: mpsc::Sender<i32>| {
+            m.spawn_resume_in(OsStr::new("cmd.exe"), &args, &dir, SID, 80, 24, |_| true, move |c| {
+                let _ = tx.send(c);
+            })
+        };
+        let first = start(tx.clone()).unwrap();
+        assert_eq!(start(tx.clone()).unwrap_err(), "Bu oturum zaten açık");
+        // Another session is not blocked.
+        let other = m
+            .spawn_resume_in(OsStr::new("cmd.exe"), &args, &dir, "aaaaaaaa-2222-4333-8444-555555555555", 80, 24, |_| true, |_| {})
+            .unwrap();
+        m.kill(first.id).unwrap();
+        rx.recv_timeout(T).expect("exit");
+        let again = start(tx.clone()).unwrap();
+        m.kill(again.id).unwrap();
+        m.kill(other.id).unwrap();
+        // A failed spawn does not leave the id behind.
+        let bad = m.spawn_resume_in(OsStr::new("yok-boyle-bir-program.exe"), &args, &dir, "bbbbbbbb-2222-4333-8444-555555555555", 80, 24, |_| true, |_| {});
+        assert!(bad.is_err());
+        assert!(!m.resumed.lock().unwrap().contains("bbbbbbbb-2222-4333-8444-555555555555"));
     }
 
     #[test]

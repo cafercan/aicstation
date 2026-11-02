@@ -167,8 +167,9 @@ const closed = (over: Partial<SessionDetail["card"]> = {}) => {
 };
 function deferred<T>() {
   let resolve!: (v: T) => void;
-  const promise = new Promise<T>((r) => { resolve = r; });
-  return { promise, resolve };
+  let reject!: (e: unknown) => void;
+  const promise = new Promise<T>((r, j) => { resolve = r; reject = j; });
+  return { promise, resolve, reject };
 }
 
 test("kapanmış oturum bir kez çekilir, snapshot olaylarında yeniden çekilmez; \"kapandı\" gösterilir", async () => {
@@ -328,4 +329,34 @@ test("Geçmiş: ▶ Devam et satırı açmadan onResume çağırır; hata o sat�
   expect(within(trA).queryByText("Bilinmeyen oturum")).toBeNull();
   fireEvent.click(within(trA).getByText("▶ Devam et"));
   expect(onResume).toHaveBeenLastCalledWith("a", "ad-a");
+});
+
+test("▶ Devam et istek sürerken devre dışı (ayrıntı ve geçmiş)", async () => {
+  const d1 = deferred<void>();
+  invoke.mockResolvedValue(closed());
+  const onResume = vi.fn(() => d1.promise);
+  const r = render(<SessionDetailPage sessionId="s1" onBack={() => {}} onResume={onResume} />);
+  const btn = (await screen.findByText("▶ Devam et")) as HTMLButtonElement;
+  fireEvent.click(btn);
+  expect(btn.disabled).toBe(true);
+  fireEvent.click(btn);
+  expect(onResume).toHaveBeenCalledTimes(1);
+  await act(async () => { d1.resolve(); });
+  await waitFor(() => expect(btn.disabled).toBe(false));
+  r.unmount();
+
+  const d2 = deferred<void>();
+  invoke.mockResolvedValue({
+    rows: [row("a", "C:/a", true), row("b", "C:/b", false)], todayCost: 0, todayComplete: true, indexing: false,
+  });
+  const onResume2 = vi.fn(() => d2.promise);
+  render(<History onOpen={() => {}} onResume={onResume2} />);
+  const trA = (await screen.findByText("ad-a")).closest("tr")!;
+  const a = within(trA).getByText("▶ Devam et") as HTMLButtonElement;
+  fireEvent.click(a);
+  expect(a.disabled).toBe(true);
+  fireEvent.click(a);
+  expect(onResume2).toHaveBeenCalledTimes(1);
+  await act(async () => { d2.reject("x"); });
+  await waitFor(() => expect(a.disabled).toBe(false));
 });
