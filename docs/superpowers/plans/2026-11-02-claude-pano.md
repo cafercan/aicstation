@@ -39,6 +39,12 @@ Her görevin gereksinimlerine bu bölüm de dahildir.
   - Tauri `identifier`: `com.cafercan.claudepano`
   - Ürün adı: `Claude Pano`
 - Commit mesajlarına AI imzası (Co-Authored-By vb.) eklenmez.
+- Repo şu an private ama sonradan public yapılacak:
+  - Koda, testlere ve fixture'lara gerçek oturum kimliği, kişisel yol, prompt
+    metni ya da e-posta girmez. Fixture'lar elle yazılmış uydurma verilerdir.
+  - Commit e-postası `10761599+cafercan@users.noreply.github.com` olarak kalır.
+- Arayüzden gelen her IPC argümanı güvenilmez kabul edilir ve doğrulanır
+  (bkz. Görev 5, 9, 10).
 
 ## İnceleme Odağı
 
@@ -296,7 +302,13 @@ pub fn claude_dir() -> PathBuf;   // CLAUDE_CONFIG_DIR ya da ~/.claude
 #[test] fn finds_transcript_under_non_ascii_project_dir()    // klasör "D--Workspaces-AI-SeyahatB-t-e"; içerikteki cwd "…SeyahatBütçe" korunur
 #[test] fn cached_path_invalidated_when_missing()            // dosya silinir → yeniden arar, None
 #[test] fn claude_dir_respects_env()                         // CLAUDE_CONFIG_DIR=X → X (test içinde env ayarlanır/geri alınır)
+#[test] fn rejects_non_uuid_session_id()                     // "../../x", "a/b", "" → None, dosya sistemine dokunulmaz
 ```
+
+`session_id` arayüzden gelir ve yol kurmak için kullanılır. Bu yüzden
+`transcript` ve `subagents_dir`, yalnızca UUID biçimindeki kimlikleri
+(`[0-9a-f-]{36}`) kabul eder. Bu kontrol yol geçişi (path traversal) açığını
+engeller.
 - [ ] **Adım 2–4:** Testleri FAIL gör, uygula, PASS gör.
 - [ ] **Adım 5:** Commit: `feat(core): transcript locator`
 
@@ -449,8 +461,12 @@ impl HistoryIndex {
     FILETIME → `u64`) ve Toolhelp32 snapshot (üst PID).
   - Linux için `platform/mod.rs` içinde yalnızca `unimplemented!` içermeyen
     boş bir iskelet bırakılır; derlenmesi `cfg(windows)` ile sınırlanır.
-  - `open_folder`, `explorer.exe`'yi tek argümanla başlatır. Yol kabuktan
-    geçirilmez.
+  - `open_folder`, `explorer.exe`'yi tek argümanla başlatır ve yolu kabuktan
+    geçirmez. Yalnızca o anda bilinen bir oturumun `cwd` değerini kabul eder
+    (canlı ya da Geçmiş'te). Yol, var olan bir **klasör** olmalıdır. Aksi
+    halde hata döner, çünkü `explorer.exe` bir `.exe` yolu verilirse onu
+    çalıştırır. Testler: `open_folder_rejects_unknown_path`,
+    `open_folder_rejects_file_path`.
 - [ ] **Adım 5: Elle doğrula.** `npm run tauri dev` çalıştır. Geliştirici
   araçlarında `await __TAURI__.core.invoke('get_snapshot')` komutu, şu an açık
   olan Claude oturumlarını listeler. Sayısı `tasklist | findstr claude.exe`
@@ -480,7 +496,12 @@ impl HistoryIndex {
 ```rust
 #[test] fn spawn_echo_and_exit() // PtyManager::spawn_cmd("cmd.exe", &["/c","echo pano-ok"]) → çıktıda "pano-ok", çıkış kodu 0
 #[test] fn kill_removes_from_list()
+#[test] fn unknown_id_is_error()   // pty_write/resize/kill bilinmeyen id → Err, panik yok
 ```
+
+Arayüz yalnızca `powershell.exe` başlatabilir. `pty_spawn` dışarıdan program
+adı ya da argüman almaz. `spawn_cmd` test ve iç kullanım içindir ve Tauri
+komutu olarak dışa açılmaz.
 - [ ] **Adım 2–4:** Testleri FAIL gör, uygula, PASS gör.
   - `portable-pty` kullanılır: `native_pty_system()`.
   - Her PTY için bir okuma iş parçacığı çalışır ve `Channel` üzerinden
@@ -604,4 +625,20 @@ test('süreç çıkınca terminal menüden düşer')
     Vite'ın 1420 portu sayılmaz; kontrol release derlemesinde yapılır.
   - `settings.json` dosyasının hash'i, uygulama açılmadan önce ve kapatıldıktan
     sonra aynı olmalı.
-- [ ] **Adım 3:** Commit: `chore: release bundle and acceptance notes`
+- [ ] **Adım 3: Güvenlik CI'ı ekle.** `.github/workflows/ci.yml` dosyası her
+  push ve PR'da `windows-latest` üzerinde şunları çalıştırır:
+  - `cargo test --workspace` ve `npm --prefix ui test`
+  - `cargo audit` ve `npm audit --audit-level=high` (iki dizinde)
+  - `gitleaks` ile tüm geçmişte sır taraması
+
+  Tüm action'lar commit SHA'sına sabitlenir. Workflow'un yetkisi
+  `permissions: contents: read` ile sınırlıdır. Beklenen: ilk koşu yeşil.
+- [ ] **Adım 4: Public öncesi hazırlık.** Şu dosyalar eklenir:
+  - `SECURITY.md`: açık bildirme yolu olarak GitHub private vulnerability
+    reporting.
+  - `LICENSE`: kullanıcının diğer projeleri gibi MIT. Kullanıcıya teyit
+    ettirilir.
+
+  `git log -p` çıktısında kişisel yol, e-posta ya da oturum kimliği
+  olmadığı doğrulanır.
+- [ ] **Adım 5:** Commit: `chore: release bundle, security ci and acceptance notes`
