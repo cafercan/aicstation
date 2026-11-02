@@ -261,6 +261,18 @@ npm --prefix ui test
 cargo clippy --workspace -- -D warnings
 ```
 
+### Demo data
+
+`scripts/demo-data.ps1` builds a fake Claude config dir (5 live sessions with
+dummy processes, ~25 closed sessions, subagents and a workflow, all made up)
+for screenshots and demos. It also creates folders under `C:\Demo`.
+
+```powershell
+.\scripts\demo-data.ps1                 # default dir: %TEMP%\sessionstation-demo
+$env:CLAUDE_CONFIG_DIR="$env:TEMP\sessionstation-demo"; & .\target\debug\session-station.exe
+.\scripts\demo-data.ps1 -Stop           # kill the dummy processes, remove the demo dir and C:\Demo folders
+```
+
 Third-party notices are generated offline from `Cargo.lock`, the local cargo
 registry and `ui/node_modules`:
 
