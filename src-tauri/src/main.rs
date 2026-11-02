@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod commands;
 mod platform;
+mod pty;
 
 use commands::AppState;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
@@ -124,6 +125,7 @@ fn main() {
                 data.join("history-cache.json"),
                 platform::probe(),
             ));
+            app.manage(pty::PtyManager::new());
             let handle = app.handle().clone();
             std::thread::spawn(move || background_loop(handle, dir));
             Ok(())
@@ -132,7 +134,12 @@ fn main() {
             commands::get_snapshot,
             commands::get_session_detail,
             commands::get_history,
-            commands::open_folder
+            commands::open_folder,
+            commands::pty_spawn,
+            commands::pty_write,
+            commands::pty_resize,
+            commands::pty_kill,
+            commands::pty_list
         ])
         .run(tauri::generate_context!())
         .expect("Claude Pano başlatılamadı");

@@ -321,3 +321,55 @@ mod tests {
         assert!(state.open_folder("C:\\Windows").is_err());
     }
 }
+
+// ---- terminals (ConPTY) ----------------------------------------------------
+// The UI cannot choose a program or arguments: `pty_spawn` always starts
+// powershell.exe. Unknown ids come back as Err.
+
+use crate::pty::{PtyInfo, PtyManager};
+use tauri::ipc::Channel;
+
+#[tauri::command(async)]
+pub fn pty_spawn(
+    state: tauri::State<'_, PtyManager>,
+    cols: u16,
+    rows: u16,
+    on_output: Channel<Vec<u8>>,
+    on_exit: Channel<i32>,
+) -> Result<PtyInfo, String> {
+    state.spawn_shell(
+        cols,
+        rows,
+        move |b| {
+            let _ = on_output.send(b.to_vec());
+        },
+        move |code| {
+            let _ = on_exit.send(code);
+        },
+    )
+}
+
+#[tauri::command(async)]
+pub fn pty_write(state: tauri::State<'_, PtyManager>, id: u32, data: String) -> Result<(), String> {
+    state.write(id, &data)
+}
+
+#[tauri::command(async)]
+pub fn pty_resize(
+    state: tauri::State<'_, PtyManager>,
+    id: u32,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    state.resize(id, cols, rows)
+}
+
+#[tauri::command(async)]
+pub fn pty_kill(state: tauri::State<'_, PtyManager>, id: u32) -> Result<(), String> {
+    state.kill(id)
+}
+
+#[tauri::command(async)]
+pub fn pty_list(state: tauri::State<'_, PtyManager>) -> Vec<PtyInfo> {
+    state.list()
+}
