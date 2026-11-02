@@ -16,11 +16,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # Pinned: a release build must not change with whatever "stable" is today.
       - name: Rust toolchain (rustup on the runner)
         shell: bash
         run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+          rustup toolchain install 1.99.1 --profile minimal
+          rustup default 1.99.1
           rustc --version
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -33,7 +34,7 @@ jobs:
       - run: cargo test --workspace
       - run: npm --prefix ui test
 
-      - run: cargo install cargo-audit --locked
+      - run: cargo install cargo-audit --locked --version 0.21.2
       - run: cargo audit
       - run: npm audit --audit-level=high
       - run: npm --prefix ui audit --audit-level=high
