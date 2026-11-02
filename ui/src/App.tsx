@@ -85,7 +85,7 @@ export default function App() {
   let page;
   if (view === "dashboard") {
     page = <Dashboard snapshot={snapshot} history={history} now={now}
-      onOpen={(id) => setView({ session: id })} />;
+      onOpen={(id) => setView({ session: id })} onTerminal={(id) => setView({ terminal: id })} />;
   } else if (view === "history") {
     page = <History onOpen={(id) => setView({ session: id })} onResume={onResume} />;
   } else if ("session" in view) {

@@ -38,7 +38,11 @@ export interface SessionCard {
   startedAtMs: number;
   lastActivityMs: number;
   gitBranch: string | null;
+  /** Where the Claude process runs; "other" for closed sessions. */
+  hostKind: HostKind;
 }
+
+export type HostKind = "embedded" | "windowsTerminal" | "other";
 
 export interface Snapshot {
   sessions: SessionCard[];
@@ -132,6 +136,11 @@ export interface PtyInfo { id: number; pid: number }
 export const ptySpawnResume = (
   sessionId: string, cols: number, rows: number, onOutput: Channel<number[]>, onExit: Channel<number>,
 ) => invoke<PtyInfo>("pty_spawn_resume", { sessionId, cols, rows, onOutput, onExit });
+/**
+ * Brings the session's Windows Terminal tab forward. Only the id is sent;
+ * resolves to a note when the window was focused but no tab was selected.
+ */
+export const focusSessionTab = (sessionId: string) => invoke<string | null>("focus_session_tab", { sessionId });
 /** No arguments: the backend uses fixed wt.exe arguments. */
 export const openWindowsTerminal = () => invoke<void>("open_windows_terminal");
 

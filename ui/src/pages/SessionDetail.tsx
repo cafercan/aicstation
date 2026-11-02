@@ -3,6 +3,7 @@ import { getSessionDetail, onSnapshot, openFolder, type AgentNode, type SessionD
 import { fmtContext, fmtCost, fmtElapsed, fmtTokens, statusColor, statusKind, statusLabel } from "../format";
 import ClaudeMark from "../components/ClaudeMark";
 import { terminalForPid } from "../terminal/store";
+import { goToTab, gotoTarget } from "../gotoTab";
 
 interface Props {
   sessionId: string;
@@ -78,6 +79,8 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal, live 
   const [sel, setSel] = useState(MAIN);
   const [folderErr, setFolderErr] = useState<string | null>(null);
   const [resumeErr, setResumeErr] = useState<string | null>(null);
+  const [gotoErr, setGotoErr] = useState<string | null>(null);
+  const [gotoNote, setGotoNote] = useState<string | null>(null);
   const liveRef = useRef(live);
   /** Re-opens loading after it was considered final, and loads once. */
   const wakeRef = useRef<() => void>(() => {});
@@ -137,8 +140,8 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal, live 
   const selNode = sel === MAIN ? null : findNode(tree.roots, sel);
   const calls = selNode ? selNode.stats.toolCalls : detail.mainToolCalls;
   const caption = selNode ? nodeLabel(selNode) : "ana oturum";
-  const term = card.parentPid == null ? undefined : terminalForPid(card.parentPid);
   const kind = statusKind(card.status, card.pid);
+  const target = kind === "closed" ? null : gotoTarget(card, terminalForPid(card.parentPid));
   const started = new Date(card.startedAtMs).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
 
   return (
@@ -151,8 +154,13 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal, live 
           <span className={`badge ${kind}`}>{statusLabel(card.status, card.pid)}</span>
         </h3>
         <div>
-          {term !== undefined && (
-            <button className="btn" onClick={() => onTerminal?.(term)}>Terminale git</button>
+          {target && (
+            <button className="btn" onClick={() => {
+              setGotoErr(null);
+              setGotoNote(null);
+              goToTab(card.sessionId, target, onTerminal)
+                .then(setGotoNote, (e: unknown) => setGotoErr(e instanceof Error ? e.message : String(e)));
+            }}>Sekmeye git</button>
           )}
           {kind === "closed" && !live && onResume && (
             <button className="btn" onClick={() => {
@@ -168,6 +176,8 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal, live 
       </div>
       {folderErr && <div className="meta r" role="alert">{folderErr}</div>}
       {resumeErr && <div className="meta r" role="alert">{resumeErr}</div>}
+      {gotoErr && <div className="meta r" role="alert">{gotoErr}</div>}
+      {gotoNote && <div className="meta" role="status">{gotoNote}</div>}
       <div className="meta">
         {card.cwd} · başladı {started} · son hareket {fmtElapsed(Date.now() - card.lastActivityMs)}
       </div>

@@ -11,7 +11,7 @@ function card(over: Partial<SessionCard> = {}): SessionCard {
     sessionId: "s1", pid: 1, parentPid: null, name: "demo", cwd: "C:/x/demo",
     status: "busy", waitingFor: null, model: "Opus 5.5", contextPct: 62,
     costUsd: 1.2, agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null,
-    startedAtMs: 0, lastActivityMs: 0, gitBranch: "main", ...over,
+    startedAtMs: 0, lastActivityMs: 0, gitBranch: "main", hostKind: "other", ...over,
   };
 }
 
@@ -162,4 +162,23 @@ test("kenar çubuğu: Windows Terminal'de aç; hata satır içinde gösterilir",
   expect((await screen.findByRole("alert")).textContent).toBe("Windows Terminal bulunamadı");
   fireEvent.click(btn);
   await vi.waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+});
+
+test('kart: "Sekmeye git" simgesi yalnızca onGoto verildiğinde görünür ve kartı açmaz', async () => {
+  const onOpen = vi.fn();
+  const onGoto = vi.fn(async () => null);
+  const { unmount } = render(<SessionCardView card={card()} now={0} onOpen={onOpen} />);
+  expect(screen.queryByRole("button", { name: "Sekmeye git" })).toBeNull();
+  unmount();
+  render(<SessionCardView card={card()} now={0} onOpen={onOpen} onGoto={onGoto} />);
+  fireEvent.click(screen.getByRole("button", { name: "Sekmeye git" }));
+  expect(onGoto).toHaveBeenCalledTimes(1);
+  expect(onOpen).not.toHaveBeenCalled();
+});
+
+test("kart: Sekmeye git notu kartta gösterilir", async () => {
+  const onGoto = vi.fn(async () => "Pencere öne getirildi; aynı adlı birden çok sekme var");
+  render(<SessionCardView card={card()} now={0} onOpen={() => {}} onGoto={onGoto} />);
+  fireEvent.click(screen.getByRole("button", { name: "Sekmeye git" }));
+  expect(await screen.findByText("Pencere öne getirildi; aynı adlı birden çok sekme var")).toBeTruthy();
 });

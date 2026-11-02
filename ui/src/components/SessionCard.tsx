@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { SessionCard } from "../api";
 import {
   AGENT_FINISHED_COLOR, AGENT_RUNNING_COLOR, clampPct, fmtContext, fmtCost, fmtElapsed, statusColor,
@@ -10,9 +11,12 @@ interface Props {
   card: SessionCard;
   now: number;
   onOpen: (sessionId: string) => void;
+  /** "Sekmeye git" icon; omitted when the session's tab cannot be reached. Resolves to a note. */
+  onGoto?: () => Promise<string | null>;
 }
 
-export default function SessionCardView({ card, now, onOpen }: Props) {
+export default function SessionCardView({ card, now, onOpen, onGoto }: Props) {
+  const [note, setNote] = useState<string | null>(null);
   const kind = statusKind(card.status, card.pid);
   const running = Math.max(0, card.agentsTotal - card.agentsFinished);
   const finished = Math.max(0, card.agentsFinished);
@@ -32,8 +36,18 @@ export default function SessionCardView({ card, now, onOpen }: Props) {
         <div className="st">
           <span className="badge">{statusLabel(card.status, card.pid)}</span>
           {card.waitingFor ? <span className="waiting-for">{" "}{card.waitingFor}</span> : null}
+          {onGoto && (
+            <button className="goto" aria-label="Sekmeye git" title="Sekmeye git"
+              onClick={(e) => {
+                e.stopPropagation();
+                setNote(null);
+                onGoto().then(setNote, (err: unknown) => setNote(err instanceof Error ? err.message : String(err)));
+              }}
+              onKeyDown={(e) => e.stopPropagation()}>⇱</button>
+          )}
         </div>
       </div>
+      {note && <div className="goto-note" role="status">{note}</div>}
       <div className="path" title={card.cwd}>
         <span className="cwd">{card.cwd}</span><span className="model">{card.model ?? "?"}</span>
       </div>

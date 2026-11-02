@@ -39,6 +39,7 @@ function detail(over: Partial<SessionDetail> = {}): SessionDetail {
       sessionId: "s1", pid: 1, parentPid: 77, name: "demo", cwd: "C:/x/demo", status: "busy",
       waitingFor: null, model: "Opus 5.5", contextPct: 62, costUsd: 1.2, agentsTotal: 1,
       agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 0, gitBranch: "main",
+      hostKind: "other",
     },
     tokens: usage, toolCallCount: 3,
     tree: {
@@ -100,17 +101,50 @@ test('tool satırı: Ok "✓", Error "✗", Running "… çalışıyor"', async 
   expect(rows[2].textContent).toContain("… çalışıyor");
 });
 
-test('"Terminale git" yalnızca terminalForPid tanımlıyken görünür', async () => {
+test('"Sekmeye git" gömülü terminalde o terminale geçer', async () => {
   invoke.mockResolvedValue(detail());
   const { unmount } = render(<SessionDetailPage sessionId="s1" onBack={() => {}} />);
   await screen.findByText("Klasörü aç");
-  expect(screen.queryByText("Terminale git")).toBeNull();
+  expect(screen.queryByText("Sekmeye git")).toBeNull();
   unmount();
   terminalForPid.mockReturnValue(4);
   const onTerminal = vi.fn();
   render(<SessionDetailPage sessionId="s1" onBack={() => {}} onTerminal={onTerminal} />);
-  fireEvent.click(await screen.findByText("Terminale git"));
+  fireEvent.click(await screen.findByText("Sekmeye git"));
   expect(onTerminal).toHaveBeenCalledWith(4);
+  expect(invoke.mock.calls.some((c) => c[0] === "focus_session_tab")).toBe(false);
+});
+
+test('"Sekmeye git" Windows Terminal oturumunda yalnızca kimlikle focus_session_tab çağırır, notu gösterir', async () => {
+  const d = detail();
+  d.card.hostKind = "windowsTerminal";
+  invoke.mockImplementation(async (cmd: string) =>
+    cmd === "focus_session_tab" ? "Pencere öne getirildi; aynı adlı birden çok sekme var" : d);
+  render(<SessionDetailPage sessionId="s1" onBack={() => {}} />);
+  fireEvent.click(await screen.findByText("Sekmeye git"));
+  await screen.findByText("Pencere öne getirildi; aynı adlı birden çok sekme var");
+  expect(invoke).toHaveBeenCalledWith("focus_session_tab", { sessionId: "s1" });
+});
+
+test('"Sekmeye git" hatası satır içinde gösterilir; başka host ve kapalı oturumda düğme yok', async () => {
+  const d = detail();
+  d.card.hostKind = "windowsTerminal";
+  invoke.mockImplementation(async (cmd: string) => {
+    if (cmd === "focus_session_tab") throw "Sekme bulunamadı";
+    return d;
+  });
+  const first = render(<SessionDetailPage sessionId="s1" onBack={() => {}} />);
+  fireEvent.click(await screen.findByText("Sekmeye git"));
+  expect((await screen.findByRole("alert")).textContent).toBe("Sekmeye gidilemedi: Sekme bulunamadı");
+  first.unmount();
+  for (const c of [{ ...d.card, hostKind: "other" as const }, { ...d.card, pid: 0, parentPid: null }]) {
+    invoke.mockResolvedValue({ ...d, card: c });
+    terminalForPid.mockReturnValue(c.pid ? undefined : 4);
+    const r = render(<SessionDetailPage sessionId="s1" onBack={() => {}} />);
+    await screen.findByText("Klasörü aç");
+    expect(screen.queryByText("Sekmeye git")).toBeNull();
+    r.unmount();
+  }
 });
 
 test("snapshot olayında ayrıntı yeniden çekilir; Klasörü aç open_folder çağırır", async () => {
