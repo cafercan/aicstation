@@ -154,24 +154,20 @@ fn indexer_loop(app: tauri::AppHandle) {
     }
 }
 
+/// The app's own origin (`tauri://localhost`, `http(s)://tauri.localhost`)
+/// and, in debug builds, the dev server's origin. Everything else is refused.
+fn navigation_allowed(url: &tauri::Url, dev: Option<&tauri::Url>) -> bool {
+    let app_origin = match url.scheme() {
+        "tauri" => url.host_str() == Some("localhost"),
+        "http" | "https" => url.host_str() == Some("tauri.localhost") && url.port().is_none(),
+        _ => false,
+    };
+    app_origin || dev.is_some_and(|d| url.origin() == d.origin())
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
-            // The main window is built here (config has `create: false`) only
-            // to enable WebView2 clipboard-read access, so right-click paste
-            // via navigator.clipboard.readText works without a prompt. No
-            // clipboard plugin and no new IPC permission are involved.
-            let main_conf = app
-                .config()
-                .app
-                .windows
-                .iter()
-                .find(|w| w.label == "main")
-                .cloned()
-                .ok_or("main penceresi yapılandırmada yok")?;
-            tauri::WebviewWindowBuilder::from_config(app.handle(), &main_conf)?
-                .enable_clipboard_access()
-                .build()?;
             let data = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data)?;
             let dir = claude_dir();
@@ -181,6 +177,25 @@ fn main() {
                 platform::probe(),
             ));
             app.manage(pty::PtyManager::new());
+            // The main window is built here (config has `create: false`) only
+            // to enable WebView2 clipboard-read access, so right-click paste
+            // via navigator.clipboard.readText works without a prompt. No
+            // clipboard plugin and no new IPC permission are involved. It is
+            // built after the state is managed (commands may run at once) and
+            // may only navigate within the app (it can read the clipboard).
+            let main_conf = app
+                .config()
+                .app
+                .windows
+                .iter()
+                .find(|w| w.label == "main")
+                .cloned()
+                .ok_or("main penceresi yapılandırmada yok")?;
+            let dev_url = if cfg!(debug_assertions) { app.config().build.dev_url.clone() } else { None };
+            tauri::WebviewWindowBuilder::from_config(app.handle(), &main_conf)?
+                .enable_clipboard_access()
+                .on_navigation(move |url| navigation_allowed(url, dev_url.as_ref()))
+                .build()?;
             let handle = app.handle().clone();
             std::thread::spawn(move || snapshot_loop(handle, dir));
             let handle = app.handle().clone();
@@ -214,6 +229,31 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn u(s: &str) -> tauri::Url {
+        tauri::Url::parse(s).unwrap()
+    }
+
+    #[test]
+    fn navigation_only_within_the_app() {
+        for ok in ["tauri://localhost/", "tauri://localhost/index.html", "http://tauri.localhost/", "https://tauri.localhost/x"] {
+            assert!(navigation_allowed(&u(ok), None), "{ok}");
+        }
+        for bad in [
+            "https://example.com/",
+            "http://tauri.localhost.example.com/",
+            "http://tauri.localhost:8080/",
+            "tauri://evil/",
+            "file:///C:/Windows/win.ini",
+            "http://localhost:1420/",
+            "javascript:alert(1)",
+        ] {
+            assert!(!navigation_allowed(&u(bad), None), "{bad}");
+        }
+        let dev = u("http://localhost:1420");
+        assert!(navigation_allowed(&u("http://localhost:1420/src/main.tsx"), Some(&dev)));
+        assert!(!navigation_allowed(&u("http://localhost:1421/"), Some(&dev)));
+    }
 
     #[test]
     fn loop_emits_when_tick_elapsed() {
