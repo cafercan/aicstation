@@ -20,7 +20,8 @@ It is built with Tauri 2, a Rust core and a React/TypeScript UI.
 |---|---|---|
 | ![Dashboard](docs/images/dashboard.png) | ![Embedded terminal](docs/images/terminal.png) | ![History](docs/images/history.png) |
 
-*Screenshots are captured with demo data.*
+*Screenshots are produced with demo data (made-up sessions, folders and
+costs), not from a real machine.*
 
 ## Contents
 
@@ -80,10 +81,14 @@ closed session in its own folder.
 - A background indexer builds a summary of past sessions and caches it, so
   later starts are fast.
 - Cost charts: daily cost for the last 7, 30 or 90 days, the most expensive
-  projects, and the split by model. All amounts are labeled as estimates.
+  projects, and the split by model. All three include the sessions that are
+  still running, and all amounts are labeled as estimates. The page refreshes
+  them every 30 seconds while it is open.
 - Filter by text and date range, and sort by date or cost.
-- Content search inside past transcripts. It streams the files, stops early,
-  and returns up to 50 hits with short snippets.
+- Content search inside the transcripts of both live and past sessions. It
+  streams the files and returns short snippets. It stops at 50 hits, after
+  8 seconds or 2 GiB read, or when you cancel it (Clear, or leaving the page);
+  a result cut short is marked as such.
 - **Resume**: opens a new embedded terminal in the session's project folder and
   runs `claude --resume <session id>`. The app looks up the folder from the
   transcript itself; the UI only sends the session id. A session that is
@@ -112,21 +117,32 @@ closed session in its own folder.
 - Windows toast notifications when a session starts waiting for approval, when
   a session finishes after working for at least 10 seconds, and (optional,
   off by default) when a subagent finishes. Each has its own switch in
-  Settings. A session gets at most one notification every 15 seconds, and you
-  are not notified about the session you are already looking at.
-- Clicking a notification opens that session's detail.
+  Settings. A session gets at most one notification every 15 seconds (one
+  that comes sooner is shown when the 15 seconds are up, if it still applies).
+  While the app window is focused, there is no notification for the session
+  shown in the detail view or in either visible pane of a split terminal.
+- While the app is running, clicking one of its recent notifications opens
+  that session's detail. Notifications left in the Action Center from before
+  the app was restarted do not.
 - A tray icon whose tooltip counts open and waiting sessions. It shows an
   attention dot while any session is waiting, and its menu lists up to 5
   waiting sessions.
 - Closing the window can minimize it to the tray (on by default), so terminals
   and monitoring keep running.
 - Only one copy runs at a time. Launching it again brings the existing window
-  forward.
+  forward; if that copy does not respond within 3 seconds, a message says so
+  instead.
 
 ### Keyboard shortcuts
 
 App shortcuts use chords that do not collide with PowerShell/PSReadLine or
 Claude Code. Every other key goes to the terminal.
+
+Keys are physical positions on a US layout: the letters work the same on any
+keyboard layout (Cyrillic, Turkish F, ...), and `/` and `\` mean the keys at
+those positions (on ISO keyboards the extra key next to left Shift also works
+for `\`). The in-app shortcut help (Ctrl+Shift+/) shows the key your layout
+has there, for example `.` and `,` on Turkish Q.
 
 | Shortcut | Action |
 |---|---|
@@ -198,8 +214,7 @@ These are guarantees of the code in this repository:
 ## Installation
 
 Download `SessionStation_*_x64-setup.exe` from the
-[Releases](../../releases) page and run it, or install it from the C Launcher
-catalog.
+[Releases](../../releases) page and run it.
 
 - The install is per user and needs no administrator rights.
 - The installer is not code-signed yet, so Windows SmartScreen may warn you.
@@ -319,13 +334,18 @@ Claude ve Claude Code, Anthropic'in ticari markalarıdır.
 - **Oturum ayrıntısı:** alt ajan ağacı, son tool çağrıları, "Sekmeye git"
   (gömülü terminal ya da Windows Terminal sekmesi), kapanmış oturumu sürdürme.
 - **Geçmiş:** önbellekli dizin, maliyet grafikleri (7/30/90 gün, projeler,
-  modeller), içerikte arama, "Devam et" ile `claude --resume`.
+  modeller; çalışan oturumlar dahil), canlı ve geçmiş oturumlarda içerikte
+  arama (50 sonuç, 8 sn, 2 GiB ya da iptalde durur), "Devam et" ile
+  `claude --resume`.
 - **Gömülü terminal:** ConPTY üzerinden gerçek PowerShell, WebGL ile çizim,
   Ubuntu renkleri, bölünmüş görünüm, kopyala/yapıştır, arama, yazı boyutu,
   "Windows Terminal'de aç".
 - **Bildirimler ve tepsi:** onay bekleyen ve biten oturumlar için Windows
-  bildirimi, tepsi simgesi, tek kopya çalışma.
-- **Klavye kısayolları**, 8 arayüz dili ve 6 tema.
+  bildirimi (pencere odaktayken ayrıntıda ya da bölünmüş görünümün iki
+  bölmesinde görünen oturum için bildirim yok; bildirime tıklamak uygulama
+  çalışırken son bildirimlerde oturumu açar), tepsi simgesi, tek kopya çalışma.
+- **Klavye kısayolları** (fiziksel tuş konumları; her klavye düzeninde
+  çalışır), 8 arayüz dili ve 6 tema.
 
 **Gizlilik:** `~/.claude` yalnızca okunur (`sessions/*.key` hiç açılmaz).
 Uygulamanın kendisi ağ isteği yapmaz; telemetri ve otomatik güncelleme yoktur.
@@ -335,9 +355,9 @@ anahtarına yazar. Claude Code'un belgelenmemiş dosya biçimlerine dayanır; bu
 biçimler değişebilir.
 
 **Kurulum:** [Releases](../../releases) sayfasından
-`SessionStation_*_x64-setup.exe` dosyasını indirip çalıştırın ya da C Launcher
-kataloğundan kurun. Kurulum kullanıcı bazlıdır, yönetici yetkisi gerekmez;
-kurulum dosyası henüz imzalı değildir. Gereksinimler: Windows 10/11 x64,
+`SessionStation_*_x64-setup.exe` dosyasını indirip çalıştırın. Kurulum
+kullanıcı bazlıdır, yönetici yetkisi gerekmez; kurulum dosyası henüz imzalı
+değildir. Gereksinimler: Windows 10/11 x64,
 WebView2, Claude Code.
 
 Kaynaktan derleme, testler ve katkı için yukarıdaki İngilizce bölümlere
