@@ -1,0 +1,151 @@
+/**
+ * Türkçe — the reference dictionary. Its keys define `Key`; az.ts and en.ts
+ * must have exactly the same keys and the same `{placeholders}`.
+ */
+export const tr = {
+  // Sidebar
+  "nav.dashboard": "▦ Dashboard",
+  "nav.history": "Geçmiş",
+  "nav.terminals": "TERMİNALLER",
+  "nav.newTerminal": "＋ Yeni terminal",
+  "nav.openWt": "↗ Windows Terminal'de aç",
+  "nav.openWtTitle": "Ev klasöründe yeni bir PowerShell sekmesi",
+  "nav.closeTerminal": "Terminali kapat",
+  "nav.claudeStatus": "Claude: {status}",
+  "nav.language": "Dil",
+  "nav.theme": "Tema",
+
+  // Status labels
+  "status.busy": "çalışıyor",
+  "status.shell": "komut çalıştırıyor",
+  "status.waiting": "onay bekliyor",
+  "status.idle": "hazır",
+  "status.closed": "kapandı",
+  "status.unknown": "bilinmiyor",
+
+  // Elapsed time
+  "time.sec": "{n} sn",
+  "time.min": "{n} dk",
+  "time.hour": "{n} sa",
+  "time.hourMin": "{h} sa {m} dk",
+  "time.day": "{n} gün",
+
+  // Dashboard KPIs
+  "kpi.openSessions": "açık oturum",
+  "kpi.runningAgents": "çalışan ajan",
+  "kpi.waiting": "onay bekliyor",
+  "kpi.today": "bugün",
+  "kpi.computing": "hesaplanıyor",
+  "dash.empty": "Açık Claude Code oturumu yok.",
+
+  // Session card
+  "card.lastTool": "son: {tool}",
+  "card.lastActivity": "son hareket {t}",
+  "card.goto": "Sekmeye git",
+  "card.noSubagents": "alt ajan yok",
+  "card.agentsRunning": "{n} ajan çalışıyor",
+  "card.agentsFinished": "{n} ajan tamamlandı",
+  "card.toolSuccess": "tool başarı",
+  "card.context": "bağlam {pct}",
+  "donut.label": "{total} ajan: {running} çalışıyor, {finished} bitti",
+  "donut.agents": "ajan",
+
+  // Status bar
+  "sb.openSessions": "{n} açık oturum",
+  "sb.agents": "{n} ajan",
+  "sb.noAgents": "ajan yok",
+
+  // App shell
+  "app.terminalMissing": "Terminal bulunamadı.",
+  "app.backToDashboard": "← Dashboard",
+  "common.loading": "Yükleniyor…",
+
+  // History
+  "hist.title": "Geçmiş",
+  "hist.folderFilter": "Klasör filtresi",
+  "hist.allFolders": "Tüm klasörler",
+  "hist.indexing": "Dizinleniyor…",
+  "hist.empty": "Kayıt yok.",
+  "hist.colDate": "Tarih",
+  "hist.colName": "Ad",
+  "hist.colFolder": "Klasör",
+  "hist.colModel": "Model",
+  "hist.colDuration": "Süre",
+  "hist.colAgents": "Ajan",
+  "hist.colCost": "Maliyet",
+  "hist.resume": "▶ Devam et",
+
+  // Session detail
+  "detail.back": "← Geri",
+  "detail.backLabel": "Geri",
+  "detail.notFound": "Oturum bulunamadı.",
+  "detail.goto": "Sekmeye git",
+  "detail.resume": "▶ Devam et",
+  "detail.openFolder": "Klasörü aç",
+  "detail.resumeFailed": "Devam edilemedi: {err}",
+  "detail.folderFailed": "Klasör açılamadı: {err}",
+  "detail.started": "başladı {time}",
+  "detail.lastActivity": "son hareket {t}",
+  "detail.kpiModel": "model",
+  "detail.kpiContext": "bağlam",
+  "detail.kpiTokens": "token",
+  "detail.kpiCost": "maliyet",
+  "detail.kpiAgents": "ajan / biten",
+  "detail.kpiToolCalls": "tool çağrısı",
+  "detail.agentTree": "AJAN AĞACI",
+  "detail.mainSession": "Ana oturum",
+  "detail.mainCaption": "ana oturum",
+  "detail.recentCalls": "SON TOOL ÇAĞRILARI · {caption}",
+  "detail.noCalls": "çağrı yok",
+  "detail.callRunning": "… çalışıyor",
+  "detail.workflow": "Workflow {id}",
+  "detail.phase": "Aşama {name}",
+  "detail.agent": "ajan",
+  "goto.failed": "Sekmeye gidilemedi: {err}",
+
+  // Embedded terminal
+  "term.resumeTitle": "Devam: {id}",
+  "term.confirmClose": "Terminalde açık {n} Claude oturumu var ({names}). Yine de kapatılsın mı?",
+  "search.label": "Terminalde ara",
+  "search.placeholder": "Ara…",
+  "search.none": "Sonuç yok",
+  "search.prev": "Önceki (Shift+Enter)",
+  "search.next": "Sonraki (Enter)",
+  "search.close": "Kapat (Esc)",
+
+  // Themes (swatch tooltips)
+  "theme.pano-dark": "Pano Koyu",
+  "theme.slate-dark": "Obsidyen Koyu",
+  "theme.nord-dark": "Nord Buzu",
+  "theme.minimal-light": "Klasik Açık",
+  "theme.github-light": "GitHub Açık",
+  "theme.sepia-light": "Sepya",
+
+  // Backend error codes (src-tauri/src/errors.rs)
+  "err.session_invalid": "Geçersiz oturum kimliği",
+  "err.session_live": "Bu oturum zaten açık",
+  "err.session_unknown": "Bilinmeyen oturum ya da klasörü yok",
+  "err.session_not_live": "Oturum açık değil",
+  "err.session_folder": "Oturumun klasörü kullanılamıyor",
+  "err.folder_unknown": "Bilinmeyen klasör",
+  "err.folder_network": "Ağ yolları desteklenmiyor",
+  "err.folder_invalid": "Geçersiz yol",
+  "err.folder_relative": "Yol mutlak olmalı",
+  "err.folder_missing": "Yol var olan bir klasör değil",
+  "err.folder_open_failed": "Klasör açılamadı",
+  "err.pty_unknown": "Bilinmeyen terminal",
+  "err.pty_limit": "En fazla {detail} terminal açılabilir",
+  "err.pty_too_large": "Veri çok büyük (en fazla {detail} bayt)",
+  "err.pty_spawn_failed": "Terminal başlatılamadı",
+  "err.pty_io": "Terminale yazılamadı",
+  "err.internal_lock": "İç kilit hatası",
+  "err.task_failed": "İşlem yarıda kaldı",
+  "err.wt_not_found": "Windows Terminal bulunamadı",
+  "err.wt_open_failed": "Windows Terminal açılamadı",
+  "err.wt_home_invalid": "Kullanıcı klasörü geçersiz",
+  "err.wt_home_missing": "Kullanıcı klasörü bulunamadı",
+  "err.wt_powershell_invalid": "PowerShell yolu geçersiz",
+  "err.tab_not_found": "Sekme bulunamadı",
+  "err.tab_ambiguous": "Pencere öne getirildi; aynı adlı birden çok sekme var",
+  "err.tab_no_match": "Pencere öne getirildi; oturumun sekmesi bulunamadı",
+} as const satisfies Record<string, string>;
