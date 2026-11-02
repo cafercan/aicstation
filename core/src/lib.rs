@@ -8,3 +8,4 @@ pub mod locate;
 pub mod agents;
 pub mod monitor;
 pub mod history;
+pub mod host;

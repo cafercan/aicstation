@@ -38,6 +38,10 @@ pub struct LiveSession {
 pub trait ProcessProbe {
     fn start_filetime(&self, pid: u32) -> Option<u64>;
     fn parent_pid(&self, pid: u32) -> Option<u32>;
+    /// Where the process runs (ancestor walk); probes that cannot tell say Other.
+    fn host_kind(&self, _pid: u32) -> crate::host::HostKind {
+        crate::host::HostKind::Other
+    }
 }
 
 #[derive(Deserialize)]

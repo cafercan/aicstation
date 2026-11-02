@@ -1,6 +1,8 @@
-//! Windows process probe: creation time via GetProcessTimes, parent PID via a
-//! Toolhelp32 snapshot that is cached for a short TTL (Monitor asks once per
-//! session per tick; one snapshot serves them all).
+//! Windows process probe: creation time via GetProcessTimes, parent PID and
+//! exe name via a Toolhelp32 snapshot that is cached for a short TTL (Monitor
+//! asks once per session per tick; one snapshot serves them all). The host
+//! kind of each pid is computed once per snapshot.
+use pano_core::host::{find_host, Host, HostKind, ProcInfo};
 use pano_core::registry::ProcessProbe;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -15,13 +17,29 @@ use windows_sys::Win32::System::Threading::{
 
 const PARENT_MAP_TTL: Duration = Duration::from_millis(500);
 
+struct ProcCache {
+    at: Instant,
+    table: HashMap<u32, ProcInfo>,
+    hosts: HashMap<u32, HostKind>,
+}
+
 pub struct WinProbe {
-    parents: Mutex<Option<(Instant, HashMap<u32, u32>)>>,
+    procs: Mutex<Option<ProcCache>>,
 }
 
 impl WinProbe {
     pub fn new() -> Self {
-        Self { parents: Mutex::new(None) }
+        Self { procs: Mutex::new(None) }
+    }
+
+    /// Runs `f` on a process table no older than PARENT_MAP_TTL.
+    fn with_procs<R>(&self, f: impl FnOnce(&mut ProcCache) -> R) -> Option<R> {
+        let mut guard = self.procs.lock().ok()?;
+        let stale = guard.as_ref().is_none_or(|c| c.at.elapsed() >= PARENT_MAP_TTL);
+        if stale {
+            *guard = Some(ProcCache { at: Instant::now(), table: snapshot_procs(), hosts: HashMap::new() });
+        }
+        guard.as_mut().map(f)
     }
 }
 
@@ -33,7 +51,8 @@ impl Drop for Handle {
     }
 }
 
-fn snapshot_parents() -> HashMap<u32, u32> {
+/// pid -> (parent pid, exe file name) of every process.
+pub(super) fn snapshot_procs() -> HashMap<u32, ProcInfo> {
     let mut map = HashMap::new();
     unsafe {
         let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -45,11 +64,23 @@ fn snapshot_parents() -> HashMap<u32, u32> {
         entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
         let mut ok = Process32FirstW(snap.0, &mut entry);
         while ok != 0 {
-            map.insert(entry.th32ProcessID, entry.th32ParentProcessID);
+            let len = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(entry.szExeFile.len());
+            let exe = String::from_utf16_lossy(&entry.szExeFile[..len]);
+            map.insert(entry.th32ProcessID, ProcInfo { parent: entry.th32ParentProcessID, exe });
             ok = Process32NextW(snap.0, &mut entry);
         }
     }
     map
+}
+
+/// Creation FILETIME of `pid`, if it can be opened.
+pub(super) fn creation_time(pid: u32) -> Option<u64> {
+    WinProbe::new().start_filetime(pid)
+}
+
+/// Host of `pid` over `table` (this process counts as the embedded host).
+pub(super) fn host_of(pid: u32, table: &HashMap<u32, ProcInfo>) -> Host {
+    find_host(pid, std::process::id(), table, creation_time)
 }
 
 impl ProcessProbe for WinProbe {
@@ -70,12 +101,19 @@ impl ProcessProbe for WinProbe {
     }
 
     fn parent_pid(&self, pid: u32) -> Option<u32> {
-        let mut guard = self.parents.lock().ok()?;
-        let stale = guard.as_ref().is_none_or(|(t, _)| t.elapsed() >= PARENT_MAP_TTL);
-        if stale {
-            *guard = Some((Instant::now(), snapshot_parents()));
-        }
-        guard.as_ref().and_then(|(_, m)| m.get(&pid).copied())
+        self.with_procs(|c| c.table.get(&pid).map(|p| p.parent)).flatten()
+    }
+
+    fn host_kind(&self, pid: u32) -> HostKind {
+        self.with_procs(|c| {
+            if let Some(k) = c.hosts.get(&pid) {
+                return *k;
+            }
+            let k = host_of(pid, &c.table).kind();
+            c.hosts.insert(pid, k);
+            k
+        })
+        .unwrap_or_default()
     }
 }
 
@@ -91,6 +129,26 @@ mod tests {
     fn own_parent_pid_is_some() {
         assert!(WinProbe::new().parent_pid(std::process::id()).is_some());
     }
+    #[test]
+    fn snapshot_has_exe_names_and_own_process_is_not_hosted() {
+        let t = snapshot_procs();
+        let me = t.get(&std::process::id()).expect("own process listed");
+        assert!(me.exe.to_ascii_lowercase().ends_with(".exe"), "{}", me.exe);
+        assert_eq!(WinProbe::new().host_kind(0xFFFF_FFF0), HostKind::Other);
+    }
+
+    #[test]
+    fn child_of_this_process_is_embedded() {
+        let mut child = std::process::Command::new("cmd.exe")
+            .args(["/c", "ping -n 5 127.0.0.1 >nul"])
+            .spawn()
+            .unwrap();
+        let kind = WinProbe::new().host_kind(child.id());
+        let _ = child.kill();
+        let _ = child.wait();
+        assert_eq!(kind, HostKind::Embedded);
+    }
+
     #[test]
     fn nonexistent_pid_is_none() {
         let p = WinProbe::new();

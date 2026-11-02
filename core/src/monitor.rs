@@ -1,4 +1,5 @@
 //! Live monitor: registry + transcripts + agent trees -> UI snapshots.
+use crate::host::HostKind;
 use crate::agents::{AgentCache, AgentKind, AgentNode, AgentState, AgentTree};
 use crate::locate::Locator;
 use crate::model::{ToolCall, Usage};
@@ -38,6 +39,8 @@ pub struct SessionCard {
     pub started_at_ms: u64,
     pub last_activity_ms: u64,
     pub git_branch: Option<String>,
+    /// Where the Claude process runs (decides "Sekmeye git"); Other when closed.
+    pub host_kind: HostKind,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -152,6 +155,7 @@ fn make_card(
     session_id: &str,
     live: Option<&LiveSession>,
     parent_pid: Option<u32>,
+    host_kind: HostKind,
     stats: &SessionStats,
     tree: &AgentTree,
 ) -> SessionCard {
@@ -187,6 +191,7 @@ fn make_card(
             .map_or(0, |l| l.status_updated_at_ms)
             .max(dt_ms(stats.last_at).unwrap_or(0)),
         git_branch: stats.git_branch.clone(),
+        host_kind,
     }
 }
 
@@ -262,7 +267,7 @@ impl Monitor {
                 waiting += 1;
             }
             let stats = &self.states[&l.session_id].stats;
-            cards.push(make_card(&l.session_id, Some(l), probe.parent_pid(l.pid), stats, &tree));
+            cards.push(make_card(&l.session_id, Some(l), probe.parent_pid(l.pid), probe.host_kind(l.pid), stats, &tree));
         }
         cards.sort_by(|a, b| {
             status_rank(&a.status)
@@ -297,7 +302,7 @@ impl Monitor {
         let tree = self.update_live(session_id, now);
         let stats = &self.states[session_id].stats;
         Some(SessionDetail {
-            card: make_card(session_id, Some(&l), probe.parent_pid(l.pid), stats, &tree),
+            card: make_card(session_id, Some(&l), probe.parent_pid(l.pid), probe.host_kind(l.pid), stats, &tree),
             tokens: stats.tokens,
             tool_call_count: stats.tool_call_count,
             main_tool_calls: stats.tool_calls.iter().cloned().collect(),
@@ -372,7 +377,7 @@ impl ClosedJob {
             None => AgentTree::default(),
         };
         Some(SessionDetail {
-            card: make_card(session_id, None, None, &stats, &tree),
+            card: make_card(session_id, None, None, HostKind::Other, &stats, &tree),
             tokens: stats.tokens,
             tool_call_count: stats.tool_call_count,
             main_tool_calls: stats.tool_calls.iter().cloned().collect(),
@@ -457,6 +462,38 @@ mod tests {
         assert_eq!(snap.sessions.len(), 1);
         assert_eq!(snap.sessions[0].session_id, id(1));
         assert_eq!(snap.sessions[0].parent_pid, Some(2));
+        assert_eq!(snap.sessions[0].host_kind, HostKind::Other, "default probe knows no host");
+    }
+
+    struct WtProbe;
+    impl ProcessProbe for WtProbe {
+        fn start_filetime(&self, pid: u32) -> Option<u64> {
+            Some(1000 + pid as u64)
+        }
+        fn parent_pid(&self, pid: u32) -> Option<u32> {
+            Some(pid + 1)
+        }
+        fn host_kind(&self, pid: u32) -> HostKind {
+            if pid == 1 { HostKind::WindowsTerminal } else { HostKind::Embedded }
+        }
+    }
+
+    #[test]
+    fn cards_carry_the_probe_host_kind_live_only() {
+        let e = Env::new();
+        e.reg(1, &id(1), "idle", 10, None);
+        e.reg(2, &id(2), "idle", 5, None);
+        let mut m = e.mon();
+        let snap = m.refresh(&WtProbe, now());
+        let kind = |sid: &str| snap.sessions.iter().find(|c| c.session_id == sid).unwrap().host_kind;
+        assert_eq!(kind(&id(1)), HostKind::WindowsTerminal);
+        assert_eq!(kind(&id(2)), HostKind::Embedded);
+        assert_eq!(m.live_detail(&id(1), &WtProbe, now()).unwrap().card.host_kind, HostKind::WindowsTerminal);
+        let v = serde_json::to_value(&snap.sessions[0]).unwrap();
+        assert!(v.get("hostKind").is_some());
+        // closed sessions are never reachable
+        e.append(&e.transcript(&id(9)), &asst("m1", 5, "2026-11-02T07:00:00Z"));
+        assert_eq!(e.mon().detail(&id(9), &WtProbe, now()).unwrap().card.host_kind, HostKind::Other);
     }
 
     #[test]
