@@ -6,3 +6,4 @@ pub mod stats;
 pub mod registry;
 pub mod locate;
 pub mod agents;
+pub mod monitor;
