@@ -12,10 +12,15 @@ test("format: sayılar ve maliyet", () => {
 });
 
 test("format: geçen süre", () => {
-  expect(fmtElapsed(30_000)).toBe("şimdi");
+  expect(fmtElapsed(30_000)).toBe("30 sn");
+  expect(fmtElapsed(12_999)).toBe("12 sn");
+  expect(fmtElapsed(0)).toBe("0 sn");
+  expect(fmtElapsed(59_999)).toBe("59 sn");
+  expect(fmtElapsed(60_000)).toBe("1 dk");
   expect(fmtElapsed(12 * 60_000)).toBe("12 dk");
   expect(fmtElapsed(3 * 3_600_000 + 5 * 60_000)).toBe("3 sa 5 dk");
-  expect(fmtElapsed(-5)).toBe("şimdi");
+  expect(fmtElapsed(3 * 86_400_000)).toBe("3 gün");
+  expect(fmtElapsed(-5)).toBe("0 sn");
 });
 
 test("format: durum etiketi ve klasör adı", () => {

@@ -9,8 +9,9 @@ export function fmtCost(usd: number): string {
 }
 
 export function fmtElapsed(ms: number): string {
-  const min = Math.floor(Math.max(0, ms) / 60_000);
-  if (min < 1) return "şimdi";
+  const sec = Math.floor(Math.max(0, ms) / 1000);
+  if (sec < 60) return `${sec} sn`;
+  const min = Math.floor(sec / 60);
   if (min < 60) return `${min} dk`;
   const h = Math.floor(min / 60);
   if (h < 24) return min % 60 ? `${h} sa ${min % 60} dk` : `${h} sa`;
