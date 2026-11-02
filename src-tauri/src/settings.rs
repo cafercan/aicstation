@@ -1,9 +1,11 @@
 //! App settings in `<app data>/settings.json`: notification toggles, close
 //! behavior and the UI language (for the texts Rust shows natively: toasts,
-//! tray). Unknown keys are ignored, missing keys take their default, an
-//! unreadable or invalid file gives the defaults. Writes are atomic.
+//! tray). Unknown keys are ignored; a missing, mistyped or invalid key takes
+//! its own default while the valid keys are kept; an unreadable file gives
+//! the defaults. Writes are atomic.
 use crate::errors;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -56,7 +58,41 @@ impl Settings {
     }
 }
 
-/// Settings from `path`; defaults when missing, too large, unparsable or invalid.
+/// Settings from a parsed settings.json, field by field: each field of the
+/// right type and value is taken, any other falls back to its own default.
+/// A non-object gives the defaults.
+pub fn from_json(v: &Value) -> Settings {
+    let d = Settings::default();
+    let Some(o) = v.as_object() else { return d };
+    let flag = |key: &str, default: bool| o.get(key).and_then(Value::as_bool).unwrap_or(default);
+    Settings {
+        notify_waiting: flag("notifyWaiting", d.notify_waiting),
+        notify_finished: flag("notifyFinished", d.notify_finished),
+        notify_subagent: flag("notifySubagent", d.notify_subagent),
+        notify_sound: flag("notifySound", d.notify_sound),
+        close_to_tray: flag("closeToTray", d.close_to_tray),
+        tray_notice_shown: flag("trayNoticeShown", d.tray_notice_shown),
+        lang: o
+            .get("lang")
+            .and_then(Value::as_str)
+            .filter(|l| LANGS.contains(l))
+            .map_or(d.lang, str::to_string),
+    }
+}
+
+/// The language stored in settings.json at `path`, only when the file has a
+/// valid one (None for a missing, unreadable or invalid file or field).
+pub fn stored_lang(path: &Path) -> Option<String> {
+    let ok_size = std::fs::metadata(path).map(|m| m.len() <= MAX_FILE).unwrap_or(false);
+    if !ok_size {
+        return None;
+    }
+    let v: Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
+    v.get("lang").and_then(Value::as_str).filter(|l| LANGS.contains(l)).map(str::to_string)
+}
+
+/// Settings from `path`: defaults when missing, too large or unparsable;
+/// otherwise validated per field ([`from_json`]).
 pub fn load(path: &Path) -> Settings {
     let ok_size = std::fs::metadata(path).map(|m| m.len() <= MAX_FILE).unwrap_or(false);
     if !ok_size {
@@ -64,8 +100,8 @@ pub fn load(path: &Path) -> Settings {
     }
     std::fs::read_to_string(path)
         .ok()
-        .and_then(|s| serde_json::from_str::<Settings>(&s).ok())
-        .filter(|s| s.validate().is_ok())
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .map(|v| from_json(&v))
         .unwrap_or_default()
 }
 
@@ -159,12 +195,37 @@ mod tests {
         assert_eq!(load(&p), Settings::default(), "missing file");
         std::fs::write(&p, "{not json").unwrap();
         assert_eq!(load(&p), Settings::default(), "corrupt file");
-        std::fs::write(&p, r#"{"lang":"klingon","notifySound":true}"#).unwrap();
-        assert_eq!(load(&p), Settings::default(), "invalid value");
-        std::fs::write(&p, r#"{"notifyWaiting":"yes"}"#).unwrap();
-        assert_eq!(load(&p), Settings::default(), "wrong type");
+        std::fs::write(&p, "[true, false]").unwrap();
+        assert_eq!(load(&p), Settings::default(), "not an object");
         std::fs::write(&p, " ".repeat(MAX_FILE as usize + 1)).unwrap();
         assert_eq!(load(&p), Settings::default(), "oversized file");
+    }
+
+    #[test]
+    fn an_invalid_field_takes_its_own_default_and_valid_fields_are_kept() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join("settings.json");
+        std::fs::write(&p, r#"{"lang":"klingon","notifySound":true,"closeToTray":false}"#).unwrap();
+        let s = load(&p);
+        assert_eq!(s, Settings { notify_sound: true, close_to_tray: false, ..Settings::default() }, "invalid lang");
+        std::fs::write(&p, r#"{"notifyWaiting":"yes","notifySubagent":true,"lang":"de"}"#).unwrap();
+        let s = load(&p);
+        assert_eq!(s, Settings { notify_subagent: true, lang: "de".into(), ..Settings::default() }, "wrong type");
+        std::fs::write(&p, r#"{"lang":7,"notifyFinished":null,"trayNoticeShown":true}"#).unwrap();
+        assert_eq!(load(&p), Settings { tray_notice_shown: true, ..Settings::default() });
+    }
+
+    #[test]
+    fn stored_lang_only_from_a_valid_file_field() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join("settings.json");
+        assert_eq!(stored_lang(&p), None);
+        std::fs::write(&p, r#"{"lang":"ru"}"#).unwrap();
+        assert_eq!(stored_lang(&p).as_deref(), Some("ru"));
+        std::fs::write(&p, r#"{"lang":"xx"}"#).unwrap();
+        assert_eq!(stored_lang(&p), None);
+        std::fs::write(&p, "{bozuk").unwrap();
+        assert_eq!(stored_lang(&p), None);
     }
 
     #[test]

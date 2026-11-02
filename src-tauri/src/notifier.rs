@@ -15,23 +15,33 @@ use tauri::{AppHandle, Manager};
 #[derive(Default)]
 pub struct Notifier {
     detector: Mutex<Detector>,
-    /// Session whose detail or embedded terminal the UI shows (set_focus_context).
-    focus: Mutex<Option<String>>,
+    /// Sessions whose detail or embedded terminal panes the UI shows
+    /// (set_focus_context): at most [`MAX_FOCUS`].
+    focus: Mutex<Vec<String>>,
 }
 
-/// Validates the id sent by the UI: None, or a lowercase session UUID.
-pub fn parse_focus(session_id: Option<String>) -> Result<Option<String>, String> {
-    match session_id {
-        None => Ok(None),
-        Some(id) if is_session_id(&id) => Ok(Some(id)),
-        Some(_) => Err(errors::SESSION_INVALID.into()),
+/// Sessions the UI can show at once: the detail view, or two split panes.
+pub const MAX_FOCUS: usize = 2;
+
+/// Validates the ids sent by the UI: at most two lowercase session UUIDs
+/// (duplicates collapse). Anything else is refused as a whole.
+pub fn parse_focus(session_ids: Vec<String>) -> Result<Vec<String>, String> {
+    if session_ids.len() > MAX_FOCUS || !session_ids.iter().all(|id| is_session_id(id)) {
+        return Err(errors::SESSION_INVALID.into());
     }
+    let mut out: Vec<String> = Vec::with_capacity(session_ids.len());
+    for id in session_ids {
+        if !out.contains(&id) {
+            out.push(id);
+        }
+    }
+    Ok(out)
 }
 
-/// The session to keep quiet about: the focus context, but only while the
+/// The sessions to keep quiet about: the focus context, but only while the
 /// window is visible, not minimized and focused.
-pub fn suppressed(context: Option<&str>, visible: bool, minimized: bool, focused: bool) -> Option<&str> {
-    context.filter(|_| visible && !minimized && focused)
+pub fn suppressed(context: &[String], visible: bool, minimized: bool, focused: bool) -> &[String] {
+    if visible && !minimized && focused { context } else { &[] }
 }
 
 pub fn toggles(s: &Settings) -> AlertToggles {
@@ -50,19 +60,19 @@ pub fn alert_text(a: &Alert, lang: &str) -> (String, Option<String>) {
 }
 
 impl Notifier {
-    pub fn set_focus(&self, session_id: Option<String>) -> Result<(), String> {
-        let id = parse_focus(session_id)?;
-        *self.focus.lock().unwrap_or_else(|e| e.into_inner()) = id;
+    pub fn set_focus(&self, session_ids: Vec<String>) -> Result<(), String> {
+        let ids = parse_focus(session_ids)?;
+        *self.focus.lock().unwrap_or_else(|e| e.into_inner()) = ids;
         Ok(())
     }
 
-    fn focused_session(&self, app: &AppHandle) -> Option<String> {
+    fn focused_sessions(&self, app: &AppHandle) -> Vec<String> {
         let ctx = self.focus.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        let w = app.get_webview_window("main")?;
+        let Some(w) = app.get_webview_window("main") else { return Vec::new() };
         let visible = w.is_visible().unwrap_or(false);
         let minimized = w.is_minimized().unwrap_or(false);
         let focused = w.is_focused().unwrap_or(false);
-        suppressed(ctx.as_deref(), visible, minimized, focused).map(str::to_string)
+        suppressed(&ctx, visible, minimized, focused).to_vec()
     }
 }
 
@@ -70,12 +80,13 @@ impl Notifier {
 pub fn after_snapshot(app: &AppHandle, snap: &Snapshot) {
     let settings = app.state::<SettingsStore>().get();
     let notifier = app.state::<Notifier>();
-    let focused = notifier.focused_session(app);
+    let focused = notifier.focused_sessions(app);
+    let focused: Vec<&str> = focused.iter().map(String::as_str).collect();
     let alerts = notifier.detector.lock().unwrap_or_else(|e| e.into_inner()).observe(
         &snap.sessions,
         Instant::now(),
         toggles(&settings),
-        focused.as_deref(),
+        &focused,
     );
     let toaster = app.state::<Toaster>();
     for a in alerts {
@@ -109,22 +120,31 @@ mod tests {
 
     const A: &str = "0b2f6a40-1111-4c3e-9d2a-5f1e2d3c4b5a";
 
+    const B: &str = "7c9e1d20-2222-4a8b-8e3f-1a2b3c4d5e6f";
+
     #[test]
-    fn focus_context_must_be_a_session_uuid_or_null() {
-        assert_eq!(parse_focus(None), Ok(None));
-        assert_eq!(parse_focus(Some(A.into())), Ok(Some(A.into())));
+    fn focus_context_is_up_to_two_session_uuids() {
+        assert_eq!(parse_focus(vec![]), Ok(vec![]));
+        assert_eq!(parse_focus(vec![A.into()]), Ok(vec![A.into()]));
+        assert_eq!(parse_focus(vec![A.into(), B.into()]), Ok(vec![A.into(), B.into()]));
+        assert_eq!(parse_focus(vec![A.into(), A.into()]), Ok(vec![A.into()]), "duplicates collapse");
+        let three = vec![A.into(), B.into(), A.into()];
+        assert_eq!(parse_focus(three), Err(errors::SESSION_INVALID.into()), "at most two");
         for bad in ["", "dashboard", "0B2F6A40-1111-4C3E-9D2A-5F1E2D3C4B5A", "../../etc", &"a".repeat(5000)] {
-            assert_eq!(parse_focus(Some(bad.into())), Err(errors::SESSION_INVALID.into()), "{bad}");
+            assert_eq!(parse_focus(vec![bad.into()]), Err(errors::SESSION_INVALID.into()), "{bad}");
+            // One bad id refuses the whole list.
+            assert_eq!(parse_focus(vec![A.into(), bad.into()]), Err(errors::SESSION_INVALID.into()), "{bad}");
         }
     }
 
     #[test]
     fn suppression_needs_a_visible_focused_window() {
-        assert_eq!(suppressed(Some(A), true, false, true), Some(A));
-        assert_eq!(suppressed(Some(A), false, false, true), None, "hidden in the tray");
-        assert_eq!(suppressed(Some(A), true, true, true), None, "minimized");
-        assert_eq!(suppressed(Some(A), true, false, false), None, "another app has focus");
-        assert_eq!(suppressed(None, true, false, true), None);
+        let both = vec![A.to_string(), B.to_string()];
+        assert_eq!(suppressed(&both, true, false, true), &both[..]);
+        assert!(suppressed(&both, false, false, true).is_empty(), "hidden in the tray");
+        assert!(suppressed(&both, true, true, true).is_empty(), "minimized");
+        assert!(suppressed(&both, true, false, false).is_empty(), "another app has focus");
+        assert!(suppressed(&[], true, false, true).is_empty());
     }
 
     #[test]

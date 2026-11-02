@@ -8,6 +8,7 @@ use station_core::locate::is_session_id;
 use station_core::monitor::Snapshot;
 use station_core::registry::SessionStatus;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -100,10 +101,45 @@ pub fn tray_model(snap: &Snapshot, lang: &str) -> TrayModel {
     }
 }
 
-/// Last model applied to the tray.
+/// Last model applied to the tray, and where the main window stood when the
+/// tray was clicked (opening the tray menu takes the foreground from it).
 #[derive(Default)]
 pub struct TrayState {
     last: Mutex<Option<TrayModel>>,
+    /// When the main window last lost the foreground.
+    last_blur: Mutex<Option<Instant>>,
+    /// The main window was in front when the tray icon was last pressed.
+    front_at_click: Mutex<bool>,
+}
+
+/// A window that lost the foreground at most this long before the tray
+/// icon was pressed lost it to that click.
+pub const BLUR_GRACE: Duration = Duration::from_millis(800);
+
+/// Whether the main window counts as in front at a tray click: focused, or
+/// it lost the focus only just before (to the taskbar / tray click itself).
+pub fn was_in_front(focused: bool, since_blur: Option<Duration>) -> bool {
+    focused || since_blur.is_some_and(|d| d <= BLUR_GRACE)
+}
+
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Main window focus changes (from the window event handler).
+pub fn on_main_focus(app: &AppHandle, focused: bool) {
+    if !focused {
+        *lock(&app.state::<TrayState>().last_blur) = Some(Instant::now());
+    }
+}
+
+/// Remembers whether the window was in front as the tray icon is pressed,
+/// before the tray menu takes the foreground.
+fn note_tray_press(app: &AppHandle) {
+    let Some(w) = app.get_webview_window("main") else { return };
+    let state = app.state::<TrayState>();
+    let since_blur = lock(&state.last_blur).map(|t| t.elapsed());
+    *lock(&state.front_at_click) = was_in_front(w.is_focused().unwrap_or(false), since_blur);
 }
 
 fn build_menu(app: &AppHandle, m: &TrayModel) -> tauri::Result<Menu<tauri::Wry>> {
@@ -145,13 +181,17 @@ pub fn create(app: &AppHandle, lang: &str) -> tauri::Result<()> {
             Some(MenuAction::Quit) => quit(app),
             None => {}
         })
-        .on_tray_icon_event(|tray, ev| {
-            if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = ev {
+        .on_tray_icon_event(|tray, ev| match ev {
+            TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } => {
                 show_main(tray.app_handle());
             }
+            TrayIconEvent::Click { button: MouseButton::Right, button_state: MouseButtonState::Down, .. } => {
+                note_tray_press(tray.app_handle());
+            }
+            _ => {}
         })
         .build(app)?;
-    *app.state::<TrayState>().last.lock().unwrap_or_else(|e| e.into_inner()) = Some(model);
+    *lock(&app.state::<TrayState>().last) = Some(model);
     Ok(())
 }
 
@@ -159,7 +199,7 @@ pub fn create(app: &AppHandle, lang: &str) -> tauri::Result<()> {
 pub fn update(app: &AppHandle, snap: &Snapshot, lang: &str) {
     let model = tray_model(snap, lang);
     let state = app.state::<TrayState>();
-    let mut last = state.last.lock().unwrap_or_else(|e| e.into_inner());
+    let mut last = lock(&state.last);
     if last.as_ref() == Some(&model) {
         return;
     }
@@ -187,13 +227,34 @@ pub fn show_main(app: &AppHandle) {
     }
 }
 
+/// What "Show / Hide" does for a window in this state.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Toggle {
+    Hide,
+    Show,
+}
+
+/// Hide only a window the user is looking at (visible, not minimized and in
+/// the foreground); a hidden, minimized or background window is brought to
+/// the front instead.
+pub fn toggle_action(visible: bool, minimized: bool, focused: bool) -> Toggle {
+    if visible && !minimized && focused {
+        Toggle::Hide
+    } else {
+        Toggle::Show
+    }
+}
+
 fn toggle_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
-        let shown = w.is_visible().unwrap_or(false) && !w.is_minimized().unwrap_or(false);
-        if shown {
-            let _ = w.hide();
-        } else {
-            show_main(app);
+        // The menu has the foreground now; use the state from the tray press.
+        let front = w.is_focused().unwrap_or(false) || *lock(&app.state::<TrayState>().front_at_click);
+        let action = toggle_action(w.is_visible().unwrap_or(false), w.is_minimized().unwrap_or(false), front);
+        match action {
+            Toggle::Hide => {
+                let _ = w.hide();
+            }
+            Toggle::Show => show_main(app),
         }
     }
 }
@@ -281,6 +342,22 @@ mod tests {
         for bad in ["", "s:", "s:../x", "s:0B2F6A40-1111-4C3E-9D2A-5F1E2D3C4B5A", "exit"] {
             assert_eq!(menu_action(bad), None, "{bad}");
         }
+    }
+
+    #[test]
+    fn a_window_that_lost_focus_to_the_tray_click_counts_as_in_front() {
+        assert!(was_in_front(true, None));
+        assert!(was_in_front(false, Some(Duration::from_millis(100))));
+        assert!(!was_in_front(false, Some(Duration::from_secs(5))), "another app was in front");
+        assert!(!was_in_front(false, None));
+    }
+
+    #[test]
+    fn show_hide_brings_a_background_window_forward() {
+        assert_eq!(toggle_action(true, false, true), Toggle::Hide, "in front: hide");
+        assert_eq!(toggle_action(true, false, false), Toggle::Show, "visible behind other windows");
+        assert_eq!(toggle_action(true, true, false), Toggle::Show, "minimized");
+        assert_eq!(toggle_action(false, false, false), Toggle::Show, "hidden in the tray");
     }
 
     #[test]

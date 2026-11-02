@@ -17,6 +17,8 @@ pub struct Texts {
     pub show_hide: &'static str,
     pub dashboard: &'static str,
     pub quit: &'static str,
+    /// Message box of a second launch whose running instance did not answer.
+    pub already_running: &'static str,
 }
 
 const TR: Texts = Texts {
@@ -28,6 +30,7 @@ const TR: Texts = Texts {
     show_hide: "Göster / Gizle",
     dashboard: "Dashboard",
     quit: "Çık",
+    already_running: "SessionStation zaten çalışıyor gibi görünüyor, ancak yanıt vermedi. Tepsideki simgesine bakın; açılmazsa Görev Yöneticisi'nden kapatıp yeniden başlatın.",
 };
 const AZ: Texts = Texts {
     waiting: "{name} təsdiq gözləyir",
@@ -38,6 +41,7 @@ const AZ: Texts = Texts {
     show_hide: "Göstər / Gizlət",
     dashboard: "Panel",
     quit: "Çıxış",
+    already_running: "SessionStation artıq işləyir kimi görünür, lakin cavab vermədi. Sistem tepsisindəki ikonuna baxın; açılmazsa, Tapşırıq Menecerindən bağlayıb yenidən başladın.",
 };
 const EN: Texts = Texts {
     waiting: "{name} is awaiting approval",
@@ -48,6 +52,7 @@ const EN: Texts = Texts {
     show_hide: "Show / Hide",
     dashboard: "Dashboard",
     quit: "Quit",
+    already_running: "SessionStation already seems to be running but did not respond. Check its tray icon; if it does not open, end it in Task Manager and start it again.",
 };
 const DE: Texts = Texts {
     waiting: "{name} wartet auf Freigabe",
@@ -58,6 +63,7 @@ const DE: Texts = Texts {
     show_hide: "Anzeigen / Ausblenden",
     dashboard: "Übersicht",
     quit: "Beenden",
+    already_running: "SessionStation scheint bereits zu laufen, hat aber nicht reagiert. Prüfen Sie das Symbol im Infobereich; öffnet es sich nicht, beenden Sie es im Task-Manager und starten Sie es neu.",
 };
 const RU: Texts = Texts {
     waiting: "{name} ждёт подтверждения",
@@ -68,6 +74,7 @@ const RU: Texts = Texts {
     show_hide: "Показать / Скрыть",
     dashboard: "Панель",
     quit: "Выход",
+    already_running: "SessionStation, похоже, уже запущен, но не отвечает. Проверьте значок в области уведомлений; если окно не открывается, завершите процесс в диспетчере задач и запустите снова.",
 };
 const ES: Texts = Texts {
     waiting: "{name} está esperando aprobación",
@@ -78,6 +85,7 @@ const ES: Texts = Texts {
     show_hide: "Mostrar / Ocultar",
     dashboard: "Panel",
     quit: "Salir",
+    already_running: "SessionStation parece estar ya en ejecución, pero no respondió. Revise su icono en la bandeja; si no se abre, ciérrelo desde el Administrador de tareas y vuelva a iniciarlo.",
 };
 const FR: Texts = Texts {
     waiting: "{name} est en attente d'approbation",
@@ -88,6 +96,7 @@ const FR: Texts = Texts {
     show_hide: "Afficher / Masquer",
     dashboard: "Tableau de bord",
     quit: "Quitter",
+    already_running: "SessionStation semble déjà en cours d'exécution, mais n'a pas répondu. Vérifiez son icône dans la zone de notification ; s'il ne s'ouvre pas, arrêtez-le dans le Gestionnaire des tâches et relancez-le.",
 };
 const ZH: Texts = Texts {
     waiting: "{name} 等待批准",
@@ -98,7 +107,15 @@ const ZH: Texts = Texts {
     show_hide: "显示 / 隐藏",
     dashboard: "总览",
     quit: "退出",
+    already_running: "SessionStation 似乎已在运行，但没有响应。请查看托盘图标；如果无法打开，请在任务管理器中结束它后重新启动。",
 };
+
+/// Text of the "already running but not responding" message box: in the
+/// stored language when settings.json names one, otherwise English (the
+/// Turkish default is for a configured app, not for a first-run message).
+pub fn already_running(stored_lang: Option<&str>) -> &'static str {
+    texts(stored_lang.unwrap_or("en")).already_running
+}
 
 /// Texts for a language code; Turkish for anything unknown.
 pub fn texts(lang: &str) -> &'static Texts {
@@ -132,11 +149,50 @@ pub fn tooltip(lang: &str, open: usize, waiting: usize) -> String {
     cut_utf16(&s, MAX_TOOLTIP)
 }
 
-/// Menu label of a waiting session (names are capped for the menu width).
+/// Unicode general category Cf (format characters: bidi overrides and
+/// isolates, zero-width characters, BOM, tag characters...). Hand-written
+/// table (Unicode 15.1) so no crate is needed; it only has to be complete
+/// enough to keep invisible or reordering characters out of native labels.
+pub fn is_format_char(c: char) -> bool {
+    matches!(
+        c as u32,
+        0x00AD
+            | 0x0600..=0x0605
+            | 0x061C
+            | 0x06DD
+            | 0x070F
+            | 0x0890..=0x0891
+            | 0x08E2
+            | 0x180E
+            | 0x200B..=0x200F
+            | 0x202A..=0x202E
+            | 0x2060..=0x2064
+            | 0x2066..=0x206F
+            | 0xFEFF
+            | 0xFFF9..=0xFFFB
+            | 0x110BD
+            | 0x110CD
+            | 0x13430..=0x1343F
+            | 0x1BCA0..=0x1BCA3
+            | 0x1D173..=0x1D17A
+            | 0xE0001
+            | 0xE0020..=0xE007F
+    )
+}
+
+/// Untrusted text (a session name) cleaned for a native label: control
+/// characters (tab and newline included) and format characters dropped.
+pub fn clean_label(s: &str) -> String {
+    s.chars().filter(|&c| !c.is_control() && !is_format_char(c)).collect()
+}
+
+/// Menu label of a waiting session: the name cleaned, capped for the menu
+/// width and with `&` doubled (a single `&` would mark a mnemonic and vanish).
 pub fn waiting_item(name: &str) -> String {
+    let name = clean_label(name);
     let short: String = name.chars().take(40).collect();
     let more = if name.chars().nth(40).is_some() { "…" } else { "" };
-    format!("⏳ {short}{more}")
+    format!("⏳ {}{more}", short.replace('&', "&&"))
 }
 
 /// `s` cut to at most `max` UTF-16 units, never inside a character.
@@ -171,6 +227,7 @@ mod tests {
                 ("show_hide", t.show_hide, &[]),
                 ("dashboard", t.dashboard, &[]),
                 ("quit", t.quit, &[]),
+                ("already_running", t.already_running, &[]),
             ] {
                 assert!(!s.trim().is_empty(), "{lang}.{k}");
                 for p in ph {
@@ -180,7 +237,15 @@ mod tests {
             }
             assert!(t.tooltip.starts_with("SessionStation"), "{lang}");
             assert!(t.tray_notice.contains("SessionStation"), "{lang}");
+            assert!(t.already_running.starts_with("SessionStation"), "{lang}");
         }
+    }
+
+    #[test]
+    fn already_running_uses_the_stored_language_or_english() {
+        assert!(already_running(Some("tr")).starts_with("SessionStation zaten çalışıyor gibi görünüyor"));
+        assert_eq!(already_running(Some("de")), DE.already_running);
+        assert_eq!(already_running(None), EN.already_running);
     }
 
     #[test]
@@ -210,5 +275,28 @@ mod tests {
         assert_eq!(cut_utf16("ab😀c", 4), "ab😀");
         assert_eq!(waiting_item("short"), "⏳ short");
         assert_eq!(waiting_item(&"x".repeat(41)), format!("⏳ {}…", "x".repeat(40)));
+    }
+
+    #[test]
+    fn menu_labels_escape_ampersands_and_drop_tabs_controls_and_format_chars() {
+        assert_eq!(waiting_item("R&D"), "⏳ R&&D");
+        assert_eq!(waiting_item("a&&b"), "⏳ a&&&&b");
+        // A tab would start the accelerator column; newlines and C0/C1 controls go too.
+        assert_eq!(waiting_item("ad\tCtrl+Q"), "⏳ adCtrl+Q");
+        assert_eq!(waiting_item("a\nb\r\u{1b}c\u{85}"), "⏳ abc");
+        // Bidi overrides/isolates, zero-width chars, BOM and tag chars are dropped.
+        assert_eq!(waiting_item("\u{202E}txt.exe\u{202C}"), "⏳ txt.exe");
+        assert_eq!(waiting_item("a\u{2066}b\u{2069}\u{200B}c\u{FEFF}d\u{E0041}"), "⏳ abcd");
+        // The 40-char cap counts the cleaned name, before `&` is doubled.
+        let long = format!("{}&", "x".repeat(39));
+        assert_eq!(waiting_item(&format!("\u{202E}{long}")), format!("⏳ {}&&", "x".repeat(39)));
+        // Ordinary letters, accents, CJK and emoji stay.
+        assert_eq!(clean_label("Çalışma 中文 😀"), "Çalışma 中文 😀");
+        for c in ['\u{00AD}', '\u{061C}', '\u{200E}', '\u{2060}', '\u{FFF9}', '\u{E0001}'] {
+            assert!(is_format_char(c), "{:04X}", c as u32);
+        }
+        for c in ['a', 'ı', '中', '😀', ' ', '\u{00A0}'] {
+            assert!(!is_format_char(c), "{:04X}", c as u32);
+        }
     }
 }

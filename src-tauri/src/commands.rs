@@ -6,9 +6,9 @@ use station_core::history::{cost_on_rows, HistoryIndex, HistoryRow};
 use station_core::locate::{cwd_matches_project_dir, is_session_id, Locator};
 use station_core::monitor::{ClosedKey, Monitor, SessionDetail, Snapshot};
 use station_core::registry::ProcessProbe;
-use station_core::search::{search_transcripts, validate_query, SearchOutcome, MAX_HITS};
+use station_core::search::{search_transcripts_limited, validate_query, Limits, SearchOutcome};
 use serde::Serialize;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
@@ -26,15 +26,28 @@ pub struct HistoryView {
     pub today_cost: f64,
     pub today_complete: bool,
     pub indexing: bool,
+    /// Cost per day of the live sessions (left out of `rows`), so the cost
+    /// charts can count them on every day like `today_cost` does for today.
+    pub live: Vec<LiveCost>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveCost {
+    pub session_id: String,
+    pub cwd: String,
+    pub model: Option<String>,
+    pub cost_by_day: BTreeMap<chrono::NaiveDate, f64>,
 }
 
 /// Last snapshot plus what history needs from the same refresh: the live ids
-/// (= `snap.sessions`) and their cost on `day`.
+/// (= `snap.sessions`) and their cost on `day` and per day.
 struct SnapCache {
     at: Instant,
     snap: Snapshot,
     day: chrono::NaiveDate,
     live_cost: f64,
+    live_by_day: HashMap<String, BTreeMap<chrono::NaiveDate, f64>>,
 }
 
 /// What a resume is bound to: the session's first recorded cwd and the name
@@ -104,12 +117,12 @@ impl AppState {
     /// before the snapshot lock is taken, and before the caller emits.
     pub fn refresh(&self) -> Snapshot {
         let day = chrono::Local::now().date_naive();
-        let (snap, live_cost) = {
+        let (snap, live_cost, live_by_day) = {
             let mut m = lock(&self.monitor);
             let snap = m.refresh(self.probe.as_ref(), SystemTime::now());
-            (snap, m.live_cost_on(day).0)
+            (snap, m.live_cost_on(day).0, m.live_cost_by_day())
         };
-        *lock(&self.snapshot) = Some(SnapCache { at: Instant::now(), snap: snap.clone(), day, live_cost });
+        *lock(&self.snapshot) = Some(SnapCache { at: Instant::now(), snap: snap.clone(), day, live_cost, live_by_day });
         snap
     }
 
@@ -171,9 +184,23 @@ impl AppState {
     /// monitor; both use the live set of the same refresh, so nothing is counted
     /// twice. `today_complete` covers the closed part only.
     pub fn get_history(&self) -> HistoryView {
-        let (live, day, live_cost) = self.fresh_cache(|c| {
+        let (live, day, live_cost, live_rows) = self.fresh_cache(|c| {
             let ids: HashSet<String> = c.snap.sessions.iter().map(|s| s.session_id.clone()).collect();
-            (ids, c.day, c.live_cost)
+            let rows: Vec<LiveCost> = c
+                .snap
+                .sessions
+                .iter()
+                .filter_map(|s| {
+                    let by_day = c.live_by_day.get(&s.session_id)?;
+                    Some(LiveCost {
+                        session_id: s.session_id.clone(),
+                        cwd: s.cwd.clone(),
+                        model: s.model.clone(),
+                        cost_by_day: by_day.clone(),
+                    })
+                })
+                .collect();
+            (ids, c.day, c.live_cost, rows)
         });
         let rows = lock(&self.history_rows);
         let (closed_cost, today_complete) = cost_on_rows(rows.iter(), day, &live);
@@ -182,6 +209,7 @@ impl AppState {
             today_cost: closed_cost + live_cost,
             today_complete,
             indexing: self.is_indexing(),
+            live: live_rows,
         }
     }
 
@@ -330,7 +358,15 @@ impl AppState {
         files.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
         let files: Vec<(String, PathBuf)> = files.into_iter().map(|(_, id, p)| (id, p)).collect();
         let gen = &self.search_gen;
-        Ok(search_transcripts(&files, &query, MAX_HITS, &|| gen.load(Ordering::SeqCst) != generation))
+        Ok(search_transcripts_limited(&files, &query, Limits::DEFAULT, &|| gen.load(Ordering::SeqCst) != generation))
+    }
+
+    /// Stops the running content search (History page left or cleared): the
+    /// stored generation moves on, so the search sees a mismatch at its next
+    /// check and returns `cancelled`. A later search stores its own generation
+    /// and runs normally.
+    pub fn cancel_search(&self) {
+        self.search_gen.fetch_add(1, Ordering::SeqCst);
     }
 
     pub fn open_folder(&self, path: &str) -> Result<(), String> {
@@ -440,6 +476,13 @@ pub async fn search_history(app: tauri::AppHandle, query: String, generation: u3
     tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().search_history(&query, generation))
         .await
         .map_err(|e| errors::with(errors::TASK_FAILED, e))?
+}
+
+/// Stops a running content search (no arguments; it only bumps the
+/// generation counter).
+#[tauri::command]
+pub fn cancel_search(state: tauri::State<'_, AppState>) {
+    state.cancel_search();
 }
 
 #[tauri::command(async)]
@@ -621,6 +664,13 @@ mod tests {
         let one = hv.rows[0].summary.as_ref().unwrap().cost_usd;
         assert!(one > 0.0);
         assert!((hv.today_cost - 2.0 * one).abs() < 1e-9, "{} vs 2 x {one}", hv.today_cost);
+        // The live session's per-day cost comes along for the charts, with its folder and model.
+        assert_eq!(hv.live.len(), 1);
+        let live = &hv.live[0];
+        assert_eq!((live.session_id.as_str(), live.cwd.as_str()), (LIVE_ID, r"C:\demo"));
+        assert_eq!(live.model.as_deref(), Some("claude-sonnet-5-5"));
+        let live_total: f64 = live.cost_by_day.values().sum();
+        assert!((live_total - one).abs() < 1e-9);
     }
 
     #[test]
@@ -958,6 +1008,26 @@ mod tests {
         // A stale generation arriving later still runs (last writer wins).
         assert!(!state.search_history("satır 7", 1).unwrap().cancelled);
     }
+
+    #[test]
+    fn cancel_search_stops_the_running_search_and_later_searches_still_run() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, probe) = two_sessions(tmp.path(), 5);
+        let proj = claude.join("projects").join("C--demo");
+        let body: String = (0..200_000).map(|i| user_line(&format!("satır {i}")) + "\n").collect();
+        fs::write(proj.join(format!("{CLOSED_ID}.jsonl")), body).unwrap();
+        let state = std::sync::Arc::new(AppState::new(claude, tmp.path().join("c.json"), Box::new(probe)));
+        let s1 = state.clone();
+        let first = std::thread::spawn(move || s1.search_history("bulunmayan metin", 7).unwrap());
+        while state.search_gen.load(Ordering::SeqCst) != 7 {
+            std::thread::yield_now();
+        }
+        state.cancel_search();
+        assert!(first.join().unwrap().cancelled, "the search stops after cancel_search");
+        // The same UI generation counter keeps working afterwards.
+        let next = state.search_history("satır 5", 8).unwrap();
+        assert!(!next.cancelled && !next.hits.is_empty());
+    }
 }
 
 // ---- terminals (ConPTY) ----------------------------------------------------
@@ -1073,11 +1143,13 @@ pub fn set_settings(store: tauri::State<'_, SettingsStore>, settings: Settings) 
     store.set_from_ui(settings)
 }
 
-/// The session whose detail or embedded terminal the UI shows (null for any
-/// other view); its notifications are held back while the window is focused.
+/// The sessions the UI shows (the detail view's session, or the Claude
+/// sessions in the visible terminal panes; at most two, empty for any other
+/// view); their notifications are held back while the window is focused.
+/// Each id is validated; more than two are refused.
 #[tauri::command(async)]
-pub fn set_focus_context(notifier: tauri::State<'_, Notifier>, session_id: Option<String>) -> Result<(), String> {
-    notifier.set_focus(session_id)
+pub fn set_focus_context(notifier: tauri::State<'_, Notifier>, session_ids: Vec<String>) -> Result<(), String> {
+    notifier.set_focus(session_ids)
 }
 
 /// Window close with "minimize to tray" on: hides the window (terminals and

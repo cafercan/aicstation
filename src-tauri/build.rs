@@ -20,6 +20,7 @@ const COMMANDS: &[&str] = &[
     "set_focus_context",
     "hide_to_tray",
     "search_history",
+    "cancel_search",
 ];
 
 fn main() {

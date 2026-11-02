@@ -23,6 +23,7 @@
     "allow-set-settings",
     "allow-set-focus-context",
     "allow-hide-to-tray",
-    "allow-search-history"
+    "allow-search-history",
+    "allow-cancel-search"
   ]
 }

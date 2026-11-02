@@ -206,12 +206,30 @@ fn toast_icon(data: &std::path::Path) -> Option<PathBuf> {
     Some(p)
 }
 
+/// Bundle identifier (tauri.conf.json); also names the single-instance objects.
+const APP_ID: &str = "com.cafercan.sessionstation";
+
+/// settings.json before Tauri runs: Tauri's app data dir on Windows is
+/// `%APPDATA%\<identifier>` (the roaming known folder). Only used to pick the
+/// message box language, so a wrong guess just means English.
+#[cfg(windows)]
+fn settings_path_guess() -> Option<PathBuf> {
+    let appdata = PathBuf::from(std::env::var_os("APPDATA")?);
+    appdata.is_absolute().then(|| appdata.join(APP_ID).join("settings.json"))
+}
+
 fn main() {
-    // A second launch brings the running instance forward and exits.
+    // A second launch brings the running instance forward and exits; when
+    // that instance does not answer, the user is told instead.
     #[cfg(windows)]
-    let activation = match platform::single::acquire("com.cafercan.sessionstation") {
+    let activation = match platform::single::acquire(APP_ID) {
         platform::single::Instance::First(a) => a,
-        platform::single::Instance::Second => return,
+        platform::single::Instance::Second { responded: true } => return,
+        platform::single::Instance::Second { responded: false } => {
+            let lang = settings_path_guess().and_then(|p| settings::stored_lang(&p));
+            platform::single::message_box("SessionStation", native_text::already_running(lang.as_deref()));
+            return;
+        }
     };
     tauri::Builder::default()
         .setup(move |app| {
@@ -264,13 +282,25 @@ fn main() {
             #[cfg(windows)]
             {
                 let handle = app.handle().clone();
-                activation.listen(move || tray::show_main(&handle));
+                activation.listen(move |ack| {
+                    // Answer from the event loop, so a hung UI does not count as alive.
+                    let h = handle.clone();
+                    let _ = handle.run_on_main_thread(move || {
+                        tray::show_main(&h);
+                        ack.done();
+                    });
+                });
             }
             let handle = app.handle().clone();
             std::thread::spawn(move || snapshot_loop(handle, dir));
             let handle = app.handle().clone();
             std::thread::spawn(move || indexer_loop(handle));
             Ok(())
+        })
+        .on_window_event(|w, ev| {
+            if let (tauri::WindowEvent::Focused(f), "main") = (ev, w.label()) {
+                tray::on_main_focus(w.app_handle(), *f);
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_snapshot,
@@ -289,7 +319,8 @@ fn main() {
             commands::set_settings,
             commands::set_focus_context,
             commands::hide_to_tray,
-            commands::search_history
+            commands::search_history,
+            commands::cancel_search
         ])
         .build(tauri::generate_context!())
         .expect("SessionStation başlatılamadı")

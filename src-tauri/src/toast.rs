@@ -10,11 +10,22 @@
 /// Longest title / body put in a toast, in characters.
 const MAX_TEXT: usize = 200;
 
-/// Text safe inside an XML element or attribute: escaped, control characters
-/// dropped (XML 1.0 forbids most of them), capped at MAX_TEXT characters.
+/// A char allowed in the toast text: not a control character (tab and
+/// newline excepted), not a format character (bidi overrides etc.), and
+/// valid XML 1.0 content (U+FFFE/U+FFFF are not; noncharacters such as
+/// U+FDD0..U+FDEF and U+xFFFE/U+xFFFF are dropped as well).
+fn toast_char(c: char) -> bool {
+    let u = c as u32;
+    let control = c.is_control() && !matches!(c, '\t' | '\n');
+    let nonchar = (0xFDD0..=0xFDEF).contains(&u) || (u & 0xFFFE) == 0xFFFE;
+    !control && !nonchar && !crate::native_text::is_format_char(c)
+}
+
+/// Text safe inside an XML element or attribute: escaped, control, format
+/// and XML-invalid characters dropped, capped at MAX_TEXT characters.
 pub fn xml_text(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
-    for c in s.chars().filter(|c| !c.is_control() || matches!(c, '\t' | '\n')).take(MAX_TEXT) {
+    for c in s.chars().filter(|&c| toast_char(c)).take(MAX_TEXT) {
         match c {
             '&' => out.push_str("&amp;"),
             '<' => out.push_str("&lt;"),
@@ -164,6 +175,15 @@ mod tests {
         assert_eq!(xml_text(r#"<a href="x">&'</a>"#), "&lt;a href=&quot;x&quot;&gt;&amp;&apos;&lt;/a&gt;");
         assert_eq!(xml_text("a\u{0}b\u{1b}[31mc\u{7f}"), "ab[31mc");
         assert_eq!(xml_text(&"é".repeat(500)).chars().count(), MAX_TEXT);
+    }
+
+    #[test]
+    fn format_and_xml_invalid_characters_are_dropped() {
+        assert_eq!(xml_text("\u{202E}gpj.exe\u{202C}"), "gpj.exe");
+        assert_eq!(xml_text("a\u{2067}b\u{200D}c\u{FEFF}d\u{E007F}"), "abcd");
+        assert_eq!(xml_text("a\u{FFFE}b\u{FFFF}c\u{FDD0}d\u{1FFFF}e\u{10FFFE}"), "abcde");
+        // Tab and newline stay; the rest of the BMP and astral text stays.
+        assert_eq!(xml_text("a\tb\nc \u{FFFD} 中 😀"), "a\tb\nc \u{FFFD} 中 😀");
     }
 
     #[test]
