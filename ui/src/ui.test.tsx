@@ -229,22 +229,33 @@ const sidebar = (over: Partial<Parameters<typeof Sidebar>[0]> = {}) => (
     terminals={[{ id: 1, label: "projem", status: "shell" }]} {...over} />
 );
 
-test("dil düğmeleri: TR · AZ · EN, seçim anında uygulanır ve kalıcıdır", () => {
+test("dil seçici: sekiz dil, seçim anında uygulanır ve kalıcıdır", () => {
   render(sidebar());
   expect(screen.getByText("Geçmiş")).toBeTruthy();
-  const en = screen.getByRole("button", { name: "English" });
-  expect(en.textContent).toBe("EN");
-  expect(screen.getByRole("button", { name: "Türkçe" }).getAttribute("aria-pressed")).toBe("true");
-  fireEvent.click(en);
+  const sel = screen.getByRole("combobox", { name: "Dil" }) as HTMLSelectElement;
+  expect(sel.value).toBe("tr");
+  expect([...sel.options].map((o) => o.textContent)).toEqual(
+    ["Türkçe", "Azərbaycan", "English", "Deutsch", "Русский", "Español", "Français", "简体中文"]);
+  fireEvent.change(sel, { target: { value: "en" } });
   expect(getLang()).toBe("en");
   expect(localStorage.getItem("pano.lang")).toBe("en");
+  expect(document.documentElement.lang).toBe("en");
   expect(screen.getByText("History")).toBeTruthy();
   expect(screen.getByText("＋ New terminal")).toBeTruthy();
   expect(screen.getByRole("img", { name: "Claude: running command" })).toBeTruthy();
-  expect(en.getAttribute("aria-pressed")).toBe("true");
-  fireEvent.click(screen.getByRole("button", { name: "Azərbaycan dili" }));
+  expect((screen.getByRole("combobox", { name: "Language" }) as HTMLSelectElement).value).toBe("en");
+  fireEvent.change(screen.getByRole("combobox", { name: "Language" }), { target: { value: "az" } });
   expect(screen.getByText("Tarixçə")).toBeTruthy();
   expect(screen.getByTitle("Terminalı bağla")).toBeTruthy();
+  fireEvent.change(screen.getByRole("combobox", { name: "Dil" }), { target: { value: "zh" } });
+  expect(localStorage.getItem("pano.lang")).toBe("zh");
+  expect(screen.getByRole("img", { name: "Claude：正在执行命令" })).toBeTruthy();
+});
+
+test("dil seçici: kayıtlı dil açılışta seçili gelir", () => {
+  setLang("ru");
+  render(sidebar());
+  expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("ru");
 });
 
 test("tema kalıpları: altı yuvarlak düğme, ipucu çevrilir, tıklanınca tema uygulanır", () => {

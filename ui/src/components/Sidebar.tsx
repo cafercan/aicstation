@@ -1,6 +1,6 @@
 import { useState, type CSSProperties } from "react";
 import { statusColor, statusLabel, type StatusKind } from "../format";
-import { LANGS, LANG_NAMES, errorText, setLang, useLang, useT } from "../i18n";
+import { LANGS, LANG_NAMES, errorText, setLang, useLang, useT, type Lang } from "../i18n";
 import { THEME_IDS, THEMES, setTheme, useTheme } from "../theme";
 import ClaudeMark from "./ClaudeMark";
 
@@ -27,24 +27,17 @@ interface Props {
   onOpenWt: () => Promise<void>;
 }
 
-/** Language (TR · AZ · EN) and theme swatches at the bottom of the sidebar. */
+/** Language select and theme swatches at the bottom of the sidebar. */
 function Prefs() {
   const t = useT();
   const lang = useLang();
   const theme = useTheme();
   return (
     <div className="prefs">
-      <div className="lang-switch" role="group" aria-label={t("nav.language")}>
-        {LANGS.map((l, i) => (
-          <span key={l}>
-            {i > 0 && <span className="sep" aria-hidden="true">·</span>}
-            <button type="button" className={l === lang ? "on" : undefined} aria-pressed={l === lang}
-              aria-label={LANG_NAMES[l]} title={LANG_NAMES[l]} lang={l} onClick={() => setLang(l)}>
-              {l.toUpperCase()}
-            </button>
-          </span>
-        ))}
-      </div>
+      <select className="lang-select" aria-label={t("nav.language")} value={lang}
+        onChange={(e) => setLang(e.target.value as Lang)}>
+        {LANGS.map((l) => <option key={l} value={l} lang={l}>{LANG_NAMES[l]}</option>)}
+      </select>
       <div className="theme-switch" role="group" aria-label={t("nav.theme")}>
         {THEME_IDS.map((id) => {
           const name = t(`theme.${id}`);
