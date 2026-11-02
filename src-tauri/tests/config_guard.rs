@@ -173,3 +173,23 @@ fn product_is_session_station() {
         assert!(!text.to_lowercase().contains("claude pano") && !text.contains("claude-pano") && !text.contains("claudepano"));
     }
 }
+
+/// LICENSE and THIRD_PARTY_NOTICES.md ship with the installer (next to the
+/// exe), and the NSIS installer shows the license page.
+#[test]
+fn installer_ships_license_and_third_party_notices() {
+    let conf: serde_json::Value = serde_json::from_str(&read("tauri.conf.json")).unwrap();
+    let res = conf["bundle"]["resources"].as_object().expect("bundle.resources is a source -> target map");
+    assert_eq!(res.get("../LICENSE").and_then(|v| v.as_str()), Some("LICENSE"));
+    assert_eq!(res.get("../THIRD_PARTY_NOTICES.md").and_then(|v| v.as_str()), Some("THIRD_PARTY_NOTICES.md"));
+    assert_eq!(conf["bundle"]["licenseFile"], "../LICENSE");
+    for src in res.keys() {
+        let text = read(src);
+        assert!(!text.trim().is_empty(), "{src} is empty");
+    }
+    let notices = read("../THIRD_PARTY_NOTICES.md");
+    assert!(notices.starts_with("# Third-party notices"));
+    for must in ["### MIT", "### Apache-2.0", "### MPL-2.0", "## MPL-2.0 source code"] {
+        assert!(notices.contains(must), "THIRD_PARTY_NOTICES.md lacks {must}");
+    }
+}

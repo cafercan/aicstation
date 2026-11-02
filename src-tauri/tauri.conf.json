@@ -33,6 +33,11 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "resources": {
+      "../LICENSE": "LICENSE",
+      "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
+    },
+    "licenseFile": "../LICENSE",
     "windows": {
       "nsis": { "installMode": "currentUser" }
     }
