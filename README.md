@@ -213,7 +213,7 @@ These are guarantees of the code in this repository:
 
 ## Installation
 
-Download `SessionStation_*_x64-setup.exe` from the
+Download `SessionStation-v*-windows-x64-setup.exe` from the
 [Releases](../../releases) page and run it.
 
 - The install is per user and needs no administrator rights.
@@ -243,6 +243,7 @@ Prerequisites:
 - Visual Studio 2022 Build Tools with the "Desktop development with C++"
   workload
 - Node.js 22
+- Inno Setup 6 (only for the installer)
 
 ```powershell
 npm ci
@@ -250,7 +251,7 @@ npm --prefix ui ci
 
 npm run tauri dev        # development mode with hot reload
 npm run debug-preview    # fast debug build, no installer
-npm run tauri build      # release build + NSIS installer in target/release/bundle/nsis/
+npm run installer        # release build + Inno Setup installer in dist/ (needs Inno Setup 6)
 ```
 
 Tests and checks:

@@ -1,10 +1,11 @@
 {
   "name": "session-station",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "scripts": {
     "tauri": "tauri",
     "debug-preview": "tauri build --debug --no-bundle",
+    "installer": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-installer.ps1",
     "notices": "node scripts/gen-notices.mjs",
     "test:notices": "node --test scripts/gen-notices.test.mjs"
   },
