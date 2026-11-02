@@ -20,6 +20,29 @@ fn emit_snapshot(app: &tauri::AppHandle) {
     let _ = app.emit("snapshot", snap);
 }
 
+/// What the background thread does next.
+#[derive(Debug, PartialEq)]
+enum Action {
+    Emit,
+    Index,
+    Wait(Duration),
+}
+
+/// Pure scheduling decision. Emits are due every TICK, or at most every
+/// MIN_GAP when notify reported a change; any other time is spent indexing
+/// history while work remains, otherwise waiting for the next event.
+fn decide(since_emit: Duration, changed: bool, indexing: bool) -> Action {
+    if since_emit >= TICK || (changed && since_emit >= MIN_GAP) {
+        Action::Emit
+    } else if indexing {
+        Action::Index
+    } else if changed {
+        Action::Wait(MIN_GAP - since_emit)
+    } else {
+        Action::Wait(TICK - since_emit)
+    }
+}
+
 fn background_loop(app: tauri::AppHandle, dir: PathBuf) {
     let (tx, rx) = mpsc::channel::<()>();
     let mut watcher: Option<RecommendedWatcher> =
@@ -34,37 +57,43 @@ fn background_loop(app: tauri::AppHandle, dir: PathBuf) {
     }
     let mut last_emit = Instant::now() - TICK;
     let mut last_save = Instant::now();
+    let mut changed = false;
     loop {
-        let wait = TICK.saturating_sub(last_emit.elapsed()).max(Duration::from_millis(1));
-        let changed = match rx.recv_timeout(wait) {
-            Ok(()) => {
-                while rx.try_recv().is_ok() {}
-                true
-            }
-            Err(RecvTimeoutError::Timeout) => false,
-            Err(RecvTimeoutError::Disconnected) => {
-                std::thread::sleep(wait);
-                false
-            }
-        };
-        let since = last_emit.elapsed();
-        if since >= TICK || (changed && since >= MIN_GAP) {
-            emit_snapshot(&app);
-            last_emit = Instant::now();
-        } else if changed {
-            // Debounce: wait out the 4 Hz gap, then emit once.
-            std::thread::sleep(MIN_GAP - since);
-            emit_snapshot(&app);
-            last_emit = Instant::now();
-        } else {
-            // Idle: no lock is held across the emit above; indexing locks only the history.
-            app.state::<AppState>().index_step(INDEX_BUDGET);
+        // Collect pending notify events without blocking.
+        while rx.try_recv().is_ok() {
+            changed = true;
         }
-        if last_save.elapsed() >= SAVE_EVERY {
-            if let Err(e) = app.state::<AppState>().save_history() {
-                eprintln!("geçmiş önbelleği kaydedilemedi: {e}");
+        let indexing = app.state::<AppState>().is_indexing();
+        // A panic in one iteration must not silently kill the thread.
+        let step = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            match decide(last_emit.elapsed(), changed, indexing) {
+                Action::Emit => {
+                    emit_snapshot(&app);
+                    last_emit = Instant::now();
+                    changed = false;
+                }
+                Action::Index => {
+                    app.state::<AppState>().index_step(INDEX_BUDGET);
+                }
+                Action::Wait(d) => match rx.recv_timeout(d) {
+                    Ok(()) => changed = true,
+                    Err(RecvTimeoutError::Timeout) => {}
+                    Err(RecvTimeoutError::Disconnected) => std::thread::sleep(d),
+                },
             }
-            last_save = Instant::now();
+            if last_save.elapsed() >= SAVE_EVERY {
+                let st = app.state::<AppState>();
+                st.publish_history(); // also refreshes "today" across midnight
+                if let Err(e) = st.save_history() {
+                    eprintln!("geçmiş önbelleği kaydedilemedi: {e}");
+                }
+                last_save = Instant::now();
+            }
+        }));
+        if step.is_err() {
+            eprintln!("arka plan döngüsünde hata; devam ediliyor");
+            last_emit = Instant::now(); // avoid a hot panic loop
+            std::thread::sleep(Duration::from_millis(250));
         }
     }
 }
@@ -92,4 +121,37 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("Claude Pano başlatılamadı");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn loop_emits_when_tick_elapsed() {
+        assert_eq!(decide(TICK, false, true), Action::Emit);
+        assert_eq!(decide(Duration::from_millis(1500), false, false), Action::Emit);
+    }
+
+    #[test]
+    fn loop_indexes_between_ticks() {
+        assert_eq!(decide(Duration::from_millis(100), false, true), Action::Index);
+        // Nothing to index: wait out the rest of the tick.
+        assert_eq!(
+            decide(Duration::from_millis(100), false, false),
+            Action::Wait(Duration::from_millis(900))
+        );
+    }
+
+    #[test]
+    fn loop_indexes_while_changes_keep_arriving() {
+        // Continuous notify events: emits are capped at 4 Hz and the time in
+        // between goes to indexing, so it never starves.
+        assert_eq!(decide(Duration::from_millis(100), true, true), Action::Index);
+        assert_eq!(decide(MIN_GAP, true, true), Action::Emit);
+        assert_eq!(
+            decide(Duration::from_millis(100), true, false),
+            Action::Wait(Duration::from_millis(150))
+        );
+    }
 }

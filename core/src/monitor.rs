@@ -238,23 +238,51 @@ impl Monitor {
         probe: &dyn ProcessProbe,
         now: SystemTime,
     ) -> Option<SessionDetail> {
-        let live = read_live_sessions(&self.claude_dir.join("sessions"), probe)
-            .into_iter()
-            .find(|l| l.session_id == session_id);
-        if let Some(l) = live {
-            let tree = self.update_live(session_id, now);
-            let stats = &self.states[session_id].stats;
-            return Some(SessionDetail {
-                card: make_card(session_id, Some(&l), probe.parent_pid(l.pid), stats, &tree),
-                tokens: stats.tokens,
-                tool_call_count: stats.tool_call_count,
-                main_tool_calls: stats.tool_calls.iter().cloned().collect(),
-                tree,
-            });
+        match self.live_detail(session_id, probe, now) {
+            Some(d) => Some(d),
+            None => self.closed_job(session_id)?.run(session_id, now),
         }
-        // Closed session: build from the transcript; every agent is Finished.
+    }
+
+    /// Detail of a live session (cheap: incremental state). `None` if not live.
+    pub fn live_detail(
+        &mut self,
+        session_id: &str,
+        probe: &dyn ProcessProbe,
+        now: SystemTime,
+    ) -> Option<SessionDetail> {
+        let l = read_live_sessions(&self.claude_dir.join("sessions"), probe)
+            .into_iter()
+            .find(|l| l.session_id == session_id)?;
+        let tree = self.update_live(session_id, now);
+        let stats = &self.states[session_id].stats;
+        Some(SessionDetail {
+            card: make_card(session_id, Some(&l), probe.parent_pid(l.pid), stats, &tree),
+            tokens: stats.tokens,
+            tool_call_count: stats.tool_call_count,
+            main_tool_calls: stats.tool_calls.iter().cloned().collect(),
+            tree,
+        })
+    }
+
+    /// Locates a closed session's files; the expensive streaming is done by
+    /// `ClosedJob::run`, which needs no access to the monitor (no lock held).
+    pub fn closed_job(&mut self, session_id: &str) -> Option<ClosedJob> {
         let path = self.locator.transcript(session_id)?;
-        let mut reader = TranscriptReader::new(path);
+        let subagents_dir = self.locator.subagents_dir(session_id);
+        Some(ClosedJob { path, subagents_dir })
+    }
+}
+
+/// Everything needed to build a closed session's detail without the monitor.
+pub struct ClosedJob {
+    path: PathBuf,
+    subagents_dir: Option<PathBuf>,
+}
+
+impl ClosedJob {
+    pub fn run(self, session_id: &str, now: SystemTime) -> Option<SessionDetail> {
+        let mut reader = TranscriptReader::new(self.path);
         let mut stats = SessionStats::default();
         reader
             .read_each(|ev| match ev {
@@ -262,7 +290,7 @@ impl Monitor {
                 ReadEvent::Entry(e) => stats.apply(&e),
             })
             .ok()?;
-        let tree = match self.locator.subagents_dir(session_id) {
+        let tree = match self.subagents_dir {
             Some(dir) => AgentCache::default().build(&dir, false, now),
             None => AgentTree::default(),
         };

@@ -10,9 +10,12 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 
 const MAX_ID_LEN: usize = 64;
+/// A cached snapshot older than this is recomputed by `get_snapshot` (guards
+/// against a stalled background thread).
+const SNAPSHOT_MAX_AGE: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -23,11 +26,21 @@ pub struct HistoryView {
     pub indexing: bool,
 }
 
+/// Published by the background thread after each index step so commands never
+/// wait on `HistoryIndex::step`.
+#[derive(Default)]
+struct HistoryCache {
+    rows: Vec<HistoryRow>,
+    today_cost: f64,
+    today_complete: bool,
+}
+
 pub struct AppState {
     monitor: Mutex<Monitor>,
     history: Mutex<HistoryIndex>,
+    history_cache: Mutex<HistoryCache>,
     probe: Box<dyn ProcessProbe + Send + Sync>,
-    snapshot: Mutex<Option<Snapshot>>,
+    snapshot: Mutex<Option<(Instant, Snapshot)>>,
     indexing: AtomicBool,
 }
 
@@ -43,25 +56,45 @@ impl AppState {
     ) -> Self {
         let locator = Locator::new(claude_dir.join("projects"));
         let history = HistoryIndex::load(cache_path, &locator);
-        Self {
+        let state = Self {
             monitor: Mutex::new(Monitor::new(claude_dir)),
             history: Mutex::new(history),
+            history_cache: Mutex::new(HistoryCache::default()),
             probe,
             snapshot: Mutex::new(None),
             indexing: AtomicBool::new(true),
-        }
+        };
+        state.publish_history();
+        state
+    }
+
+    /// Rebuilds the cached history view (brief history lock, no indexing).
+    pub fn publish_history(&self) {
+        let cache = {
+            let h = lock(&self.history);
+            let (today_cost, today_complete) = h.cost_on(chrono::Local::now().date_naive());
+            HistoryCache {
+                rows: h.rows(&HashSet::new()).into_iter().cloned().collect(),
+                today_cost,
+                today_complete,
+            }
+        };
+        *lock(&self.history_cache) = cache;
     }
 
     /// Recomputes the snapshot and stores it. The monitor lock is released
     /// before the snapshot lock is taken, and before the caller emits.
     pub fn refresh(&self) -> Snapshot {
         let snap = lock(&self.monitor).refresh(self.probe.as_ref(), SystemTime::now());
-        *lock(&self.snapshot) = Some(snap.clone());
+        *lock(&self.snapshot) = Some((Instant::now(), snap.clone()));
         snap
     }
 
     pub fn get_snapshot(&self) -> Snapshot {
-        let cached = lock(&self.snapshot).clone();
+        let cached = lock(&self.snapshot)
+            .as_ref()
+            .filter(|(t, _)| t.elapsed() < SNAPSHOT_MAX_AGE)
+            .map(|(_, s)| s.clone());
         cached.unwrap_or_else(|| self.refresh())
     }
 
@@ -69,27 +102,40 @@ impl AppState {
         if session_id.is_empty() || session_id.len() > MAX_ID_LEN {
             return None;
         }
-        lock(&self.monitor).detail(session_id, self.probe.as_ref(), SystemTime::now())
+        let now = SystemTime::now();
+        let closed = {
+            let mut m = lock(&self.monitor);
+            if let Some(d) = m.live_detail(session_id, self.probe.as_ref(), now) {
+                return Some(d);
+            }
+            m.closed_job(session_id)?
+        };
+        // Transcript streaming happens without the monitor lock.
+        closed.run(session_id, now)
     }
 
     pub fn get_history(&self) -> HistoryView {
         let snap = self.get_snapshot();
         let live: HashSet<String> = snap.sessions.iter().map(|c| c.session_id.clone()).collect();
-        let today = chrono::Local::now().date_naive();
-        let h = lock(&self.history);
-        let (today_cost, today_complete) = h.cost_on(today);
+        let c = lock(&self.history_cache);
         HistoryView {
-            rows: h.rows(&live).into_iter().cloned().collect(),
-            today_cost,
-            today_complete,
+            rows: c.rows.iter().filter(|r| !live.contains(&r.session_id)).cloned().collect(),
+            today_cost: c.today_cost,
+            today_complete: c.today_complete,
             indexing: self.indexing.load(Ordering::Relaxed),
         }
     }
 
-    /// Runs one indexing slice. The history lock is held for the slice
-    /// (`HistoryIndex::step` takes `&mut self`); the slice is budgeted.
-    pub fn index_step(&self, budget: std::time::Duration) -> bool {
+    /// Whether history indexing still has work (false once everything is indexed).
+    pub fn is_indexing(&self) -> bool {
+        self.indexing.load(Ordering::Relaxed)
+    }
+
+    /// Runs one indexing slice, then publishes the result. Only the background
+    /// thread calls this; commands read the published cache and never wait on it.
+    pub fn index_step(&self, budget: Duration) -> bool {
         let more = lock(&self.history).step(budget);
+        self.publish_history();
         self.indexing.store(more, Ordering::Relaxed);
         more
     }
@@ -102,8 +148,8 @@ impl AppState {
         let mut known: Vec<String> =
             self.get_snapshot().sessions.iter().map(|c| c.cwd.clone()).collect();
         {
-            let h = lock(&self.history);
-            known.extend(h.rows(&HashSet::new()).iter().filter_map(|r| r.cwd.clone()));
+            let c = lock(&self.history_cache);
+            known.extend(c.rows.iter().filter_map(|r| r.cwd.clone()));
         }
         let dir = validate_open_folder(path, &known)?;
         std::process::Command::new("explorer.exe")
@@ -114,25 +160,41 @@ impl AppState {
     }
 }
 
-/// Accepts only a path equal to a known session cwd that is an existing
-/// directory (explorer.exe would execute a file path).
+/// Accepts only a path equal to a known session cwd that is an absolute,
+/// local, existing directory. explorer.exe would execute a file path, treats
+/// `,`/leading `/` as switches, and `is_dir` on a UNC path would make an
+/// outbound SMB request. The returned path ends with `\` so explorer always
+/// treats it as a folder.
 pub fn validate_open_folder(path: &str, known_cwds: &[String]) -> Result<PathBuf, String> {
     if path.is_empty() || !known_cwds.iter().any(|c| c == path) {
         return Err("Bilinmeyen klasör".into());
     }
+    if path.starts_with(r"\\") || path.starts_with("//") {
+        return Err("Ağ yolları desteklenmiyor".into());
+    }
+    if path.contains(',') || path.starts_with('/') || path.starts_with('-') {
+        return Err("Geçersiz yol".into());
+    }
     let p = Path::new(path);
+    if !p.is_absolute() {
+        return Err("Yol mutlak olmalı".into());
+    }
     if !p.is_dir() {
         return Err("Yol var olan bir klasör değil".into());
     }
-    Ok(p.to_path_buf())
+    let mut s = p.as_os_str().to_os_string();
+    if !path.ends_with('\\') {
+        s.push("\\");
+    }
+    Ok(PathBuf::from(s))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_snapshot(state: tauri::State<'_, AppState>) -> Snapshot {
     state.get_snapshot()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_session_detail(
     state: tauri::State<'_, AppState>,
     session_id: String,
@@ -140,12 +202,12 @@ pub fn get_session_detail(
     state.get_session_detail(&session_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_history(state: tauri::State<'_, AppState>) -> HistoryView {
     state.get_history()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn open_folder(state: tauri::State<'_, AppState>, path: String) -> Result<(), String> {
     state.open_folder(&path)
 }
@@ -175,6 +237,32 @@ mod tests {
         assert!(validate_open_folder("", &[String::new()]).is_err());
         // Known and existing is accepted.
         assert!(validate_open_folder(&real, &[real.clone()]).is_ok());
+    }
+
+    #[test]
+    fn open_folder_hardening_rejections() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().to_string_lossy().into_owned();
+        // Each is listed as "known", so only the hardening rules can reject.
+        for bad in [
+            r"\\sunucu\paylasim".to_string(),
+            "//sunucu/paylasim".to_string(),
+            "/windows".to_string(),
+            "-Ac".to_string(),
+            r"bagil\yol".to_string(),
+            format!("{real},/select"),
+            r"C:\a,b".to_string(),
+        ] {
+            assert!(validate_open_folder(&bad, &[bad.clone()]).is_err(), "should reject {bad}");
+        }
+    }
+
+    #[test]
+    fn open_folder_accepts_exact_known_absolute_dir_with_trailing_backslash() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().to_string_lossy().into_owned();
+        let out = validate_open_folder(&real, &[real.clone()]).unwrap();
+        assert!(out.to_string_lossy().ends_with('\\'));
     }
 
     #[test]
