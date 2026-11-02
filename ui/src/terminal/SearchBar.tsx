@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ISearchOptions, SearchAddon } from "@xterm/addon-search";
+import { useT } from "../i18n";
 
 export type SearchLike = Pick<SearchAddon, "findNext" | "findPrevious" | "clearDecorations" | "onDidChangeResults">;
 
@@ -18,6 +19,7 @@ const OPTS: ISearchOptions = {
 
 /** Ctrl+F search over the terminal buffer (Enter / Shift+Enter / Esc). */
 export default function SearchBar({ search, onClose }: Props) {
+  const t = useT();
   const input = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<{ resultIndex: number; resultCount: number } | null>(null);
@@ -40,13 +42,13 @@ export default function SearchBar({ search, onClose }: Props) {
 
   let label = "";
   if (query && result) {
-    label = result.resultCount === 0 ? "Sonuç yok"
+    label = result.resultCount === 0 ? t("search.none")
       : `${result.resultIndex >= 0 ? result.resultIndex + 1 : "?"}/${result.resultCount}`;
   }
 
   return (
     <div className="term-search" onMouseDown={(e) => e.stopPropagation()}>
-      <input ref={input} type="search" aria-label="Terminalde ara" placeholder="Ara…" value={query}
+      <input ref={input} type="search" aria-label={t("search.label")} placeholder={t("search.placeholder")} value={query}
         spellCheck={false}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
@@ -54,9 +56,9 @@ export default function SearchBar({ search, onClose }: Props) {
           else if (e.key === "Escape") { e.preventDefault(); close(); }
         }} />
       <span className="count">{label}</span>
-      <button type="button" title="Önceki (Shift+Enter)" onClick={prev}>↑</button>
-      <button type="button" title="Sonraki (Enter)" onClick={next}>↓</button>
-      <button type="button" title="Kapat (Esc)" onClick={close}>×</button>
+      <button type="button" title={t("search.prev")} onClick={prev}>↑</button>
+      <button type="button" title={t("search.next")} onClick={next}>↓</button>
+      <button type="button" title={t("search.close")} onClick={close}>×</button>
     </div>
   );
 }

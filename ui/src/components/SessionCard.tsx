@@ -1,9 +1,9 @@
 import { useState } from "react";
 import type { SessionCard } from "../api";
 import {
-  AGENT_FINISHED_COLOR, AGENT_RUNNING_COLOR, clampPct, fmtContext, fmtCost, fmtElapsed, statusColor,
-  statusKind, statusLabel, toolSuccess,
+  agentColor, clampPct, fmtContext, fmtCost, fmtElapsed, statusColor, statusKind, statusLabel, toolSuccess,
 } from "../format";
+import { errorText, useT } from "../i18n";
 import AgentDonut from "./AgentDonut";
 import ClaudeMark from "./ClaudeMark";
 
@@ -11,22 +11,24 @@ interface Props {
   card: SessionCard;
   now: number;
   onOpen: (sessionId: string) => void;
-  /** "Sekmeye git" icon; omitted when the session's tab cannot be reached. Resolves to a note. */
+  /** "Go to tab" icon; omitted when the session's tab cannot be reached. Resolves to a note (code or text). */
   onGoto?: () => Promise<string | null>;
 }
 
 export default function SessionCardView({ card, now, onOpen, onGoto }: Props) {
+  const t = useT();
   const [note, setNote] = useState<string | null>(null);
   const kind = statusKind(card.status, card.pid);
   const running = Math.max(0, card.agentsTotal - card.agentsFinished);
   const finished = Math.max(0, card.agentsFinished);
   const elapsed = card.startedAtMs > 0 ? fmtElapsed(now - card.startedAtMs) : "?";
   const last = card.lastTool
-    ? `son: ${card.lastTool.name}${card.lastTool.target ? " " + card.lastTool.target : ""} · `
+    ? `${t("card.lastTool", { tool: card.lastTool.name + (card.lastTool.target ? " " + card.lastTool.target : "") })} · `
     : "";
+  const goto = t("card.goto");
   return (
     <div className={`card ${kind}`} role="button" tabIndex={0}
-      title={`${last}son hareket ${fmtElapsed(now - card.lastActivityMs)}`}
+      title={`${last}${t("card.lastActivity", { t: fmtElapsed(now - card.lastActivityMs) })}`}
       onClick={() => onOpen(card.sessionId)}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(card.sessionId); }
@@ -37,7 +39,7 @@ export default function SessionCardView({ card, now, onOpen, onGoto }: Props) {
           <span className="badge">{statusLabel(card.status, card.pid)}</span>
           {card.waitingFor ? <span className="waiting-for">{" "}{card.waitingFor}</span> : null}
           {onGoto && (
-            <button className="goto" aria-label="Sekmeye git" title="Sekmeye git"
+            <button className="goto" aria-label={goto} title={goto}
               onClick={(e) => {
                 e.stopPropagation();
                 setNote(null);
@@ -47,7 +49,7 @@ export default function SessionCardView({ card, now, onOpen, onGoto }: Props) {
           )}
         </div>
       </div>
-      {note && <div className="goto-note" role="status">{note}</div>}
+      {note && <div className="goto-note" role="status">{errorText(note)}</div>}
       <div className="path" title={card.cwd}>
         <span className="cwd">{card.cwd}</span><span className="model">{card.model ?? "?"}</span>
       </div>
@@ -55,19 +57,19 @@ export default function SessionCardView({ card, now, onOpen, onGoto }: Props) {
         <AgentDonut running={running} finished={finished} />
         <div className="astats">
           {running + finished === 0 ? (
-            <div className="muted">alt ajan yok</div>
+            <div className="muted">{t("card.noSubagents")}</div>
           ) : (
             <>
-              <div><i style={{ color: AGENT_RUNNING_COLOR }}>●</i> <span>{`${running} ajan çalışıyor`}</span></div>
-              <div><i style={{ color: AGENT_FINISHED_COLOR }}>●</i> <span>{`${finished} ajan tamamlandı`}</span></div>
+              <div><i style={{ color: agentColor("running") }}>●</i> <span>{t("card.agentsRunning", { n: running })}</span></div>
+              <div><i style={{ color: agentColor("finished") }}>●</i> <span>{t("card.agentsFinished", { n: finished })}</span></div>
             </>
           )}
-          <div className="muted">tool başarı <b>{toolSuccess(card.toolOk, card.toolErr)}</b></div>
+          <div className="muted">{t("card.toolSuccess")} <b>{toolSuccess(card.toolOk, card.toolErr)}</b></div>
         </div>
       </div>
       <div className="ctx"><i style={{ width: `${clampPct(card.contextPct)}%` }} /></div>
       <div className="row">
-        <span>{`bağlam ${fmtContext(card.contextPct)}`}</span>
+        <span>{t("card.context", { pct: fmtContext(card.contextPct) })}</span>
         <span>{`${fmtCost(card.costUsd)} · ${elapsed}`}</span>
       </div>
     </div>

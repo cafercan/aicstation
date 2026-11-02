@@ -1,16 +1,18 @@
 import { useEffect, useState } from "react";
 import { getHistory, type HistoryRow, type HistoryView } from "../api";
 import { fmtCost, fmtElapsed } from "../format";
+import { errorText, locale, useT } from "../i18n";
 
 interface Props {
   onOpen: (sessionId: string) => void;
-  /** "▶ Devam et": new terminal resuming the session; a rejection is shown on the row. */
+  /** "▶ Resume": new terminal resuming the session; a rejection is shown on the row. */
   onResume?: (sessionId: string, name: string) => Promise<unknown>;
 }
 
 const rowCwd = (r: HistoryRow) => r.summary?.cwd ?? r.cwd ?? "";
 
 export default function History({ onOpen, onResume }: Props) {
+  const t = useT();
   const [view, setView] = useState<HistoryView | null>(null);
   const [rowErr, setRowErr] = useState<{ id: string; msg: string } | null>(null);
   /** Rows whose resume call is still pending (button disabled). */
@@ -27,7 +29,7 @@ export default function History({ onOpen, onResume }: Props) {
     return () => { alive = false; clearInterval(t); };
   }, [indexing]);
 
-  if (!view) return <div className="empty"><p>Yükleniyor…</p></div>;
+  if (!view) return <div className="empty"><p>{t("common.loading")}</p></div>;
 
   const folders = [...new Set(view.rows.map(rowCwd).filter((c) => c))].sort();
   const rows = view.rows.filter((r) => !folder || rowCwd(r) === folder);
@@ -35,19 +37,23 @@ export default function History({ onOpen, onResume }: Props) {
   return (
     <div>
       <div className="hd">
-        <h3>Geçmiş</h3>
-        <select aria-label="Klasör filtresi" value={folder} onChange={(e) => setFolder(e.target.value)}>
-          <option value="">Tüm klasörler</option>
+        <h3>{t("hist.title")}</h3>
+        <select aria-label={t("hist.folderFilter")} value={folder} onChange={(e) => setFolder(e.target.value)}>
+          <option value="">{t("hist.allFolders")}</option>
           {folders.map((f) => <option key={f} value={f}>{f}</option>)}
         </select>
       </div>
-      {view.indexing && <div className="meta">Dizinleniyor…</div>}
+      {view.indexing && <div className="meta">{t("hist.indexing")}</div>}
       {rows.length === 0 ? (
-        <p className="empty">Kayıt yok.</p>
+        <p className="empty">{t("hist.empty")}</p>
       ) : (
         <table className="hist">
           <thead>
-            <tr><th>Tarih</th><th>Ad</th><th>Klasör</th><th>Model</th><th>Süre</th><th>Ajan</th><th>Maliyet</th><th /></tr>
+            <tr>
+              <th>{t("hist.colDate")}</th><th>{t("hist.colName")}</th><th>{t("hist.colFolder")}</th>
+              <th>{t("hist.colModel")}</th><th>{t("hist.colDuration")}</th><th>{t("hist.colAgents")}</th>
+              <th>{t("hist.colCost")}</th><th />
+            </tr>
           </thead>
           <tbody>
             {rows.map((r) => {
@@ -55,7 +61,7 @@ export default function History({ onOpen, onResume }: Props) {
               const name = s?.name ?? r.name;
               return (
                 <tr key={r.sessionId} onClick={() => onOpen(r.sessionId)}>
-                  <td>{new Date(r.modifiedMs).toLocaleString("tr-TR")}</td>
+                  <td>{new Date(r.modifiedMs).toLocaleString(locale())}</td>
                   <td>{name}</td>
                   <td title={rowCwd(r)}>{rowCwd(r) || "?"}</td>
                   <td>{s ? s.model ?? "?" : "?"}</td>
@@ -70,9 +76,9 @@ export default function History({ onOpen, onResume }: Props) {
                         setRowErr(null);
                         setPending((p) => new Set(p).add(r.sessionId));
                         onResume(r.sessionId, name)
-                          .catch((err) => setRowErr({ id: r.sessionId, msg: String(err) }))
+                          .catch((err) => setRowErr({ id: r.sessionId, msg: errorText(err) }))
                           .finally(() => setPending((p) => { const n = new Set(p); n.delete(r.sessionId); return n; }));
-                      }}>▶ Devam et</button>
+                      }}>{t("hist.resume")}</button>
                     )}
                     {rowErr?.id === r.sessionId && <div className="r" role="alert">{rowErr.msg}</div>}
                   </td>

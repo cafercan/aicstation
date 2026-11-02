@@ -1,6 +1,7 @@
 import { focusSessionTab, type SessionCard } from "./api";
+import { errorText, t } from "./i18n";
 
-/** Where "Sekmeye git" leads for a session, or null when the button is hidden. */
+/** Where "Go to tab" leads for a session, or null when the button is hidden. */
 export type GotoTarget = { kind: "embedded"; terminal: number } | { kind: "windowsTerminal" } | null;
 
 /**
@@ -16,8 +17,8 @@ export function gotoTarget(card: Pick<SessionCard, "pid" | "hostKind">, terminal
 
 /**
  * Switches to the embedded terminal or asks the backend (session id only) to
- * focus the Windows Terminal tab. Resolves to a note to show, or null;
- * rejects with a Turkish message.
+ * focus the Windows Terminal tab. Resolves to a note code (see errorText) or
+ * null; rejects with a message in the UI language.
  */
 export async function goToTab(
   sessionId: string, target: GotoTarget, onTerminal?: (id: number) => void,
@@ -27,6 +28,6 @@ export async function goToTab(
   try {
     return await focusSessionTab(sessionId);
   } catch (e) {
-    throw new Error(`Sekmeye gidilemedi: ${String(e)}`);
+    throw new Error(t("goto.failed", { err: errorText(e) }));
   }
 }

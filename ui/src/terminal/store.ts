@@ -5,6 +5,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { Terminal } from "@xterm/xterm";
 import { useSyncExternalStore } from "react";
 import { ptySpawnResume, type PtyInfo, type SessionCard } from "../api";
+import { t } from "../i18n";
 import { clampFontSize } from "./keys";
 import { renderOptions, ubuntuTheme, terminalFont } from "./theme";
 
@@ -85,7 +86,7 @@ export function openTerminal(): Promise<TerminalEntry> {
 export function openResumeTerminal(sessionId: string, name?: string): Promise<TerminalEntry> {
   return startTerminal(
     (cols, rows, onOutput, onExit) => ptySpawnResume(sessionId, cols, rows, onOutput, onExit),
-    name || `Devam: ${sessionId.slice(0, 8)}`,
+    name || t("term.resumeTitle", { id: sessionId.slice(0, 8) }),
   );
 }
 
@@ -166,7 +167,7 @@ export function confirmClose(ids: number[], sessions: SessionCard[]): boolean {
     .flatMap((t) => sessionsIn(t, sessions));
   if (active.length === 0) return true;
   return window.confirm(
-    `Terminalde açık ${active.length} Claude oturumu var (${active.map((s) => s.name).join(", ")}). Yine de kapatılsın mı?`,
+    t("term.confirmClose", { n: active.length, names: active.map((s) => s.name).join(", ") }),
   );
 }
 

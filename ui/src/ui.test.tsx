@@ -1,10 +1,12 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { act, render, screen, fireEvent } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import SessionCardView from "./components/SessionCard";
 import KpiRow from "./components/KpiRow";
 import StatusBar from "./components/StatusBar";
 import Sidebar from "./components/Sidebar";
 import type { SessionCard } from "./api";
+import { getLang, setLang } from "./i18n";
+import { getTheme } from "./theme";
 
 function card(over: Partial<SessionCard> = {}): SessionCard {
   return {
@@ -133,7 +135,8 @@ test('status bar seçili oturum yokken "N açık oturum"', () => {
 test("status bar durum etiketini renkli ve bağlamı sınırlı gösterir", () => {
   render(<StatusBar sessions={[card({ status: "waiting", contextPct: 250 })]} selectedId="s1" />);
   const st = screen.getByText("onay bekliyor");
-  expect(st.getAttribute("style")).toContain("rgb(255, 93, 115)");
+  // Text tone of the status (readable on the status bar in every theme).
+  expect(st.getAttribute("style")).toContain("rgb(255, 129, 147)");
   expect(screen.getByRole("contentinfo").textContent).toContain("ctx 100%");
 });
 
@@ -152,7 +155,7 @@ test("status bar oturum adı yerine klasör adını gösterir", () => {
 
 test("kenar çubuğu: Windows Terminal'de aç; hata satır içinde gösterilir", async () => {
   const onOpenWt = vi.fn()
-    .mockRejectedValueOnce("Windows Terminal bulunamadı")
+    .mockRejectedValueOnce("wt_not_found")
     .mockResolvedValueOnce(undefined);
   render(<Sidebar view="dashboard" onSelect={() => {}} onNew={() => {}} onClose={() => {}}
     onOpenWt={onOpenWt} terminals={[]} />);
@@ -177,8 +180,89 @@ test('kart: "Sekmeye git" simgesi yalnızca onGoto verildiğinde görünür ve k
 });
 
 test("kart: Sekmeye git notu kartta gösterilir", async () => {
-  const onGoto = vi.fn(async () => "Pencere öne getirildi; aynı adlı birden çok sekme var");
+  const onGoto = vi.fn(async () => "tab_ambiguous");
   render(<SessionCardView card={card()} now={0} onOpen={() => {}} onGoto={onGoto} />);
   fireEvent.click(screen.getByRole("button", { name: "Sekmeye git" }));
   expect(await screen.findByText("Pencere öne getirildi; aynı adlı birden çok sekme var")).toBeTruthy();
+});
+
+const sidebar = (over: Partial<Parameters<typeof Sidebar>[0]> = {}) => (
+  <Sidebar view="dashboard" onSelect={() => {}} onNew={() => {}} onClose={() => {}} onOpenWt={async () => {}}
+    terminals={[{ id: 1, label: "projem", status: "shell" }]} {...over} />
+);
+
+test("dil düğmeleri: TR · AZ · EN, seçim anında uygulanır ve kalıcıdır", () => {
+  render(sidebar());
+  expect(screen.getByText("Geçmiş")).toBeTruthy();
+  const en = screen.getByRole("button", { name: "English" });
+  expect(en.textContent).toBe("EN");
+  expect(screen.getByRole("button", { name: "Türkçe" }).getAttribute("aria-pressed")).toBe("true");
+  fireEvent.click(en);
+  expect(getLang()).toBe("en");
+  expect(localStorage.getItem("pano.lang")).toBe("en");
+  expect(screen.getByText("History")).toBeTruthy();
+  expect(screen.getByText("＋ New terminal")).toBeTruthy();
+  expect(screen.getByRole("img", { name: "Claude: running command" })).toBeTruthy();
+  expect(en.getAttribute("aria-pressed")).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: "Azərbaycan dili" }));
+  expect(screen.getByText("Tarixçə")).toBeTruthy();
+  expect(screen.getByTitle("Terminalı bağla")).toBeTruthy();
+});
+
+test("tema kalıpları: altı yuvarlak düğme, ipucu çevrilir, tıklanınca tema uygulanır", () => {
+  render(sidebar());
+  const group = screen.getByRole("group", { name: "Tema" });
+  const sw = group.querySelectorAll("button.theme-swatch");
+  expect(sw).toHaveLength(6);
+  const sepia = screen.getByRole("button", { name: "Sepya" });
+  expect(sepia.getAttribute("title")).toBe("Sepya");
+  expect(sepia.getAttribute("style")).toContain("--sw-bg: #f4ecd8");
+  expect(sepia.getAttribute("style")).toContain("--sw-ac: #a15c2b");
+  expect(screen.getByRole("button", { name: "Pano Koyu" }).classList.contains("on")).toBe(true);
+  fireEvent.click(sepia);
+  expect(getTheme()).toBe("sepia-light");
+  expect(document.documentElement.dataset.theme).toBe("sepia-light");
+  expect(localStorage.getItem("pano.theme")).toBe("sepia-light");
+  expect(sepia.classList.contains("on")).toBe(true);
+  expect(sepia.getAttribute("aria-pressed")).toBe("true");
+  act(() => setLang("en"));
+  expect(screen.getByRole("button", { name: "Sepia" })).toBeTruthy();
+  expect(screen.getByRole("group", { name: "Theme" })).toBeTruthy();
+});
+
+test("dil değişince kart, KPI ve status bar yeniden çizilir", () => {
+  const snap = { sessions: [card({ status: "shell", agentsTotal: 3, agentsFinished: 2, startedAtMs: 1_000 })], runningAgents: 1, waitingCount: 0 };
+  render(<>
+    <SessionCardView card={snap.sessions[0]} now={91_000} onOpen={() => {}} />
+    <KpiRow snapshot={snap} history={null} />
+    <StatusBar sessions={snap.sessions} selectedId={null} />
+  </>);
+  expect(screen.getByText("komut çalıştırıyor")).toBeTruthy();
+  expect(screen.getByText("1 ajan çalışıyor")).toBeTruthy();
+  expect(screen.getByText("çalışan ajan")).toBeTruthy();
+  expect(screen.getByText("1 açık oturum")).toBeTruthy();
+  act(() => setLang("en"));
+  expect(screen.getByText("running command")).toBeTruthy();
+  expect(screen.getByText("1 agent running")).toBeTruthy();
+  expect(screen.getByText("2 agents finished")).toBeTruthy();
+  expect(screen.getByText("running agents")).toBeTruthy();
+  expect(screen.getByText("1 open session")).toBeTruthy();
+  expect(screen.getByText("$1.20 · 1 min")).toBeTruthy();
+  act(() => setLang("az"));
+  expect(screen.getByText("əmr icra edir")).toBeTruthy();
+  expect(screen.getByText("1 agent işləyir")).toBeTruthy();
+  expect(screen.getByRole("img", { name: "3 agent: 1 işləyir, 2 bitib" })).toBeTruthy();
+});
+
+test('kart: "shell" durumunda yeşil şerit ve rozet', () => {
+  const { container } = render(<SessionCardView card={card({ status: "shell" })} now={0} onOpen={() => {}} />);
+  expect(container.querySelector(".card")?.classList.contains("shell")).toBe(true);
+  expect(container.querySelector(".cmark circle")?.getAttribute("fill")).toBe("#48c774");
+});
+
+test("Windows Terminal hata kodu seçili dilde gösterilir", async () => {
+  setLang("en");
+  render(sidebar({ onOpenWt: () => Promise.reject("wt_not_found") }));
+  fireEvent.click(screen.getByText("↗ Open in Windows Terminal"));
+  expect((await screen.findByRole("alert")).textContent).toBe("Windows Terminal not found");
 });

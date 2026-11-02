@@ -1,3 +1,6 @@
+import { getLang, t, type Lang } from "./i18n";
+import { themeTokens } from "./theme";
+
 export function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
@@ -8,59 +11,59 @@ export function fmtCost(usd: number): string {
   return `$${usd.toFixed(2)}`;
 }
 
-export function fmtElapsed(ms: number): string {
+export function fmtElapsed(ms: number, lang: Lang = getLang()): string {
   const sec = Math.floor(Math.max(0, ms) / 1000);
-  if (sec < 60) return `${sec} sn`;
+  if (sec < 60) return t("time.sec", { n: sec }, lang);
   const min = Math.floor(sec / 60);
-  if (min < 60) return `${min} dk`;
+  if (min < 60) return t("time.min", { n: min }, lang);
   const h = Math.floor(min / 60);
-  if (h < 24) return min % 60 ? `${h} sa ${min % 60} dk` : `${h} sa`;
-  return `${Math.floor(h / 24)} gün`;
+  if (h < 24) return min % 60 ? t("time.hourMin", { h, m: min % 60 }, lang) : t("time.hour", { n: h }, lang);
+  return t("time.day", { n: Math.floor(h / 24) }, lang);
 }
 
-export type StatusKind = "busy" | "waiting" | "idle" | "closed" | "unknown";
+/** "shell": Claude Code is running a shell command (shown like busy). */
+export type StatusKind = "busy" | "shell" | "waiting" | "idle" | "closed" | "unknown";
+
+const KINDS: readonly StatusKind[] = ["busy", "shell", "waiting", "idle", "closed", "unknown"];
+const isKind = (s: string): s is StatusKind => (KINDS as readonly string[]).includes(s);
+const LIVE_KINDS: readonly string[] = ["busy", "shell", "waiting", "idle"];
 
 /** A session whose process is gone (pid 0) is "closed" whatever its last status was. */
 export function statusKind(status: string, pid?: number): StatusKind {
   if (pid === 0) return "closed";
-  return status === "busy" || status === "waiting" || status === "idle" ? status : "unknown";
+  return LIVE_KINDS.includes(status) ? (status as StatusKind) : "unknown";
 }
-
-export const STATUS_LABELS: Record<StatusKind, string> = {
-  busy: "çalışıyor",
-  waiting: "onay bekliyor",
-  idle: "hazır",
-  closed: "kapandı",
-  unknown: "bilinmiyor",
-};
-
-const isKind = (s: string): s is StatusKind => Object.prototype.hasOwnProperty.call(STATUS_LABELS, s);
 
 /**
- * Turkish label of the status kind. Only a raw status the app does not know
- * (e.g. "compacting") is shown as sent; a raw string that spells a kind name
- * ("closed", "unknown") or an empty one gets the kind's Turkish label.
+ * Label of the status kind in the UI language. Only a raw status the app does
+ * not know (e.g. "compacting") is shown as sent; a raw string that spells a
+ * kind name ("closed", "unknown") or an empty one gets the kind's label.
  */
-export function statusLabel(status: string, pid?: number): string {
+export function statusLabel(status: string, pid?: number, lang: Lang = getLang()): string {
   const kind = statusKind(status, pid);
-  if (kind !== "unknown") return STATUS_LABELS[kind];
-  return isKind(status) ? STATUS_LABELS[status] : status || STATUS_LABELS.unknown;
+  if (kind !== "unknown") return t(`status.${kind}`, undefined, lang);
+  if (isKind(status)) return t(`status.${status}`, undefined, lang);
+  return status || t("status.unknown", undefined, lang);
 }
 
-export const STATUS_COLORS: Record<StatusKind, string> = {
-  busy: "#48c774",
-  idle: "#ff9f43",
-  waiting: "#ff5d73",
-  closed: "#7d8696",
-  unknown: "#7d8696",
-};
-
+/** Marker color of the kind in the active theme (card stripe, mark, donut). */
 export function statusColor(kind: StatusKind): string {
-  return STATUS_COLORS[kind];
+  const k = themeTokens();
+  return kind === "busy" || kind === "shell" ? k.busy : kind === "unknown" ? k.closed : k[kind];
 }
 
-export const AGENT_RUNNING_COLOR = "#5aa0ff";
-export const AGENT_FINISHED_COLOR = "#48c774";
+/** Text color of the kind in the active theme (status bar), readable on the theme's surfaces. */
+export function statusTextColor(kind: StatusKind): string {
+  const k = themeTokens();
+  return kind === "busy" || kind === "shell" ? k.busyText
+    : kind === "idle" ? k.idleText : kind === "waiting" ? k.waitingText : k.closedText;
+}
+
+/** Donut / agent-list colors in the active theme. */
+export function agentColor(kind: "running" | "finished"): string {
+  const k = themeTokens();
+  return kind === "running" ? k.agentRunning : k.busy;
+}
 
 export interface DonutSegment {
   kind: "finished" | "running";
@@ -80,8 +83,8 @@ export function donutSegments(running: number, finished: number): DonutSegment[]
   const fl = (f / total) * 100;
   const rl = (r / total) * 100;
   const out: DonutSegment[] = [];
-  if (fl > 0) out.push({ kind: "finished", color: AGENT_FINISHED_COLOR, length: fl, offset: 25 });
-  if (rl > 0) out.push({ kind: "running", color: AGENT_RUNNING_COLOR, length: rl, offset: 25 - fl });
+  if (fl > 0) out.push({ kind: "finished", color: agentColor("finished"), length: fl, offset: 25 });
+  if (rl > 0) out.push({ kind: "running", color: agentColor("running"), length: rl, offset: 25 - fl });
   return out;
 }
 

@@ -37,6 +37,7 @@ import {
   confirmClose, getTerminals, killOrphans, openResumeTerminal, openTerminal, resetTerminals, setFontSize, terminalForPid, terminalName,
 } from "./store";
 import type { SessionCard } from "../api";
+import { setLang } from "../i18n";
 
 function card(over: Partial<SessionCard>): SessionCard {
   return {
@@ -134,6 +135,10 @@ test("kapatma: içinde herhangi bir Claude oturumu varsa onay ister", async () =
   expect(ask).toHaveBeenCalledTimes(3);
   ask.mockReturnValue(true);
   expect(confirmClose([7], [card({ parentPid: 4242, status: "busy" })])).toBe(true);
+  expect(ask).toHaveBeenLastCalledWith("Terminalde açık 1 Claude oturumu var (demo). Yine de kapatılsın mı?");
+  setLang("en");
+  confirmClose([7], [card({ parentPid: 4242 }), card({ parentPid: 4242, name: "iki" })]);
+  expect(ask).toHaveBeenLastCalledWith("The terminal has 2 open Claude sessions (demo, iki). Close it anyway?");
 });
 
 test("süreç çıkınca terminal menüden düşer", async () => {
@@ -219,9 +224,9 @@ test("devam terminali: ad yoksa \"Devam: <kısa id>\"; hata atılır ve terminal
   const t = await openResumeTerminal("0f864996-1f75-464e-b101-a3ceed5d79d9");
   expect(terminalName(t, [])).toBe("Devam: 0f864996");
   invoke.mockImplementation(async (cmd: string) => {
-    if (cmd === "pty_spawn_resume") throw "Bu oturum zaten açık";
+    if (cmd === "pty_spawn_resume") throw "session_live";
     return undefined;
   });
-  await expect(openResumeTerminal("0f864996-1f75-464e-b101-a3ceed5d79d9", "x")).rejects.toBe("Bu oturum zaten açık");
+  await expect(openResumeTerminal("0f864996-1f75-464e-b101-a3ceed5d79d9", "x")).rejects.toBe("session_live");
   expect(getTerminals().map((x) => x.id)).toEqual([12]);
 });

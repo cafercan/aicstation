@@ -18,6 +18,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 const terminalForPid = vi.fn((_p: number | null | undefined): number | undefined => undefined);
 vi.mock("../terminal/store", () => ({ terminalForPid: (p: number | null) => terminalForPid(p) }));
 
+import { setLang } from "../i18n";
 import SessionDetailPage from "./SessionDetail";
 import History from "./History";
 
@@ -119,7 +120,7 @@ test('"Sekmeye git" Windows Terminal oturumunda yalnızca kimlikle focus_session
   const d = detail();
   d.card.hostKind = "windowsTerminal";
   invoke.mockImplementation(async (cmd: string) =>
-    cmd === "focus_session_tab" ? "Pencere öne getirildi; aynı adlı birden çok sekme var" : d);
+    cmd === "focus_session_tab" ? "tab_ambiguous" : d);
   render(<SessionDetailPage sessionId="s1" onBack={() => {}} />);
   fireEvent.click(await screen.findByText("Sekmeye git"));
   await screen.findByText("Pencere öne getirildi; aynı adlı birden çok sekme var");
@@ -130,7 +131,7 @@ test('"Sekmeye git" hatası satır içinde gösterilir; başka host ve kapalı o
   const d = detail();
   d.card.hostKind = "windowsTerminal";
   invoke.mockImplementation(async (cmd: string) => {
-    if (cmd === "focus_session_tab") throw "Sekme bulunamadı";
+    if (cmd === "focus_session_tab") throw "tab_not_found";
     return d;
   });
   const first = render(<SessionDetailPage sessionId="s1" onBack={() => {}} />);
@@ -212,7 +213,7 @@ test("canlı prop'u olmadan da: snapshot olayında oturum listedeyse pid 0 son k
 
 test("kapanmış oturumda ▶ Devam et: onResume(id, ad); hata satır içinde", async () => {
   invoke.mockResolvedValue(closed());
-  const onResume = vi.fn().mockRejectedValueOnce("Bu oturum zaten açık").mockResolvedValue(undefined);
+  const onResume = vi.fn().mockRejectedValueOnce("session_live").mockResolvedValue(undefined);
   render(<SessionDetailPage sessionId="s1" onBack={() => {}} onResume={onResume} />);
   fireEvent.click(await screen.findByText("▶ Devam et"));
   expect(onResume).toHaveBeenCalledWith("s1", "demo");
@@ -261,9 +262,9 @@ test("eski oturumun geç gelen yanıtı yenisinin üzerine yazmaz", async () => 
   expect(screen.queryByText(/birinci/)).toBeNull();
 });
 
-test("Klasörü aç hatası satır içinde Türkçe gösterilir", async () => {
+test("Klasörü aç hatası kodu satır içinde Türkçe gösterilir", async () => {
   invoke.mockImplementation((cmd: string) =>
-    cmd === "open_folder" ? Promise.reject("Bilinmeyen klasör") : Promise.resolve(detail()));
+    cmd === "open_folder" ? Promise.reject("folder_unknown") : Promise.resolve(detail()));
   render(<SessionDetailPage sessionId="s1" onBack={() => {}} />);
   fireEvent.click(await screen.findByText("Klasörü aç"));
   expect(await screen.findByText("Klasör açılamadı: Bilinmeyen klasör")).toBeTruthy();
@@ -318,15 +319,15 @@ test("Geçmiş: ▶ Devam et satırı açmadan onResume çağırır; hata o sat�
     rows: [row("a", "C:/a", true), row("b", "C:/b", false)], todayCost: 0, todayComplete: true, indexing: false,
   });
   const onOpen = vi.fn();
-  const onResume = vi.fn().mockRejectedValueOnce("Bilinmeyen oturum").mockResolvedValue(undefined);
+  const onResume = vi.fn().mockRejectedValueOnce("session_unknown").mockResolvedValue(undefined);
   render(<History onOpen={onOpen} onResume={onResume} />);
   const trB = (await screen.findByText("ad-b")).closest("tr")!;
   fireEvent.click(within(trB).getByText("▶ Devam et"));
   expect(onResume).toHaveBeenCalledWith("b", "ad-b");
   expect(onOpen).not.toHaveBeenCalled();
-  expect(await within(trB).findByText("Bilinmeyen oturum")).toBeTruthy();
+  expect(await within(trB).findByText("Bilinmeyen oturum ya da klasörü yok")).toBeTruthy();
   const trA = screen.getByText("ad-a").closest("tr")!;
-  expect(within(trA).queryByText("Bilinmeyen oturum")).toBeNull();
+  expect(within(trA).queryByText("Bilinmeyen oturum ya da klasörü yok")).toBeNull();
   fireEvent.click(within(trA).getByText("▶ Devam et"));
   expect(onResume).toHaveBeenLastCalledWith("a", "ad-a");
 });
@@ -359,4 +360,32 @@ test("▶ Devam et istek sürerken devre dışı (ayrıntı ve geçmiş)", async
   expect(onResume2).toHaveBeenCalledTimes(1);
   await act(async () => { d2.reject("x"); });
   await waitFor(() => expect(a.disabled).toBe(false));
+});
+
+test("ayrıntı sayfası İngilizce: etiketler, ağaç, çalışan çağrı, hata kodu", async () => {
+  setLang("en");
+  invoke.mockImplementation((cmd: string) =>
+    cmd === "open_folder" ? Promise.reject("folder_network") : Promise.resolve(detail()));
+  render(<SessionDetailPage sessionId="s1" onBack={() => {}} />);
+  fireEvent.click(await screen.findByText("Open folder"));
+  expect(await screen.findByText("Could not open folder: Network paths are not supported")).toBeTruthy();
+  expect(screen.getByText("AGENT TREE")).toBeTruthy();
+  expect(screen.getByText("RECENT TOOL CALLS · main session")).toBeTruthy();
+  expect(screen.getByTestId("node-ph").textContent).toContain("Phase Review");
+  expect(screen.getAllByTestId("tool-row")[2].textContent).toContain("… running");
+  expect(screen.getByText("agents / finished")).toBeTruthy();
+  expect(screen.getByText("working")).toBeTruthy();
+});
+
+test("Geçmiş Azerbaycanca: başlıklar ve tarih yerel ayarla", async () => {
+  setLang("az");
+  invoke.mockResolvedValue({ rows: [row("a", "C:/a", true)], todayCost: 0, todayComplete: true, indexing: false });
+  render(<History onOpen={() => {}} onResume={vi.fn()} />);
+  const trA = (await screen.findByText("ad-a")).closest("tr")!;
+  const heads = [...document.querySelectorAll("th")].map((th) => th.textContent).filter(Boolean);
+  expect(heads).toEqual(["Tarix", "Ad", "Qovluq", "Model", "Müddət", "Agent", "Xərc"]);
+  expect(within(trA).getByText("10 dəq")).toBeTruthy();
+  expect(within(trA).getByText("▶ Davam et")).toBeTruthy();
+  expect(within(trA).getByText(new Date(0).toLocaleString("az-Latn-AZ"))).toBeTruthy();
+  expect(screen.getByLabelText("Qovluq filtri")).toBeTruthy();
 });

@@ -8,6 +8,8 @@ import History from "./pages/History";
 import SessionDetailPage from "./pages/SessionDetail";
 import TerminalView from "./pages/TerminalView";
 import { statusKind } from "./format";
+import { useT } from "./i18n";
+import { useTheme } from "./theme";
 import {
   allTerminalIds, closeTerminal, confirmClose, killOrphans, openResumeTerminal, openTerminal, sessionsIn,
   terminalName,
@@ -18,6 +20,9 @@ import "./app.css";
 const EMPTY: Snapshot = { sessions: [], runningAgents: 0, waitingCount: 0 };
 
 export default function App() {
+  // Language and theme changes re-render the whole tree (labels, inline SVG colors).
+  useTheme();
+  const t = useT();
   const [view, setView] = useState<View>("dashboard");
   const [snapshot, setSnapshot] = useState<Snapshot>(EMPTY);
   const [history, setHistory] = useState<HistoryView | null>(null);
@@ -95,8 +100,8 @@ export default function App() {
   } else if (!terminals.some((t) => t.id === termId)) {
     page = (
       <div className="empty">
-        <p>Terminal bulunamadı.</p>
-        <button onClick={() => setView("dashboard")}>← Dashboard</button>
+        <p>{t("app.terminalMissing")}</p>
+        <button onClick={() => setView("dashboard")}>{t("app.backToDashboard")}</button>
       </div>
     );
   }

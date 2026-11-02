@@ -4,6 +4,7 @@ const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...a: unknown[]) => invoke(...a) }));
 
 import { goToTab, gotoTarget } from "./gotoTab";
+import { setLang } from "./i18n";
 
 test("gotoTarget: gömülü terminal önce, sonra Windows Terminal, yoksa null", () => {
   expect(gotoTarget({ pid: 5, hostKind: "other" }, 3)).toEqual({ kind: "embedded", terminal: 3 });
@@ -25,7 +26,10 @@ test("goToTab: gömülü onTerminal, WT focus_session_tab notu, hata metni", asy
   expect(invoke).toHaveBeenCalledWith("focus_session_tab", { sessionId: "s1" });
   invoke.mockResolvedValueOnce("not");
   expect(await goToTab("s1", { kind: "windowsTerminal" }, onTerminal)).toBe("not");
-  invoke.mockRejectedValueOnce("Sekme bulunamadı");
+  invoke.mockRejectedValueOnce("tab_not_found");
   await expect(goToTab("s1", { kind: "windowsTerminal" }, onTerminal)).rejects.toThrow("Sekmeye gidilemedi: Sekme bulunamadı");
+  setLang("en");
+  invoke.mockRejectedValueOnce("tab_not_found");
+  await expect(goToTab("s1", { kind: "windowsTerminal" }, onTerminal)).rejects.toThrow("Could not go to tab: Tab not found");
   expect(await goToTab("s1", null, onTerminal)).toBeNull();
 });

@@ -1,8 +1,10 @@
 import { expect, test } from "vitest";
 import {
   clampPct, donutSegments, fmtContext, fmtCost, fmtTokens, fmtElapsed, folderName, statusColor, statusKind,
-  statusLabel, toolSuccess,
+  statusLabel, statusTextColor, toolSuccess,
 } from "./format";
+import { setLang } from "./i18n";
+import { applyTheme } from "./theme";
 
 test("format: sayılar ve maliyet", () => {
   expect(fmtTokens(1234)).toBe("1.2k");
@@ -86,4 +88,48 @@ test("tool başarı oranı ve bağlam metni", () => {
   expect(fmtContext(-4)).toBe("0%");
   expect(clampPct(null)).toBe(0);
   expect(clampPct(130)).toBe(100);
+});
+
+test("geçen süre her dilin birimleriyle", () => {
+  const cases: [number, string, string, string][] = [
+    [30_000, "30 sn", "30 san", "30 s"],
+    [12 * 60_000, "12 dk", "12 dəq", "12 min"],
+    [3 * 3_600_000, "3 sa", "3 saat", "3 h"],
+    [3 * 3_600_000 + 5 * 60_000, "3 sa 5 dk", "3 saat 5 dəq", "3 h 5 min"],
+    [3 * 86_400_000, "3 gün", "3 gün", "3 d"],
+  ];
+  for (const [ms, trS, azS, enS] of cases) {
+    expect(fmtElapsed(ms, "tr")).toBe(trS);
+    expect(fmtElapsed(ms, "az")).toBe(azS);
+    expect(fmtElapsed(ms, "en")).toBe(enS);
+  }
+  setLang("en");
+  expect(fmtElapsed(60_000)).toBe("1 min");
+});
+
+test("durum etiketi her dilde; ham \"shell\" komut çalıştırıyor, meşgul yeşili", () => {
+  expect(statusKind("shell", 1)).toBe("shell");
+  expect(statusKind("shell", 0)).toBe("closed");
+  expect(statusLabel("shell", 1, "tr")).toBe("komut çalıştırıyor");
+  expect(statusLabel("shell", 1, "az")).toBe("əmr icra edir");
+  expect(statusLabel("shell", 1, "en")).toBe("running command");
+  expect(statusLabel("shell", 0, "en")).toBe("closed");
+  expect(statusColor("shell")).toBe(statusColor("busy"));
+  expect(statusLabel("busy", 1, "az")).toBe("işləyir");
+  expect(statusLabel("waiting", 1, "en")).toBe("awaiting approval");
+  expect(statusLabel("idle", 1, "en")).toBe("ready");
+  expect(statusLabel("", 1, "az")).toBe("naməlum");
+  expect(statusLabel("compacting", 1, "en")).toBe("compacting");
+  setLang("az");
+  expect(statusLabel("idle")).toBe("hazırdır");
+});
+
+test("durum ve halka renkleri etkin temayı izler", () => {
+  applyTheme("github-light");
+  expect(statusColor("busy")).toBe("#1a7f37");
+  expect(statusTextColor("waiting")).toBe("#cf222e");
+  expect(donutSegments(1, 1).map((s) => s.color)).toEqual(["#1a7f37", "#0969da"]);
+  applyTheme("pano-dark");
+  expect(statusTextColor("waiting")).toBe("#ff8193");
+  expect(donutSegments(1, 1).map((s) => s.color)).toEqual(["#48c774", "#5aa0ff"]);
 });
