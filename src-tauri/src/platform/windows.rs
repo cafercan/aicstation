@@ -4,10 +4,15 @@
 //! kind of each pid is computed once per snapshot.
 use pano_core::host::{find_host, Host, HostKind, ProcInfo};
 use pano_core::registry::ProcessProbe;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use windows_sys::Win32::Foundation::{CloseHandle, FILETIME, HANDLE, INVALID_HANDLE_VALUE};
+use windows_sys::Win32::Foundation::{
+    CloseHandle, ERROR_NO_MORE_ITEMS, ERROR_SUCCESS, FILETIME, HANDLE, INVALID_HANDLE_VALUE,
+};
+use windows_sys::Win32::System::Registry::{
+    RegCloseKey, RegEnumValueW, RegOpenKeyExW, HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_QUERY_VALUE,
+};
 use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
 };
@@ -117,6 +122,55 @@ impl ProcessProbe for WinProbe {
     }
 }
 
+/// Value names under one registry key (read-only), uppercased.
+fn value_names(root: HKEY, subkey: &str, out: &mut HashSet<String>) {
+    let wide: Vec<u16> = subkey.encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe {
+        let mut key: HKEY = std::ptr::null_mut();
+        if RegOpenKeyExW(root, wide.as_ptr(), 0, KEY_QUERY_VALUE, &mut key) != ERROR_SUCCESS {
+            return;
+        }
+        let mut buf = vec![0u16; 16384];
+        let mut i = 0u32;
+        loop {
+            let mut len = buf.len() as u32;
+            let r = RegEnumValueW(
+                key,
+                i,
+                buf.as_mut_ptr(),
+                &mut len,
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            );
+            if r == ERROR_NO_MORE_ITEMS {
+                break;
+            }
+            if r == ERROR_SUCCESS {
+                out.insert(String::from_utf16_lossy(&buf[..len as usize]).to_ascii_uppercase());
+            }
+            i += 1;
+            if i > 100_000 {
+                break;
+            }
+        }
+        RegCloseKey(key);
+    }
+}
+
+/// Names of the persistent user and machine environment variables.
+pub fn persistent_env_names() -> HashSet<String> {
+    let mut out = HashSet::new();
+    value_names(HKEY_CURRENT_USER, "Environment", &mut out);
+    value_names(
+        HKEY_LOCAL_MACHINE,
+        r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+        &mut out,
+    );
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,6 +201,14 @@ mod tests {
         let _ = child.kill();
         let _ = child.wait();
         assert_eq!(kind, HostKind::Embedded);
+    }
+
+    #[test]
+    fn persistent_env_has_machine_path() {
+        // Path is always a persistent machine variable.
+        let n = persistent_env_names();
+        assert!(n.contains("PATH"), "{n:?}");
+        assert!(n.iter().all(|k| *k == k.to_ascii_uppercase()));
     }
 
     #[test]

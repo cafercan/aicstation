@@ -13,6 +13,18 @@ pub fn focus_session_tab(pid: u32, name: &str) -> Result<Option<String>, String>
     focus::focus_session_tab(pid, name)
 }
 
+/// Uppercased names of the persistent user (HKCU\Environment) and machine
+/// environment variables, read-only from the registry.
+#[cfg(windows)]
+pub fn persistent_env_names() -> std::collections::HashSet<String> {
+    windows::persistent_env_names()
+}
+
+#[cfg(not(windows))]
+pub fn persistent_env_names() -> std::collections::HashSet<String> {
+    std::collections::HashSet::new()
+}
+
 #[cfg(not(windows))]
 pub fn focus_session_tab(_pid: u32, _name: &str) -> Result<Option<String>, String> {
     Err("Sekme bulunamadı".into())

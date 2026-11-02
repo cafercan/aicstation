@@ -3,7 +3,7 @@
 
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use pano_core::locate::is_session_id;
 use std::ffi::{OsStr, OsString};
 use std::io::{Read, Write};
@@ -77,18 +77,56 @@ pub fn resume_args(session_id: &str) -> Result<Vec<String>, String> {
     ])
 }
 
-/// The child's environment: this process's environment minus the markers a
-/// parent Claude Code session sets (`CLAUDE_CODE_*`, `CLAUDECODE`,
-/// `CLAUDE_SESSION_ID`, `CLAUDE_PID`; names compared case-insensitively as on
-/// Windows). Inherited, they make `claude` in the terminal act as a child of
-/// that session (no transcript, wrong session id). Everything else is kept,
-/// including the user's own NO_COLOR / FORCE_COLOR.
-pub fn child_env(vars: impl IntoIterator<Item = (OsString, OsString)>) -> Vec<(OsString, OsString)> {
-    fn is_marker(key: &OsString) -> bool {
+/// Set in every child: cmd.exe then never runs a program (e.g. a planted
+/// `node.exe`) from the current directory, which may be an untrusted folder
+/// of a resumed session.
+pub const NO_CWD_EXE: &str = "NoDefaultCurrentDirectoryInExePath";
+
+/// Variables a running Claude Code session sets for itself and its children.
+/// Inherited, they make `claude` in the terminal act as a child of that
+/// session (no transcript, wrong session id), so they are always removed.
+const SESSION_MARKERS: &[&str] = &[
+    "CLAUDECODE",
+    "CLAUDE_SESSION_ID",
+    "CLAUDE_PID",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_SSE_PORT",
+    "CLAUDE_CODE_BRIDGE_SESSION_ID",
+    "CLAUDE_CODE_SESSION_ATTENDED",
+];
+const SESSION_MARKER_PREFIXES: &[&str] = &["CLAUDE_CODE_MESSAGING_"];
+
+/// The child's environment, from this process's environment. Names are
+/// compared case-insensitively, as on Windows; `persistent` holds the
+/// uppercased names of the user's and machine's persistent variables.
+/// - Session markers are always removed.
+/// - Other `CLAUDE_CODE_*` and `CLAUDE_EFFORT` are the user's own settings
+///   when persistent (kept), otherwise they were set by a parent Claude Code
+///   session (removed).
+/// - Everything else is kept, including NO_COLOR / FORCE_COLOR.
+/// - `NoDefaultCurrentDirectoryInExePath=1` is added (see `NO_CWD_EXE`).
+pub fn child_env(
+    vars: impl IntoIterator<Item = (OsString, OsString)>,
+    persistent: &HashSet<String>,
+) -> Vec<(OsString, OsString)> {
+    let keep = |key: &OsString| {
         let k = key.to_string_lossy().to_ascii_uppercase();
-        k.starts_with("CLAUDE_CODE_") || matches!(k.as_str(), "CLAUDECODE" | "CLAUDE_SESSION_ID" | "CLAUDE_PID")
-    }
-    vars.into_iter().filter(|(k, _)| !is_marker(k)).collect()
+        if SESSION_MARKERS.contains(&k.as_str()) || SESSION_MARKER_PREFIXES.iter().any(|p| k.starts_with(p)) {
+            return false;
+        }
+        if k == NO_CWD_EXE.to_ascii_uppercase() {
+            return false;
+        }
+        if k.starts_with("CLAUDE_CODE_") || k == "CLAUDE_EFFORT" {
+            return persistent.contains(&k);
+        }
+        true
+    };
+    let mut out: Vec<(OsString, OsString)> = vars.into_iter().filter(|(k, _)| keep(k)).collect();
+    out.push((NO_CWD_EXE.into(), "1".into()));
+    out
 }
 
 impl PtyManager {
@@ -183,7 +221,7 @@ impl PtyManager {
             g.next_id
         };
         cmd.env_clear();
-        for (k, v) in child_env(std::env::vars_os()) {
+        for (k, v) in child_env(std::env::vars_os(), &crate::platform::persistent_env_names()) {
             cmd.env(k, v);
         }
         cmd.env("TERM", "xterm-256color");
@@ -297,6 +335,7 @@ impl PtyManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
     use std::ffi::OsString;
     use std::sync::mpsc;
     use std::time::Duration;
@@ -479,44 +518,93 @@ mod tests {
         pairs.iter().map(|(k, v)| (OsString::from(k), OsString::from(v))).collect()
     }
 
+    fn names(v: Vec<(OsString, OsString)>) -> Vec<String> {
+        v.into_iter().map(|(k, _)| k.to_string_lossy().into_owned()).collect()
+    }
+
+    fn set(n: &[&str]) -> HashSet<String> {
+        n.iter().map(|s| s.to_ascii_uppercase()).collect()
+    }
+
     #[test]
-    fn child_env_drops_claude_session_markers_only() {
+    fn child_env_always_drops_session_markers() {
         let input = kv(&[
             ("PATH", r"C:\Windows"),
-            ("CLAUDE_CODE_CHILD_SESSION", "1"),
-            ("claude_code_session_id", "x"),
-            ("Claude_Code_Entrypoint", "cli"),
             ("CLAUDECODE", "1"),
             ("ClaudeCode", "1"),
             ("CLAUDE_SESSION_ID", "x"),
-            ("CLAUDE_PID", "42"),
             ("claude_pid", "42"),
-            ("CLAUDE_CONFIG_DIR", r"D:\cfg"),
-            ("CLAUDE_EFFORT", "high"),
+            ("CLAUDE_CODE_ENTRYPOINT", "cli"),
+            ("claude_code_session_id", "x"),
+            ("CLAUDE_CODE_CHILD_SESSION", "1"),
+            ("CLAUDE_CODE_SSE_PORT", "1234"),
+            ("CLAUDE_CODE_MESSAGING_SOCKET", "x"),
+            ("CLAUDE_CODE_BRIDGE_SESSION_ID", "x"),
+            ("CLAUDE_CODE_SESSION_ATTENDED", "1"),
             ("CLAUDECODE_X", "keep"),
+            ("CLAUDE_CONFIG_DIR", r"D:\cfg"),
             ("NO_COLOR", "1"),
-            ("FORCE_COLOR", "1"),
-            ("USERPROFILE", r"C:\Users\u"),
         ]);
-        let kept: Vec<String> =
-            child_env(input).into_iter().map(|(k, _)| k.to_string_lossy().into_owned()).collect();
+        // Even when the user made them persistent, markers never leak.
+        let persistent = set(&["CLAUDECODE", "CLAUDE_CODE_SSE_PORT", "CLAUDE_CODE_ENTRYPOINT"]);
         assert_eq!(
-            kept,
-            vec!["PATH", "CLAUDE_CONFIG_DIR", "CLAUDE_EFFORT", "CLAUDECODE_X", "NO_COLOR", "FORCE_COLOR", "USERPROFILE"]
+            names(child_env(input, &persistent)),
+            vec!["PATH", "CLAUDECODE_X", "CLAUDE_CONFIG_DIR", "NO_COLOR", NO_CWD_EXE]
         );
     }
 
     #[test]
+    fn child_env_keeps_users_persistent_claude_code_settings() {
+        let input = kv(&[
+            ("CLAUDE_CODE_GIT_BASH_PATH", r"C:\Git\bin\bash.exe"),
+            ("Claude_Code_Use_Bedrock", "1"),
+            ("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "8000"),
+            ("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1"),
+            ("CLAUDE_EFFORT", "high"),
+            ("CLAUDE_CODE_SOMETHING_THE_PARENT_SET", "x"),
+        ]);
+        let persistent = set(&[
+            "CLAUDE_CODE_GIT_BASH_PATH",
+            "claude_code_use_bedrock",
+            "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+        ]);
+        assert_eq!(
+            names(child_env(input.clone(), &persistent)),
+            vec![
+                "CLAUDE_CODE_GIT_BASH_PATH",
+                "Claude_Code_Use_Bedrock",
+                "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+                "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+                NO_CWD_EXE,
+            ],
+            "CLAUDE_EFFORT and unknown CLAUDE_CODE_* came from the parent session"
+        );
+        let with_effort = set(&["CLAUDE_EFFORT"]);
+        assert_eq!(names(child_env(input, &with_effort)), vec!["CLAUDE_EFFORT", NO_CWD_EXE]);
+    }
+
+    #[test]
+    fn child_env_forbids_exe_lookup_in_the_current_directory() {
+        let out = child_env(kv(&[("nodefaultcurrentdirectoryinexepath", "0"), ("PATH", "x")]), &HashSet::new());
+        let v: Vec<(String, String)> =
+            out.into_iter().map(|(k, v)| (k.to_string_lossy().into(), v.to_string_lossy().into())).collect();
+        assert_eq!(v, vec![("PATH".to_string(), "x".to_string()), (NO_CWD_EXE.to_string(), "1".to_string())]);
+    }
+
+    #[test]
     fn spawned_child_does_not_see_claude_markers() {
-        // Set in this process; the child must not inherit it.
-        std::env::set_var("CLAUDE_CODE_PANO_TEST_MARKER", "sizdi");
+        // Set in this process (unique name, removed below); the child must not
+        // inherit it: an unknown CLAUDE_CODE_* that is not persistent.
+        const VAR: &str = "CLAUDE_CODE_PANO_TEST_MARKER_7F3A9C";
+        std::env::set_var(VAR, "sizdi");
         let m = PtyManager::new();
         let (tx, rx) = mpsc::channel();
         let tx2 = tx.clone();
         let info = m
             .spawn_cmd(
                 "cmd.exe",
-                &["/c", "echo [%CLAUDE_CODE_PANO_TEST_MARKER%]"],
+                &["/c", "echo [%CLAUDE_CODE_PANO_TEST_MARKER_7F3A9C%] [%NoDefaultCurrentDirectoryInExePath%]"],
                 80,
                 24,
                 move |b| tx.send(Ev::Out(b.to_vec())).is_ok(),
@@ -526,8 +614,10 @@ mod tests {
             )
             .unwrap();
         let text = collect_output(&m, info.id, &rx);
+        std::env::remove_var(VAR);
         assert!(!text.contains("sizdi"), "marker leaked: {text:?}");
-        assert!(text.contains("[%CLAUDE_CODE_PANO_TEST_MARKER%]"), "output: {text:?}");
+        assert!(text.contains("[%CLAUDE_CODE_PANO_TEST_MARKER_7F3A9C%]"), "output: {text:?}");
+        assert!(text.contains("[1]"), "NoDefaultCurrentDirectoryInExePath not set: {text:?}");
     }
 
     /// Output until exit, answering ConPTY's cursor-position query.
