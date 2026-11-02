@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, type Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 export type Unlisten = () => void;
@@ -126,6 +126,12 @@ export const getHistory = () => invoke<HistoryView>("get_history");
 export const getSessionDetail = (sessionId: string) =>
   invoke<SessionDetail | null>("get_session_detail", { sessionId });
 export const openFolder = (path: string) => invoke<void>("open_folder", { path });
+export interface PtyInfo { id: number; pid: number }
+
+/** Only the session id is sent; the backend validates it and finds the folder. */
+export const ptySpawnResume = (
+  sessionId: string, cols: number, rows: number, onOutput: Channel<number[]>, onExit: Channel<number>,
+) => invoke<PtyInfo>("pty_spawn_resume", { sessionId, cols, rows, onOutput, onExit });
 /** No arguments: the backend uses fixed wt.exe arguments. */
 export const openWindowsTerminal = () => invoke<void>("open_windows_terminal");
 

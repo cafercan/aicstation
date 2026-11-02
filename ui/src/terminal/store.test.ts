@@ -34,7 +34,7 @@ vi.mock("@xterm/addon-search", () => ({ SearchAddon: class { kind = "search"; } 
 
 import { ubuntuTheme, terminalFont, renderOptions } from "./theme";
 import {
-  confirmClose, getTerminals, killOrphans, openTerminal, resetTerminals, setFontSize, terminalForPid, terminalName,
+  confirmClose, getTerminals, killOrphans, openResumeTerminal, openTerminal, resetTerminals, setFontSize, terminalForPid, terminalName,
 } from "./store";
 import type { SessionCard } from "../api";
 
@@ -189,4 +189,38 @@ test("exit_before_spawn_resolves_removes_terminal", async () => {
   await openTerminal();
   expect(getTerminals()).toHaveLength(0);
   expect(terminalForPid(55)).toBeUndefined();
+});
+
+test("devam terminali: yalnız oturum kimliği gönderilir, ad oturum adı, aynı yaşam döngüsü", async () => {
+  invoke.mockImplementation(async (cmd: string) => {
+    if (cmd !== "pty_spawn_resume") return undefined;
+    dataCb("\x1b[1;1R"); // answered before the spawn resolves: queued
+    return { id: 11, pid: 99 };
+  });
+  const t = await openResumeTerminal("0f864996-1f75-464e-b101-a3ceed5d79d9", "projem");
+  const call = invoke.mock.calls.find((c) => c[0] === "pty_spawn_resume")!;
+  expect(Object.keys(call[1] as object).sort()).toEqual(["cols", "onExit", "onOutput", "rows", "sessionId"]);
+  expect(call[1]).toMatchObject({ sessionId: "0f864996-1f75-464e-b101-a3ceed5d79d9", cols: 80, rows: 24 });
+  expect(invoke).toHaveBeenCalledWith("pty_write", { id: 11, data: "\x1b[1;1R" });
+  expect(getTerminals().map((x) => x.id)).toEqual([11]);
+  expect(terminalName(t, [])).toBe("projem");
+  // Claude inside reports its own name once it is live.
+  expect(terminalName(t, [card({ parentPid: 99, name: "canli" })])).toBe("canli");
+  const term = t.term as unknown as { opts: Record<string, unknown>; addons: { kind?: string }[] };
+  expect(term.opts).toMatchObject({ theme: ubuntuTheme, scrollback: 10000 });
+  expect(term.addons.map((a) => a.kind).filter(Boolean)).toEqual(["unicode11", "search"]);
+  FakeChannel.all[1].onmessage(0 as never); // exit
+  expect(getTerminals()).toHaveLength(0);
+});
+
+test("devam terminali: ad yoksa \"Devam: <kısa id>\"; hata atılır ve terminal eklenmez", async () => {
+  invoke.mockImplementation(async (cmd: string) => (cmd === "pty_spawn_resume" ? { id: 12, pid: 5 } : undefined));
+  const t = await openResumeTerminal("0f864996-1f75-464e-b101-a3ceed5d79d9");
+  expect(terminalName(t, [])).toBe("Devam: 0f864996");
+  invoke.mockImplementation(async (cmd: string) => {
+    if (cmd === "pty_spawn_resume") throw "Bu oturum zaten açık";
+    return undefined;
+  });
+  await expect(openResumeTerminal("0f864996-1f75-464e-b101-a3ceed5d79d9", "x")).rejects.toBe("Bu oturum zaten açık");
+  expect(getTerminals().map((x) => x.id)).toEqual([12]);
 });
