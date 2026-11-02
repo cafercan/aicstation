@@ -4,7 +4,7 @@ use crate::locate::Locator;
 use crate::model::{ToolCall, Usage};
 use crate::registry::{read_live_sessions, LiveSession, ProcessProbe, SessionStatus};
 use crate::stats::SessionStats;
-use crate::transcript::TranscriptReader;
+use crate::transcript::{ReadEvent, TranscriptReader};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -78,17 +78,19 @@ impl SessionState {
     /// Reads newly appended transcript lines into `stats`.
     fn pump(&mut self) {
         let Some(reader) = self.reader.as_mut() else { return };
-        let Ok(out) = reader.read_new() else { return };
-        if out.reset {
-            self.stats = SessionStats::default();
-        }
+        let stats = &mut self.stats;
         #[cfg(test)]
-        {
-            self.applied += out.entries.len();
-        }
-        for e in &out.entries {
-            self.stats.apply(e);
-        }
+        let applied = &mut self.applied;
+        let _ = reader.read_each(|ev| match ev {
+            ReadEvent::Reset => *stats = SessionStats::default(),
+            ReadEvent::Entry(e) => {
+                #[cfg(test)]
+                {
+                    *applied += 1;
+                }
+                stats.apply(&e);
+            }
+        });
     }
 }
 
@@ -254,18 +256,12 @@ impl Monitor {
         let path = self.locator.transcript(session_id)?;
         let mut reader = TranscriptReader::new(path);
         let mut stats = SessionStats::default();
-        loop {
-            let out = reader.read_new().ok()?;
-            if out.reset {
-                stats = SessionStats::default();
-            }
-            if out.entries.is_empty() {
-                break;
-            }
-            for e in &out.entries {
-                stats.apply(e);
-            }
-        }
+        reader
+            .read_each(|ev| match ev {
+                ReadEvent::Reset => stats = SessionStats::default(),
+                ReadEvent::Entry(e) => stats.apply(&e),
+            })
+            .ok()?;
         let tree = match self.locator.subagents_dir(session_id) {
             Some(dir) => AgentCache::default().build(&dir, false, now),
             None => AgentTree::default(),

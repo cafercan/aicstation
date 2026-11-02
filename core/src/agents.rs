@@ -1,7 +1,7 @@
 //! Subagent tree built from `<session>/subagents/` (agent-*.jsonl + meta.json).
 use crate::model::ToolState;
 use crate::stats::SessionStats;
-use crate::transcript::TranscriptReader;
+use crate::transcript::{ReadEvent, TranscriptReader};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -181,14 +181,11 @@ impl AgentCache {
             c.meta = read_meta(&meta_path);
             c.meta_sig = sig;
         }
-        if let Ok(out) = c.reader.read_new() {
-            if out.reset {
-                c.stats = SessionStats::default();
-            }
-            for e in &out.entries {
-                c.stats.apply(e);
-            }
-        }
+        let stats = &mut c.stats;
+        let _ = c.reader.read_each(|ev| match ev {
+            ReadEvent::Reset => *stats = SessionStats::default(),
+            ReadEvent::Entry(e) => stats.apply(&e),
+        });
         let meta = c.meta.clone();
         let stats = c.stats.clone();
         let state = if meta.finished || !session_live {

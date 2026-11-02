@@ -2,12 +2,12 @@
 use crate::agents::{build_tree, AgentKind, AgentNode};
 use crate::locate::Locator;
 use crate::stats::SessionStats;
-use crate::transcript::parse_line;
+use crate::transcript::{ReadEvent, TranscriptReader};
 use chrono::{Local, NaiveDate, NaiveTime};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fs::{self, File};
-use std::io::{self, BufRead, BufReader};
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -85,19 +85,11 @@ fn add_agent_costs(nodes: &[AgentNode], cost: &mut f64, by_day: &mut BTreeMap<Na
 /// Stream one transcript line by line; never holds the whole file.
 fn summarize(path: &Path, locator: &mut Locator, id: &str) -> io::Result<HistorySummary> {
     let mut stats = SessionStats::default();
-    let mut rd = BufReader::new(File::open(path)?);
-    let mut buf = Vec::new();
-    loop {
-        buf.clear();
-        if rd.read_until(b'\n', &mut buf)? == 0 {
-            break;
+    TranscriptReader::new(path.to_path_buf()).read_each(|ev| {
+        if let ReadEvent::Entry(e) = ev {
+            stats.apply(&e);
         }
-        if let Ok(s) = std::str::from_utf8(&buf) {
-            for e in parse_line(s) {
-                stats.apply(&e);
-            }
-        }
-    }
+    })?;
     let mut cost = stats.cost_usd;
     let mut by_day = stats.cost_by_day.clone();
     let mut agents_total = 0;
@@ -217,10 +209,11 @@ impl HistoryIndex {
         let mut tmp = self.cache_path.clone().into_os_string();
         tmp.push(".tmp");
         let tmp = PathBuf::from(tmp);
-        fs::write(&tmp, json)?;
-        fs::rename(&tmp, &self.cache_path).inspect_err(|_| {
-            let _ = fs::remove_file(&tmp);
-        })
+        fs::write(&tmp, json)
+            .and_then(|()| fs::rename(&tmp, &self.cache_path))
+            .inspect_err(|_| {
+                let _ = fs::remove_file(&tmp);
+            })
     }
 
     /// Closed sessions only (live ids excluded), newest first.
@@ -336,7 +329,7 @@ mod tests {
         while idx.step(Duration::from_secs(5)) {}
         idx.save().unwrap();
         assert!(cache.exists());
-        assert!(!cache.with_extension("json.tmp").exists(), "temp file renamed away");
+        assert!(!PathBuf::from(format!("{}.tmp", cache.display())).exists(), "temp file renamed away");
         let before = idx.rows(&HashSet::new())[0].summary.clone();
         let mut idx2 = load(&proj, &cache);
         let r = idx2.rows(&HashSet::new())[0];

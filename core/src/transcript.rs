@@ -190,6 +190,14 @@ pub struct ReadOutcome {
     pub reset: bool,
 }
 
+/// Event delivered by [`TranscriptReader::read_each`].
+#[derive(Debug)]
+pub enum ReadEvent {
+    /// The file shrank and is re-read from the start; clear derived state.
+    Reset,
+    Entry(Entry),
+}
+
 pub struct TranscriptReader {
     path: PathBuf,
     offset: u64,
@@ -201,19 +209,22 @@ impl TranscriptReader {
         Self { path, offset: 0, carry: Vec::new() }
     }
 
-    /// Read bytes appended since the last call. An unterminated trailing line
-    /// is kept in `carry` until its newline arrives. Never loads the whole file.
-    pub fn read_new(&mut self) -> io::Result<ReadOutcome> {
+    /// Streams bytes appended since the last call, line by line, without collecting
+    /// them. An unterminated trailing line stays in `carry` until its newline arrives.
+    /// If the file shrank, `f(ReadEvent::Reset)` is called once BEFORE any entry so the
+    /// caller can clear its state; then `f(ReadEvent::Entry(..))` per parsed entry.
+    /// On an io error, entries already delivered stay delivered; `offset`/`carry`
+    /// only ever cover bytes already handed over, so the next call neither loses nor
+    /// repeats lines.
+    pub fn read_each(&mut self, mut f: impl FnMut(ReadEvent)) -> io::Result<()> {
         let mut file = File::open(&self.path)?;
         let len = file.metadata()?.len();
-        let mut reset = false;
         if len < self.offset {
             self.offset = 0;
             self.carry.clear();
-            reset = true;
+            f(ReadEvent::Reset);
         }
         file.seek(SeekFrom::Start(self.offset))?;
-        let mut entries = Vec::new();
         let mut buf = vec![0u8; READ_BUF];
         loop {
             let n = file.read(&mut buf)?;
@@ -228,12 +239,24 @@ impl TranscriptReader {
             let rest = self.carry.split_off(last_nl + 1);
             for line in self.carry.split(|&b| b == b'\n') {
                 if let Ok(s) = std::str::from_utf8(line) {
-                    entries.extend(parse_line(s));
+                    for e in parse_line(s) {
+                        f(ReadEvent::Entry(e));
+                    }
                 }
             }
             self.carry = rest;
         }
-        Ok(ReadOutcome { entries, reset })
+        Ok(())
+    }
+
+    /// Collecting variant of [`read_each`](Self::read_each); only for small reads/tests.
+    pub fn read_new(&mut self) -> io::Result<ReadOutcome> {
+        let mut out = ReadOutcome::default();
+        self.read_each(|ev| match ev {
+            ReadEvent::Reset => out.reset = true,
+            ReadEvent::Entry(e) => out.entries.push(e),
+        })?;
+        Ok(out)
     }
 }
 
@@ -380,5 +403,48 @@ mod tests {
             }
             other => panic!("unexpected {other:?}"),
         }
+    }
+
+    #[test]
+    fn read_each_streams_without_collecting() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("big.jsonl");
+        let mut f = std::fs::File::create(&p).unwrap();
+        let mut lines = 0;
+        while f.metadata().unwrap().len() < 1_200_000 {
+            writeln!(f, "{ASSISTANT}").unwrap();
+            lines += 1;
+        }
+        drop(f);
+        let mut n = 0;
+        let mut r = TranscriptReader::new(p.clone());
+        r.read_each(|ev| {
+            if let ReadEvent::Entry(_) = ev {
+                n += 1;
+            }
+        })
+        .unwrap();
+        assert!(n >= lines);
+        assert_eq!(n, TranscriptReader::new(p).read_new().unwrap().entries.len());
+    }
+
+    #[test]
+    fn read_each_reset_reported_before_entries() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("s.jsonl");
+        std::fs::write(&p, format!("{ASSISTANT}
+{ASSISTANT}
+")).unwrap();
+        let mut r = TranscriptReader::new(p.clone());
+        let mut evs = Vec::new();
+        r.read_each(|e| evs.push(matches!(e, ReadEvent::Reset))).unwrap();
+        assert!(evs.iter().all(|reset| !reset), "no reset on first read");
+        std::fs::write(&p, format!("{ASSISTANT}
+")).unwrap();
+        evs.clear();
+        r.read_each(|e| evs.push(matches!(e, ReadEvent::Reset))).unwrap();
+        assert!(evs.len() >= 2);
+        assert!(evs[0], "reset comes first");
+        assert_eq!(evs.iter().filter(|x| **x).count(), 1);
     }
 }
