@@ -26,14 +26,25 @@ export function statusKind(status: string, pid?: number): StatusKind {
   return status === "busy" || status === "waiting" || status === "idle" ? status : "unknown";
 }
 
+export const STATUS_LABELS: Record<StatusKind, string> = {
+  busy: "çalışıyor",
+  waiting: "onay bekliyor",
+  idle: "hazır",
+  closed: "kapandı",
+  unknown: "bilinmiyor",
+};
+
+const isKind = (s: string): s is StatusKind => Object.prototype.hasOwnProperty.call(STATUS_LABELS, s);
+
+/**
+ * Turkish label of the status kind. Only a raw status the app does not know
+ * (e.g. "compacting") is shown as sent; a raw string that spells a kind name
+ * ("closed", "unknown") or an empty one gets the kind's Turkish label.
+ */
 export function statusLabel(status: string, pid?: number): string {
-  switch (statusKind(status, pid)) {
-    case "busy": return "çalışıyor";
-    case "waiting": return "onay bekliyor";
-    case "idle": return "hazır";
-    case "closed": return "kapandı";
-    default: return status || "?";
-  }
+  const kind = statusKind(status, pid);
+  if (kind !== "unknown") return STATUS_LABELS[kind];
+  return isKind(status) ? STATUS_LABELS[status] : status || STATUS_LABELS.unknown;
 }
 
 export const STATUS_COLORS: Record<StatusKind, string> = {

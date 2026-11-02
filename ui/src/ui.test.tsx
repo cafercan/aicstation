@@ -35,9 +35,9 @@ test("onay bekleyen kartta beklenen şey rozetin yanında görünür", () => {
   expect(screen.getByText("çalışıyor").parentElement?.textContent).not.toContain("izni");
 });
 
-test('durum yoksa rozet "?" gösterir', () => {
+test('durum yoksa rozet "bilinmiyor" gösterir', () => {
   render(<SessionCardView card={card({ status: "" })} now={0} onOpen={() => {}} />);
-  expect(screen.getByText("?", { selector: ".badge" })).toBeTruthy();
+  expect(screen.getByText("bilinmiyor", { selector: ".badge" })).toBeTruthy();
 });
 
 test("halka: çalışan/biten ajanlar, ortada toplam", () => {

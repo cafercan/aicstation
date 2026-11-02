@@ -23,8 +23,20 @@ test("format: geçen süre", () => {
   expect(fmtElapsed(-5)).toBe("0 sn");
 });
 
+test("durum etiketi: türler hep Türkçe, ham durum metni olduğu gibi", () => {
+  expect(statusLabel("busy", 1)).toBe("çalışıyor");
+  expect(statusLabel("waiting", 1)).toBe("onay bekliyor");
+  expect(statusLabel("idle", 1)).toBe("hazır");
+  expect(statusLabel("busy", 0)).toBe("kapandı");
+  expect(statusLabel("", 1)).toBe("bilinmiyor");
+  expect(statusLabel("")).toBe("bilinmiyor");
+  // A raw status that spells a kind name is never shown in English.
+  expect(statusLabel("unknown", 1)).toBe("bilinmiyor");
+  expect(statusLabel("closed", 1)).toBe("kapandı");
+  expect(statusLabel("compacting", 1)).toBe("compacting");
+});
+
 test("format: durum etiketi ve klasör adı", () => {
-  expect(statusLabel("")).toBe("?");
   expect(statusLabel("busy")).toBe("çalışıyor");
   expect(folderName("C:\\isler\\pusula\\")).toBe("pusula");
   expect(folderName("/home/x/proje")).toBe("proje");
