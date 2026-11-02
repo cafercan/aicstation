@@ -25,6 +25,20 @@ test("kart durum rozetleri", () => {
   }
 });
 
+test("onay bekleyen kartta beklenen şey rozetin yanında görünür", () => {
+  const { unmount } = render(<SessionCardView card={card({ status: "waiting", waitingFor: "Bash izni" })} now={0} onOpen={() => {}} />);
+  const badge = screen.getByText("onay bekliyor");
+  expect(badge.parentElement?.textContent).toContain("Bash izni");
+  unmount();
+  render(<SessionCardView card={card({ status: "busy", waitingFor: null })} now={0} onOpen={() => {}} />);
+  expect(screen.getByText("çalışıyor").parentElement?.textContent).not.toContain("izni");
+});
+
+test('durum yoksa rozet "?" gösterir', () => {
+  render(<SessionCardView card={card({ status: "" })} now={0} onOpen={() => {}} />);
+  expect(screen.getByText("?", { selector: ".badge" })).toBeTruthy();
+});
+
 test("ajan metni", () => {
   const { unmount } = render(<SessionCardView card={card({ agentsTotal: 3, agentsFinished: 1 })} now={0} onOpen={() => {}} />);
   expect(screen.getByText("3 ajan · 1 bitti")).toBeTruthy();
@@ -64,4 +78,11 @@ test("status bar seçili oturumu gösterir", () => {
   render(<StatusBar sessions={[card()]} selectedId="s1" />);
   expect(screen.getByText(/Opus 5.5/)).toBeTruthy();
   expect(screen.getByText(/demo/)).toBeTruthy();
+});
+
+test("status bar oturum adı yerine klasör adını gösterir", () => {
+  render(<StatusBar sessions={[card({ name: "oturum-adi", cwd: "C:\\isler\\pusula\\" })]} selectedId="s1" />);
+  const sb = screen.getByRole("contentinfo");
+  expect(sb.textContent).toContain("pusula");
+  expect(sb.textContent).not.toContain("oturum-adi");
 });

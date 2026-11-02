@@ -25,6 +25,7 @@ body { font-family: "Segoe UI", sans-serif; font-size: 13px; color: #ddd; backgr
 .badge { font-size: 10px; padding: 1px 6px; border-radius: 8px; background: #3a3a3a; color: #ccc; font-weight: normal; }
 .busy .badge { background: #2e5130; color: #9f9; }
 .waiting .badge { background: #5a4510; color: #fd6; }
+.waiting-for { font-size: 11px; color: #fd6; font-weight: normal; }
 .row { display: flex; justify-content: space-between; font-size: 10.5px; color: #bbb; margin-top: 3px; }
 .bar { height: 4px; background: #333; border-radius: 2px; margin-top: 4px; }
 .bar i { display: block; height: 4px; background: #5aa0ff; border-radius: 2px; }

@@ -56,7 +56,6 @@ export interface HistorySummary {
 
 export interface HistoryRow {
   sessionId: string;
-  path: string;
   modifiedMs: number;
   size: number;
   name: string;

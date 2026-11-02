@@ -23,6 +23,7 @@ export default function SessionCardView({ card, now, onOpen }: Props) {
       <h4>
         <span className="name">{card.name}</span>{" "}
         <span className="badge">{statusLabel(card.status)}</span>
+        {card.waitingFor ? <span className="waiting-for">{" "}{card.waitingFor}</span> : null}
       </h4>
       <div className="path" title={card.cwd}>{card.cwd}</div>
       <div className="row"><span>{agents}</span><span>{card.model ?? "?"}</span></div>

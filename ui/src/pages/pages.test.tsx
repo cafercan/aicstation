@@ -121,8 +121,74 @@ test("snapshot olayında ayrıntı yeniden çekilir; Klasörü aç open_folder �
   expect(invoke).toHaveBeenCalledWith("open_folder", { path: "C:/x/demo" });
 });
 
+const detailCalls = () => invoke.mock.calls.filter((c) => c[0] === "get_session_detail").length;
+const closed = (over: Partial<SessionDetail["card"]> = {}) => {
+  const d = detail();
+  return { ...d, card: { ...d.card, pid: 0, parentPid: null, status: "idle", ...over } };
+};
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((r) => { resolve = r; });
+  return { promise, resolve };
+}
+
+test("kapanmış oturum bir kez çekilir, snapshot olaylarında yeniden çekilmez; \"kapandı\" gösterilir", async () => {
+  invoke.mockResolvedValue(closed());
+  render(<SessionDetailPage sessionId="s1" onBack={() => {}} />);
+  await screen.findByText("Klasörü aç");
+  expect(screen.getByText(/kapandı/)).toBeTruthy();
+  expect(screen.queryByText(/boşta/)).toBeNull();
+  await waitFor(() => expect(snapshotCb).not.toBeNull());
+  for (let i = 0; i < 3; i++) await act(async () => { snapshotCb!(); });
+  await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+  expect(detailCalls()).toBe(1);
+});
+
+test("aynı anda en fazla bir ayrıntı isteği; bekleyen olay sonra tek istekle karşılanır", async () => {
+  const reqs: ReturnType<typeof deferred<SessionDetail>>[] = [];
+  invoke.mockImplementation((cmd: string) => {
+    if (cmd !== "get_session_detail") return Promise.resolve(undefined);
+    const d = deferred<SessionDetail>();
+    reqs.push(d);
+    return d.promise;
+  });
+  render(<SessionDetailPage sessionId="s1" onBack={() => {}} />);
+  await waitFor(() => expect(snapshotCb).not.toBeNull());
+  await act(async () => { snapshotCb!(); snapshotCb!(); });
+  expect(detailCalls()).toBe(1);
+  await act(async () => { reqs[0].resolve(detail({ card: { ...detail().card, name: "eski" } })); });
+  await screen.findByText(/eski/);
+  await waitFor(() => expect(detailCalls()).toBe(2));
+  await act(async () => { reqs[1].resolve(detail({ card: { ...detail().card, name: "yeni" } })); });
+  await screen.findByText(/yeni/);
+  expect(detailCalls()).toBe(2);
+});
+
+test("eski oturumun geç gelen yanıtı yenisinin üzerine yazmaz", async () => {
+  const byId: Record<string, ReturnType<typeof deferred<SessionDetail>>> = {};
+  invoke.mockImplementation((cmd: string, a: { sessionId: string }) => {
+    if (cmd !== "get_session_detail") return Promise.resolve(undefined);
+    byId[a.sessionId] = deferred<SessionDetail>();
+    return byId[a.sessionId].promise;
+  });
+  const { rerender } = render(<SessionDetailPage sessionId="s1" onBack={() => {}} />);
+  rerender(<SessionDetailPage sessionId="s2" onBack={() => {}} />);
+  await act(async () => { byId.s2.resolve(detail({ card: { ...detail().card, name: "ikinci" } })); });
+  await screen.findByText(/ikinci/);
+  await act(async () => { byId.s1.resolve(detail({ card: { ...detail().card, name: "birinci" } })); });
+  expect(screen.queryByText(/birinci/)).toBeNull();
+});
+
+test("Klasörü aç hatası satır içinde Türkçe gösterilir", async () => {
+  invoke.mockImplementation((cmd: string) =>
+    cmd === "open_folder" ? Promise.reject("Bilinmeyen klasör") : Promise.resolve(detail()));
+  render(<SessionDetailPage sessionId="s1" onBack={() => {}} />);
+  fireEvent.click(await screen.findByText("Klasörü aç"));
+  expect(await screen.findByText("Klasör açılamadı: Bilinmeyen klasör")).toBeTruthy();
+});
+
 const row = (id: string, cwd: string, withSummary: boolean): HistoryRow => ({
-  sessionId: id, path: "p", modifiedMs: 0, size: 1, name: `ad-${id}`, cwd,
+  sessionId: id, modifiedMs: 0, size: 1, name: `ad-${id}`, cwd,
   summary: withSummary ? {
     name: `ad-${id}`, cwd, model: "Opus 5.5", firstAtMs: 0, lastAtMs: 600_000,
     agentsTotal: 2, costUsd: 1.5, costByDay: {},

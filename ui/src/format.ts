@@ -22,8 +22,13 @@ export function statusLabel(status: string): string {
     case "busy": return "çalışıyor";
     case "waiting": return "onay bekliyor";
     case "idle": return "boşta";
-    default: return status;
+    default: return status || "?";
   }
+}
+
+/** Last component of a Windows or POSIX folder path ("" if none). */
+export function folderName(cwd: string): string {
+  return cwd.split(/[\\/]/).filter((s) => s !== "").pop() ?? "";
 }
 
 export function statusClass(status: string): "busy" | "waiting" | "idle" {

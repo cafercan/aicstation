@@ -71,13 +71,34 @@ function ToolResult({ state }: { state: ToolCall["state"] }) {
 export default function SessionDetailPage({ sessionId, onBack, onTerminal }: Props) {
   const [detail, setDetail] = useState<SessionDetail | null | undefined>(undefined);
   const [sel, setSel] = useState(MAIN);
+  const [folderErr, setFolderErr] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
     let unlisten: (() => void) | undefined;
-    const load = () => getSessionDetail(sessionId)
-      .then((d) => alive && setDetail(d))
-      .catch(() => alive && setDetail((p) => p ?? null));
+    // At most one request in flight; events arriving meanwhile cause a single
+    // follow-up. A closed session (pid 0) cannot change, so it is loaded once.
+    let inFlight = false;
+    let again = false;
+    let done = false;
+    let seq = 0;
+    const load = () => {
+      if (!alive || done) return;
+      if (inFlight) { again = true; return; }
+      inFlight = true;
+      const my = ++seq;
+      getSessionDetail(sessionId)
+        .then((d) => {
+          if (!alive || my !== seq) return; // stale
+          setDetail(d);
+          if (d && d.card.pid === 0) done = true;
+        })
+        .catch(() => { if (alive && my === seq) setDetail((p) => p ?? null); })
+        .finally(() => {
+          inFlight = false;
+          if (again) { again = false; load(); }
+        });
+    };
     load();
     onSnapshot(() => load())
       .then((u) => { if (alive) unlisten = u; else u(); })
@@ -104,15 +125,22 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal }: Pro
       <div className="hd">
         <h3>
           <span className="back" role="button" aria-label="Geri" onClick={onBack}>←</span>
-          {card.name} <span className={cls === "busy" ? "g" : "x"}>● {statusLabel(card.status)}</span>
+          {card.name}{" "}
+          {card.pid === 0
+            ? <span className="x">○ kapandı</span>
+            : <span className={cls === "busy" ? "g" : "x"}>● {statusLabel(card.status)}</span>}
         </h3>
         <div>
           {term !== undefined && (
             <button className="btn" onClick={() => onTerminal?.(term)}>Terminale git</button>
           )}
-          <button className="btn" onClick={() => { openFolder(card.cwd).catch(() => {}); }}>Klasörü aç</button>
+          <button className="btn" onClick={() => {
+            setFolderErr(null);
+            openFolder(card.cwd).catch((e) => setFolderErr(`Klasör açılamadı: ${String(e)}`));
+          }}>Klasörü aç</button>
         </div>
       </div>
+      {folderErr && <div className="meta r" role="alert">{folderErr}</div>}
       <div className="meta">
         {card.cwd} · başladı {started} · son hareket {fmtElapsed(Date.now() - card.lastActivityMs)}
       </div>
