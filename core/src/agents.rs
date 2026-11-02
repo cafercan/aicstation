@@ -4,7 +4,7 @@ use crate::stats::SessionStats;
 use crate::transcript::{ReadEvent, TranscriptReader};
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -14,6 +14,9 @@ pub const RUNNING_WINDOW: Duration = Duration::from_secs(2 * 60);
 
 /// Label of the phase group for workflow agents without a `workflowPhase`.
 const NO_PHASE: &str = "Aşamasız";
+
+/// Deepest agent nesting kept; an agent below it is shown as a root.
+pub const MAX_DEPTH: usize = 256;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -60,15 +63,15 @@ struct Meta {
 }
 
 fn read_meta(path: &Path) -> Meta {
-    let v: Value = fs::read_to_string(path)
-        .ok()
+    let v: Value = crate::small_file::read_small_file(path)
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or(Value::Null);
-    let s = |k: &str| v.get(k).and_then(Value::as_str).map(String::from);
+    let s = |k: &str| v.get(k).and_then(Value::as_str).map(crate::model::cap_display);
     Meta {
         agent_type: s("agentType"),
         description: s("description"),
-        parent: s("parentAgentId"),
+        // An id is compared, never shown; one longer than any file name matches nothing.
+        parent: v.get("parentAgentId").and_then(Value::as_str).map(String::from),
         phase: s("workflowPhase"),
         finished: v.get("finished").and_then(Value::as_bool).unwrap_or(false),
     }
@@ -111,12 +114,37 @@ fn cmp_time(a: Time, b: Time) -> std::cmp::Ordering {
     }
 }
 
+/// Latest first; no time last.
+fn cmp_time_desc(a: Time, b: Time) -> std::cmp::Ordering {
+    match (a, b) {
+        (Some(x), Some(y)) => y.cmp(&x),
+        _ => cmp_time(a, b),
+    }
+}
+
+/// Newest on top: running nodes first, then the rest by start time,
+/// most recently started first (the first-started node ends up last).
 fn sort_nodes(v: &mut [AgentNode]) {
-    v.sort_by(|a, b| cmp_time(a.stats.first_at, b.stats.first_at).then_with(|| a.id.cmp(&b.id)));
+    v.sort_by(|a, b| {
+        let running = |n: &AgentNode| n.state != AgentState::Running;
+        running(a)
+            .cmp(&running(b))
+            .then_with(|| cmp_time_desc(a.stats.first_at, b.stats.first_at))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+}
+
+/// Workflow groups: latest activity first.
+fn sort_by_activity(v: &mut [AgentNode]) {
+    v.sort_by(|a, b| cmp_time_desc(a.stats.last_at, b.stats.last_at).then_with(|| a.id.cmp(&b.id)));
 }
 
 fn first_of<'a>(it: impl Iterator<Item = &'a AgentNode>) -> Time {
     it.filter_map(|n| n.stats.first_at).min()
+}
+
+fn last_of<'a>(it: impl Iterator<Item = &'a AgentNode>) -> Time {
+    it.filter_map(|n| n.stats.last_at).max()
 }
 
 fn any_running<'a>(mut it: impl Iterator<Item = &'a AgentNode>) -> AgentState {
@@ -127,26 +155,87 @@ fn any_running<'a>(mut it: impl Iterator<Item = &'a AgentNode>) -> AgentState {
     }
 }
 
-fn attach(id: &str, nodes: &mut HashMap<String, AgentNode>, kids: &HashMap<String, Vec<String>>) -> Option<AgentNode> {
-    let mut n = nodes.remove(id)?;
-    for c in kids.get(id).into_iter().flatten() {
-        if let Some(child) = attach(c, nodes, kids) {
-            n.children.push(child);
+/// Assembles the forest from `root_ids` without recursion: a breadth-first
+/// walk fixes each node's level (a root is 1), then nodes are built bottom-up.
+/// A child that would sit below [`MAX_DEPTH`] becomes a root instead, so every
+/// later walk of the tree (counting, costs, serialization, the UI) is bounded.
+fn assemble(
+    root_ids: Vec<String>,
+    mut nodes: HashMap<String, AgentNode>,
+    kids: &HashMap<String, Vec<String>>,
+) -> Vec<AgentNode> {
+    let mut queue: VecDeque<(String, usize, Option<String>)> = root_ids.into_iter().map(|id| (id, 1, None)).collect();
+    let mut placed: HashSet<String> = HashSet::new();
+    let mut order: Vec<(String, Option<String>)> = Vec::new();
+    while let Some((id, depth, parent)) = queue.pop_front() {
+        if !nodes.contains_key(&id) || !placed.insert(id.clone()) {
+            continue;
+        }
+        for c in kids.get(&id).into_iter().flatten() {
+            if depth >= MAX_DEPTH {
+                queue.push_back((c.clone(), 1, None));
+            } else {
+                queue.push_back((c.clone(), depth + 1, Some(id.clone())));
+            }
+        }
+        order.push((id, parent));
+    }
+    let mut children: HashMap<String, Vec<AgentNode>> = HashMap::new();
+    let mut roots = Vec::new();
+    for (id, parent) in order.into_iter().rev() {
+        let Some(mut n) = nodes.remove(&id) else { continue };
+        n.children = children.remove(&id).unwrap_or_default();
+        sort_nodes(&mut n.children);
+        match parent {
+            Some(p) => children.entry(p).or_default().push(n),
+            None => roots.push(n),
         }
     }
-    sort_nodes(&mut n.children);
-    Some(n)
+    roots
+}
+
+/// Ids whose parent chain leads back to themselves. Each id is walked once
+/// (iteratively), so this is linear in the number of agents.
+fn cycle_members(parent_of: &HashMap<String, String>) -> HashSet<String> {
+    // 1 = on the current walk, 2 = settled.
+    let mut mark: HashMap<&str, u8> = HashMap::new();
+    let mut in_cycle = HashSet::new();
+    for start in parent_of.keys() {
+        let mut path: Vec<&str> = Vec::new();
+        let mut cur = Some(start.as_str());
+        while let Some(id) = cur {
+            match mark.get(id) {
+                Some(1) => {
+                    // Back on this walk: the ids from `id` onwards form a loop.
+                    let from = path.iter().position(|p| *p == id).unwrap_or(0);
+                    in_cycle.extend(path[from..].iter().map(|p| p.to_string()));
+                    break;
+                }
+                Some(_) => break,
+                None => {
+                    mark.insert(id, 1);
+                    path.push(id);
+                    cur = parent_of.get(id).map(String::as_str);
+                }
+            }
+        }
+        for p in path {
+            mark.insert(p, 2);
+        }
+    }
+    in_cycle
 }
 
 fn count(n: &AgentNode, total: &mut u32, finished: &mut u32) {
-    if n.kind == AgentKind::Agent {
-        *total += 1;
-        if n.state == AgentState::Finished {
-            *finished += 1;
+    let mut stack = vec![n];
+    while let Some(n) = stack.pop() {
+        if n.kind == AgentKind::Agent {
+            *total += 1;
+            if n.state == AgentState::Finished {
+                *finished += 1;
+            }
         }
-    }
-    for c in &n.children {
-        count(c, total, finished);
+        stack.extend(n.children.iter());
     }
 }
 
@@ -237,6 +326,7 @@ impl AgentCache {
                 sort_nodes(&mut agents);
                 let mut stats = SessionStats::default();
                 stats.first_at = first_of(agents.iter());
+                stats.last_at = last_of(agents.iter());
                 AgentNode {
                     id: format!("{wf_id}/{name}"),
                     state: any_running(agents.iter()),
@@ -251,6 +341,7 @@ impl AgentCache {
         sort_nodes(&mut phase_nodes);
         let mut stats = SessionStats::default();
         stats.first_at = first_of(phase_nodes.iter());
+        stats.last_at = last_of(phase_nodes.iter());
         Some(AgentNode {
             id: wf_id.clone(),
             kind: AgentKind::Workflow { id: wf_id },
@@ -269,35 +360,26 @@ impl AgentCache {
             .map(|(id, p)| self.load(id, p, session_live, now))
             .collect();
         // Known parents only; self-parent counts as none.
+        let ids: HashSet<&str> = loaded.iter().map(|l| l.node.id.as_str()).collect();
         let parent_of: HashMap<String, String> = loaded
             .iter()
             .filter_map(|l| {
                 let p = l.parent.as_ref()?;
-                (p != &l.node.id && loaded.iter().any(|o| &o.node.id == p)).then(|| (l.node.id.clone(), p.clone()))
+                (p != &l.node.id && ids.contains(p.as_str())).then(|| (l.node.id.clone(), p.clone()))
             })
             .collect();
         // An agent whose parent chain leads back to itself becomes a root.
-        let in_cycle = |start: &str| {
-            let mut cur = start;
-            for _ in 0..=parent_of.len() {
-                match parent_of.get(cur) {
-                    Some(p) if p == start => return true,
-                    Some(p) => cur = p,
-                    None => return false,
-                }
-            }
-            false // leads into a loop that does not include `start`
-        };
+        let in_cycle = cycle_members(&parent_of);
         let mut kids: HashMap<String, Vec<String>> = HashMap::new();
         let mut root_ids = Vec::new();
         for l in &loaded {
             match parent_of.get(&l.node.id) {
-                Some(p) if !in_cycle(&l.node.id) => kids.entry(p.clone()).or_default().push(l.node.id.clone()),
+                Some(p) if !in_cycle.contains(&l.node.id) => kids.entry(p.clone()).or_default().push(l.node.id.clone()),
                 _ => root_ids.push(l.node.id.clone()),
             }
         }
-        let mut nodes: HashMap<String, AgentNode> = loaded.into_iter().map(|l| (l.node.id.clone(), l.node)).collect();
-        let mut roots: Vec<AgentNode> = root_ids.iter().filter_map(|id| attach(id, &mut nodes, &kids)).collect();
+        let nodes: HashMap<String, AgentNode> = loaded.into_iter().map(|l| (l.node.id.clone(), l.node)).collect();
+        let mut roots = assemble(root_ids, nodes, &kids);
         sort_nodes(&mut roots);
 
         // Workflow groups come after plain agents.
@@ -307,7 +389,7 @@ impl AgentCache {
         wf_dirs.sort();
         let mut workflows: Vec<AgentNode> =
             wf_dirs.iter().filter_map(|d| self.workflow_node(d, session_live, now)).collect();
-        sort_nodes(&mut workflows);
+        sort_by_activity(&mut workflows);
         roots.extend(workflows);
 
         let (mut total, mut finished) = (0, 0);
@@ -399,9 +481,36 @@ mod tests {
         let wf = tree.roots.last().unwrap();
         assert_eq!(wf.kind, AgentKind::Workflow { id: "wf_x".into() });
         let names: Vec<_> = wf.children.iter().map(|p| p.kind.clone()).collect();
-        assert_eq!(names, vec![AgentKind::Phase { name: "Review".into() }, AgentKind::Phase { name: "Verify".into() }]);
-        assert_eq!(wf.children[0].children[0].id, "w1");
-        assert_eq!(wf.children[1].children[0].id, "w2");
+        // Both running: the later-started phase is on top.
+        assert_eq!(names, vec![AgentKind::Phase { name: "Verify".into() }, AgentKind::Phase { name: "Review".into() }]);
+        assert_eq!(wf.children[0].children[0].id, "w2");
+        assert_eq!(wf.children[1].children[0].id, "w1");
+    }
+
+    #[test]
+    fn running_first_then_newest_started_first() {
+        let t = tempfile::tempdir().unwrap();
+        let d = t.path();
+        let done = |id: &str, ts: &str| vec![call(id, ts), result(id, ts)];
+        // finished agents, started at 07:00 / 07:02 / 07:01
+        agent(d, "old", Some(r#"{"finished":true}"#), &done("t1", "2026-11-02T07:00:00Z"), 300);
+        agent(d, "new", Some(r#"{"finished":true}"#), &done("t2", "2026-11-02T07:02:00Z"), 300);
+        agent(d, "mid", Some(r#"{"finished":true}"#), &done("t3", "2026-11-02T07:01:00Z"), 300);
+        // running, started earliest: still on top
+        agent(d, "run", Some("{}"), &done("t4", "2026-11-02T06:00:00Z"), 5);
+        // children follow the same rule
+        agent(d, "c_old", Some(r#"{"finished":true,"parentAgentId":"old"}"#), &done("t5", "2026-11-02T07:00:10Z"), 300);
+        agent(d, "c_new", Some(r#"{"finished":true,"parentAgentId":"old"}"#), &done("t6", "2026-11-02T07:00:20Z"), 300);
+        // two workflows: wf_a active later than wf_b although it started first
+        let a = d.join("workflows").join("wf_a");
+        agent(&a, "a1", Some(r#"{"finished":true,"workflowPhase":"P"}"#), &[call("t7", "2026-11-02T07:00:00Z"), result("t7", "2026-11-02T08:00:00Z")], 300);
+        let b = d.join("workflows").join("wf_b");
+        agent(&b, "b1", Some(r#"{"finished":true,"workflowPhase":"P"}"#), &done("t8", "2026-11-02T07:30:00Z"), 300);
+        let tree = build_tree(d, true, now());
+        let ids: Vec<_> = tree.roots.iter().map(|n| n.id.as_str()).collect();
+        assert_eq!(ids, vec!["run", "new", "mid", "old", "wf_a", "wf_b"]);
+        let kids: Vec<_> = find(&tree.roots, "old").children.iter().map(|n| n.id.as_str()).collect();
+        assert_eq!(kids, vec!["c_new", "c_old"]);
     }
 
     #[test]
@@ -481,6 +590,79 @@ mod tests {
         assert_eq!(tree.roots.len(), 3);
     }
 
+    fn depth(n: &AgentNode) -> usize {
+        // Iterative so the check itself cannot overflow.
+        let mut max = 0;
+        let mut stack = vec![(n, 1usize)];
+        while let Some((n, d)) = stack.pop() {
+            max = max.max(d);
+            stack.extend(n.children.iter().map(|c| (c, d + 1)));
+        }
+        max
+    }
+
+    #[test]
+    fn deep_parent_chain_is_capped_and_loses_no_agent() {
+        let t = tempfile::tempdir().unwrap();
+        let n = 700;
+        for i in 0..n {
+            let meta = if i == 0 { "{}".to_string() } else { format!(r#"{{"parentAgentId":"c{:04}"}}"#, i - 1) };
+            fs::write(t.path().join(format!("agent-c{i:04}.jsonl")), "").unwrap();
+            fs::write(t.path().join(format!("agent-c{i:04}.meta.json")), meta).unwrap();
+        }
+        // Built on a small stack: unbounded recursion would overflow here.
+        let tree = std::thread::Builder::new()
+            .stack_size(512 * 1024)
+            .spawn(move || build_tree(t.path(), false, now()))
+            .unwrap()
+            .join()
+            .unwrap();
+        assert_eq!(tree.total, n);
+        assert!(tree.roots.iter().all(|r| depth(r) <= MAX_DEPTH), "depth capped at {MAX_DEPTH}");
+        assert!(tree.roots.iter().any(|r| depth(r) == MAX_DEPTH));
+        let mut stack: Vec<&AgentNode> = tree.roots.iter().collect();
+        let mut seen = 0;
+        while let Some(x) = stack.pop() {
+            seen += 1;
+            stack.extend(x.children.iter());
+        }
+        assert_eq!(seen, n as usize, "every agent is in the tree exactly once");
+    }
+
+    #[test]
+    fn chain_into_a_cycle_keeps_the_tail_attached() {
+        let t = tempfile::tempdir().unwrap();
+        // a -> b -> c -> b: b and c form a loop (both roots), a stays under b.
+        agent(t.path(), "a", Some(r#"{"parentAgentId":"b"}"#), &[], 30);
+        agent(t.path(), "b", Some(r#"{"parentAgentId":"c"}"#), &[], 30);
+        agent(t.path(), "c", Some(r#"{"parentAgentId":"b"}"#), &[], 30);
+        let tree = build_tree(t.path(), true, now());
+        assert_eq!(tree.total, 3);
+        let ids: HashSet<&str> = tree.roots.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, HashSet::from(["b", "c"]));
+        assert_eq!(find(&tree.roots, "b").children[0].id, "a");
+    }
+
+    #[test]
+    fn meta_strings_are_truncated() {
+        let t = tempfile::tempdir().unwrap();
+        let long = "d".repeat(5000);
+        agent(t.path(), "x", Some(&format!(r#"{{"agentType":"{long}","description":"{long}"}}"#)), &[], 30);
+        let tree = build_tree(t.path(), true, now());
+        assert_eq!(tree.roots[0].agent_type.as_ref().unwrap().chars().count(), crate::model::MAX_DISPLAY);
+        assert_eq!(tree.roots[0].description.as_ref().unwrap().chars().count(), crate::model::MAX_DISPLAY);
+    }
+
+    #[test]
+    fn oversized_meta_is_ignored() {
+        let t = tempfile::tempdir().unwrap();
+        let pad = "p".repeat(crate::small_file::MAX_SMALL_FILE as usize);
+        agent(t.path(), "x", Some(&format!(r#"{{"agentType":"big","pad":"{pad}"}}"#)), &[], 30);
+        let tree = build_tree(t.path(), true, now());
+        assert_eq!(tree.total, 1, "agent kept");
+        assert!(tree.roots[0].agent_type.is_none(), "meta over the cap not read");
+    }
+
     #[test]
     fn missing_dir_gives_empty_tree() {
         let tree = build_tree(Path::new("Z:\\no\\such\\dir"), true, now());
@@ -541,7 +723,7 @@ mod tests {
         let wf = v["roots"].as_array().unwrap().last().unwrap();
         assert_eq!(wf["kind"]["kind"], "workflow");
         assert_eq!(wf["kind"]["id"], "wf_x");
-        assert_eq!(v["roots"][0]["state"], "finished");
+        assert_eq!(v["roots"][0]["state"], "running"); // a2 (running) is on top
         assert!(v["roots"][0].get("agentType").is_some());
         assert_eq!(v["total"], 5);
     }

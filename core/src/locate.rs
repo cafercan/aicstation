@@ -63,8 +63,43 @@ impl Locator {
     }
 }
 
+/// Longest project-folder name Claude Code writes in full; a longer encoded
+/// cwd is cut to this many characters and given a `-<hash>` suffix.
+pub const LONG_DIR_NAME: usize = 200;
+
+/// Claude Code's `projects/<name>` for a cwd: every UTF-16 code unit that is
+/// not an ASCII letter or digit becomes `-`.
+pub fn project_dir_name(cwd: &str) -> String {
+    cwd.encode_utf16()
+        .map(|u| match u8::try_from(u) {
+            Ok(b) if b.is_ascii_alphanumeric() => b as char,
+            _ => '-',
+        })
+        .collect()
+}
+
+/// Whether `folder` (a `projects/` subfolder name) is the one Claude Code
+/// uses for `cwd`. Compared ignoring ASCII case (Windows paths); an encoded
+/// cwd longer than [`LONG_DIR_NAME`] also matches its cut form plus `-<suffix>`.
+pub fn cwd_matches_project_dir(cwd: &str, folder: &str) -> bool {
+    if cwd.is_empty() || folder.is_empty() {
+        return false;
+    }
+    // Both are ASCII from here on (the encoding only yields [A-Za-z0-9-]).
+    let enc = project_dir_name(cwd);
+    if enc.eq_ignore_ascii_case(folder) {
+        return true;
+    }
+    if enc.len() <= LONG_DIR_NAME || !folder.is_ascii() || folder.len() <= LONG_DIR_NAME + 1 {
+        return false;
+    }
+    let (head, tail) = folder.split_at(LONG_DIR_NAME);
+    head.eq_ignore_ascii_case(&enc[..LONG_DIR_NAME])
+        && tail.strip_prefix('-').is_some_and(|h| !h.is_empty() && h.bytes().all(|b| b.is_ascii_alphanumeric()))
+}
+
 /// Lowercase UUID: 8-4-4-4-12 hex. Blocks path traversal.
-fn is_session_id(s: &str) -> bool {
+pub fn is_session_id(s: &str) -> bool {
     let b = s.as_bytes();
     b.len() == 36
         && b.iter().enumerate().all(|(i, c)| match i {
@@ -117,12 +152,46 @@ mod tests {
     #[test]
     fn finds_transcript_under_non_ascii_project_dir() {
         let t = tempfile::tempdir().unwrap();
-        let p = t.path().join("D--Workspaces-AI-SeyahatB-t-e").join(format!("{ID_A}.jsonl"));
-        write(&p, "{\"cwd\":\"D:\\Workspaces\\AI\\SeyahatBütçe\"}\n");
+        let p = t.path().join("C--demo-B-t-e").join(format!("{ID_A}.jsonl"));
+        write(&p, "{\"cwd\":\"C:\\demo\\Bütçe\"}\n");
         let mut l = Locator::new(t.path().to_path_buf());
         let found = l.transcript(ID_A).unwrap();
         assert_eq!(found, p);
-        assert!(fs::read_to_string(found).unwrap().contains("SeyahatBütçe"));
+        assert!(fs::read_to_string(found).unwrap().contains("Bütçe"));
+    }
+
+    #[test]
+    fn project_dir_name_follows_claude_code_encoding() {
+        assert_eq!(project_dir_name(r"D:\Work\AI\demo-app"), "D--Work-AI-demo-app");
+        assert_eq!(project_dir_name(r"C:\demo\Bütçe"), "C--demo-B-t-e");
+        assert_eq!(project_dir_name("/home/u/x.y"), "-home-u-x-y");
+        // One '-' per UTF-16 unit: a non-BMP character gives two.
+        assert_eq!(project_dir_name("C:\\a\u{1F600}"), "C--a--");
+    }
+
+    #[test]
+    fn cwd_matches_project_dir_case_insensitively_and_exactly() {
+        assert!(cwd_matches_project_dir(r"C:\demo\proj", "C--demo-proj"));
+        assert!(cwd_matches_project_dir(r"c:\Demo\Proj", "C--demo-proj"));
+        assert!(!cwd_matches_project_dir(r"C:\demo\proj\other", "C--demo-proj"));
+        assert!(!cwd_matches_project_dir(r"C:\demo", "C--demo-proj"));
+        assert!(!cwd_matches_project_dir("", ""));
+        assert!(!cwd_matches_project_dir(r"C:\demo", ""));
+    }
+
+    #[test]
+    fn long_cwd_matches_a_shortened_project_dir_only_on_its_prefix() {
+        let cwd = format!(r"C:\{}", "a".repeat(230));
+        let enc = project_dir_name(&cwd);
+        assert!(enc.len() > LONG_DIR_NAME);
+        assert!(cwd_matches_project_dir(&cwd, &enc));
+        let short = format!("{}-1a2b3c", &enc[..LONG_DIR_NAME]);
+        assert!(cwd_matches_project_dir(&cwd, &short));
+        assert!(!cwd_matches_project_dir(&cwd, &enc[..LONG_DIR_NAME]), "no suffix");
+        assert!(!cwd_matches_project_dir(&cwd, &format!("{}x1a2b3c", &enc[..LONG_DIR_NAME])));
+        assert!(!cwd_matches_project_dir(&cwd, &format!("{}-", &enc[..LONG_DIR_NAME])), "empty suffix");
+        // A short cwd never takes the prefix rule.
+        assert!(!cwd_matches_project_dir(r"C:\demo", "C--demo-1a2b3c"));
     }
 
     #[test]

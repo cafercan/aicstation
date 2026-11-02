@@ -1,12 +1,19 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getSessionDetail, onSnapshot, openFolder, type AgentNode, type SessionDetail, type ToolCall } from "../api";
-import { fmtCost, fmtElapsed, fmtTokens, statusClass, statusLabel } from "../format";
+import { fmtContext, fmtCost, fmtElapsed, fmtTokens, statusColor, statusKind, statusLabel } from "../format";
+import SessionMark from "../components/SessionMark";
 import { terminalForPid } from "../terminal/store";
+import { goToTab, gotoTarget, resumeError } from "../gotoTab";
+import { errorText, locale, t, useT } from "../i18n";
 
 interface Props {
   sessionId: string;
   onBack: () => void;
   onTerminal?: (id: number) => void;
+  /** The session is in the current snapshot (its process runs). */
+  live?: boolean;
+  /** "▶ Resume" on a closed session; a rejection is shown inline. */
+  onResume?: (sessionId: string, name: string) => Promise<unknown>;
 }
 
 const MAIN = "__main__";
@@ -14,14 +21,14 @@ const MAIN = "__main__";
 function hhmmss(at: string): string {
   const d = new Date(at);
   if (isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString("tr-TR", { hour12: false });
+  return d.toLocaleTimeString(locale(), { hour12: false });
 }
 
 function nodeLabel(n: AgentNode): string {
   switch (n.kind.kind) {
-    case "workflow": return `Workflow ${n.kind.id}`;
-    case "phase": return `Aşama ${n.kind.name}`;
-    default: return n.agentType ?? "ajan";
+    case "workflow": return t("detail.workflow", { id: n.kind.id });
+    case "phase": return t("detail.phase", { name: n.kind.name });
+    default: return n.agentType ?? t("detail.agent");
   }
 }
 
@@ -65,19 +72,34 @@ function TreeRows({ nodes, depth, sel, onSel }: {
 function ToolResult({ state }: { state: ToolCall["state"] }) {
   if (state === "Ok") return <span className="g">✓</span>;
   if (state === "Error") return <span className="r">✗</span>;
-  return <span className="y">… çalışıyor</span>;
+  return <span className="y">{t("detail.callRunning")}</span>;
 }
 
-export default function SessionDetailPage({ sessionId, onBack, onTerminal }: Props) {
+export default function SessionDetailPage({ sessionId, onBack, onTerminal, live = false, onResume }: Props) {
+  const tx = useT();
   const [detail, setDetail] = useState<SessionDetail | null | undefined>(undefined);
   const [sel, setSel] = useState(MAIN);
   const [folderErr, setFolderErr] = useState<string | null>(null);
+  const [resumeErr, setResumeErr] = useState<{ text: string; terminal: number | null } | null>(null);
+  const [resuming, setResuming] = useState(false);
+  const [gotoErr, setGotoErr] = useState<string | null>(null);
+  const [gotoNote, setGotoNote] = useState<string | null>(null);
+  const liveRef = useRef(live);
+  /** Re-opens loading after it was considered final, and loads once. */
+  const wakeRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    liveRef.current = live;
+    if (live) wakeRef.current();
+  }, [live]);
 
   useEffect(() => {
     let alive = true;
     let unlisten: (() => void) | undefined;
     // At most one request in flight; events arriving meanwhile cause a single
-    // follow-up. A closed session (pid 0) cannot change, so it is loaded once.
+    // follow-up. A closed session (pid 0) cannot change, so it is loaded once,
+    // but pid 0 is final only while the session is not in the current
+    // snapshot: a live session answered as closed keeps being refreshed.
     let inFlight = false;
     let again = false;
     let done = false;
@@ -91,7 +113,7 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal }: Pro
         .then((d) => {
           if (!alive || my !== seq) return; // stale
           setDetail(d);
-          if (d && d.card.pid === 0) done = true;
+          if (d && d.card.pid === 0 && !liveRef.current) done = true;
         })
         .catch(() => { if (alive && my === seq) setDetail((p) => p ?? null); })
         .finally(() => {
@@ -99,70 +121,103 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal }: Pro
           if (again) { again = false; load(); }
         });
     };
+    wakeRef.current = () => { done = false; load(); };
     load();
-    onSnapshot(() => load())
+    onSnapshot((s) => {
+      liveRef.current = s.sessions.some((c) => c.sessionId === sessionId);
+      if (liveRef.current) done = false;
+      load();
+    })
       .then((u) => { if (alive) unlisten = u; else u(); })
       .catch(() => {});
     return () => { alive = false; unlisten?.(); };
   }, [sessionId]);
 
-  const back = <button className="btn" onClick={onBack}>← Geri</button>;
-  if (detail === undefined) return <div className="empty"><p>Yükleniyor…</p></div>;
-  if (detail === null) return <div className="empty"><p>Oturum bulunamadı.</p>{back}</div>;
+  const back = <button className="btn" onClick={onBack}>{tx("detail.back")}</button>;
+  if (detail === undefined) return <div className="empty"><p>{tx("common.loading")}</p></div>;
+  if (detail === null) return <div className="empty"><p>{tx("detail.notFound")}</p>{back}</div>;
 
   const { card, tree } = detail;
   const t = detail.tokens;
   const tokens = t.input + t.output + t.cacheRead + t.cacheCreation;
   const selNode = sel === MAIN ? null : findNode(tree.roots, sel);
   const calls = selNode ? selNode.stats.toolCalls : detail.mainToolCalls;
-  const caption = selNode ? nodeLabel(selNode) : "ana oturum";
-  const term = card.parentPid == null ? undefined : terminalForPid(card.parentPid);
-  const cls = statusClass(card.status);
-  const started = new Date(card.startedAtMs).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+  const caption = selNode ? nodeLabel(selNode) : tx("detail.mainCaption");
+  const kind = statusKind(card.status, card.pid);
+  const target = kind === "closed" ? null : gotoTarget(card, terminalForPid(card.parentPid));
+  const started = new Date(card.startedAtMs).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" });
 
   return (
     <div>
       <div className="hd">
         <h3>
-          <span className="back" role="button" aria-label="Geri" onClick={onBack}>←</span>
+          <span className="back" role="button" aria-label={tx("detail.backLabel")} onClick={onBack}>←</span>
+          <SessionMark color={statusColor(kind)} size={16} />
           {card.name}{" "}
-          {card.pid === 0
-            ? <span className="x">○ kapandı</span>
-            : <span className={cls === "busy" ? "g" : "x"}>● {statusLabel(card.status)}</span>}
+          <span className={`badge ${kind}`}>{statusLabel(card.status, card.pid)}</span>
         </h3>
         <div>
-          {term !== undefined && (
-            <button className="btn" onClick={() => onTerminal?.(term)}>Terminale git</button>
+          {target && (
+            <button className="btn" onClick={() => {
+              setGotoErr(null);
+              setGotoNote(null);
+              goToTab(card.sessionId, target, onTerminal)
+                .then(setGotoNote, (e: unknown) => setGotoErr(e instanceof Error ? e.message : String(e)));
+            }}>{tx("detail.goto")}</button>
+          )}
+          {kind === "closed" && !live && onResume && (
+            <button className="btn" disabled={resuming} onClick={() => {
+              if (resuming) return;
+              setResumeErr(null);
+              setResuming(true);
+              onResume(card.sessionId, card.name)
+                .catch((e) => {
+                  const r = resumeError(e);
+                  setResumeErr({ text: tx("detail.resumeFailed", { err: r.text }), terminal: r.terminal });
+                })
+                .finally(() => setResuming(false));
+            }}>{tx("detail.resume")}</button>
           )}
           <button className="btn" onClick={() => {
             setFolderErr(null);
-            openFolder(card.cwd).catch((e) => setFolderErr(`Klasör açılamadı: ${String(e)}`));
-          }}>Klasörü aç</button>
+            openFolder(card.cwd).catch((e) => setFolderErr(tx("detail.folderFailed", { err: errorText(e) })));
+          }}>{tx("detail.openFolder")}</button>
         </div>
       </div>
       {folderErr && <div className="meta r" role="alert">{folderErr}</div>}
+      {resumeErr && (
+        <div className="meta r" role="alert">
+          {resumeErr.text}
+          {resumeErr.terminal !== null && onTerminal && (
+            <>{" "}<button className="btn" onClick={() => onTerminal(resumeErr.terminal!)}>{tx("detail.goto")}</button></>
+          )}
+        </div>
+      )}
+      {gotoErr && <div className="meta r" role="alert">{gotoErr}</div>}
+      {gotoNote && <div className="meta" role="status">{errorText(gotoNote)}</div>}
       <div className="meta">
-        {card.cwd} · başladı {started} · son hareket {fmtElapsed(Date.now() - card.lastActivityMs)}
+        {card.cwd} · {tx("detail.started", { time: started })} ·{" "}
+        {tx("detail.lastActivity", { t: fmtElapsed(Date.now() - card.lastActivityMs) })}
       </div>
       <div className="kpis six">
-        <div className="kpi"><b>{card.model ?? "?"}</b><span>model</span></div>
-        <div className="kpi"><b>{card.contextPct == null ? "?" : `${Math.round(card.contextPct)}%`}</b><span>bağlam</span></div>
-        <div className="kpi"><b>{fmtTokens(tokens)}</b><span>token</span></div>
-        <div className="kpi"><b>{fmtCost(card.costUsd)}</b><span>maliyet</span></div>
-        <div className="kpi"><b>{tree.total} / {tree.finished}</b><span>ajan / biten</span></div>
-        <div className="kpi"><b>{detail.toolCallCount}</b><span>tool çağrısı</span></div>
+        <div className="kpi"><b>{card.model ?? "?"}</b><span>{tx("detail.kpiModel")}</span></div>
+        <div className="kpi"><b>{fmtContext(card.contextPct)}</b><span>{tx("detail.kpiContext")}</span></div>
+        <div className="kpi"><b>{fmtTokens(tokens)}</b><span>{tx("detail.kpiTokens")}</span></div>
+        <div className="kpi"><b>{fmtCost(card.costUsd)}</b><span>{tx("detail.kpiCost")}</span></div>
+        <div className="kpi"><b>{tree.total} / {tree.finished}</b><span>{tx("detail.kpiAgents")}</span></div>
+        <div className="kpi"><b>{detail.toolCallCount}</b><span>{tx("detail.kpiToolCalls")}</span></div>
       </div>
       <div className="cols">
         <div className="tree">
-          <div className="cap">AJAN AĞACI</div>
+          <div className="cap">{tx("detail.agentTree")}</div>
           <div className={sel === MAIN ? "node sel" : "node"} data-testid="node-main" onClick={() => setSel(MAIN)}>
-            <span className="g">●</span> Ana oturum
+            <span className="g">●</span> {tx("detail.mainSession")}
           </div>
           <TreeRows nodes={tree.roots} depth={1} sel={sel} onSel={setSel} />
         </div>
         <div className="log">
-          <div className="cap">SON TOOL ÇAĞRILARI · {caption}</div>
-          {calls.length === 0 && <div className="x">çağrı yok</div>}
+          <div className="cap">{tx("detail.recentCalls", { caption })}</div>
+          {calls.length === 0 && <div className="x">{tx("detail.noCalls")}</div>}
           {calls.map((c) => (
             <div key={c.id} data-testid="tool-row">
               <span className="x">{hhmmss(c.at)}</span> <span className="c2">{c.name}</span>{" "}

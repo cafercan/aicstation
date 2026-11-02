@@ -5,3 +5,8 @@ target/
 dist/
 src-tauri/gen/
 .worktrees/
+# Secrets and signing material never belong in the repository.
+.env*
+*.pem
+*.key
+*.pfx

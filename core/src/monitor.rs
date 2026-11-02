@@ -1,4 +1,5 @@
 //! Live monitor: registry + transcripts + agent trees -> UI snapshots.
+use crate::host::HostKind;
 use crate::agents::{AgentCache, AgentKind, AgentNode, AgentState, AgentTree};
 use crate::locate::Locator;
 use crate::model::{ToolCall, Usage};
@@ -6,10 +7,13 @@ use crate::registry::{read_live_sessions, LiveSession, ProcessProbe, SessionStat
 use crate::stats::SessionStats;
 use crate::transcript::{ReadEvent, TranscriptReader};
 use serde::Serialize;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
+/// Consecutive ticks a session may be missing from the registry (file being
+/// rewritten) while its process is alive before it is dropped.
+const MAX_MISSED_TICKS: u8 = 2;
 /// Minimum gap between transcript lookups for a session whose file was not found.
 const LOOKUP_RETRY: Duration = Duration::from_secs(10);
 /// Transcript bytes read per live session per refresh; a huge transcript fills
@@ -31,10 +35,15 @@ pub struct SessionCard {
     pub cost_usd: f64,
     pub agents_total: u32,
     pub agents_finished: u32,
+    /// Finished calls among the main session's last <= 50 tool calls.
+    pub tool_ok: u32,
+    pub tool_err: u32,
     pub last_tool: Option<ToolCall>,
     pub started_at_ms: u64,
     pub last_activity_ms: u64,
     pub git_branch: Option<String>,
+    /// Where the Claude process runs (decides "Sekmeye git"); Other when closed.
+    pub host_kind: HostKind,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -49,6 +58,9 @@ pub struct Snapshot {
 #[serde(rename_all = "camelCase")]
 pub struct SessionDetail {
     pub card: SessionCard,
+    /// First recorded cwd of the transcript (resume binding); not sent to the UI.
+    #[serde(skip)]
+    pub first_cwd: Option<String>,
     pub tokens: Usage,
     pub tool_call_count: u64,
     pub tree: AgentTree,
@@ -105,6 +117,8 @@ pub struct Monitor {
     locator: Locator,
     states: HashMap<String, SessionState>,
     pump_budget: u64,
+    /// Sessions of the previous tick with their consecutive missed ticks.
+    last_live: HashMap<String, (LiveSession, u8)>,
 }
 
 fn dt_ms(t: Option<chrono::DateTime<chrono::Utc>>) -> Option<u64> {
@@ -149,6 +163,7 @@ fn make_card(
     session_id: &str,
     live: Option<&LiveSession>,
     parent_pid: Option<u32>,
+    host_kind: HostKind,
     stats: &SessionStats,
     tree: &AgentTree,
 ) -> SessionCard {
@@ -162,6 +177,7 @@ fn make_card(
         .filter(|n| !n.is_empty())
         .or_else(|| stats.title.clone())
         .unwrap_or_else(|| cwd_name(&cwd));
+    let (tool_ok, tool_err) = stats.tool_outcomes();
     SessionCard {
         session_id: session_id.to_string(),
         pid: live.map_or(0, |l| l.pid),
@@ -175,19 +191,22 @@ fn make_card(
         cost_usd: stats.cost_usd + agent_cost(&tree.roots),
         agents_total: tree.total,
         agents_finished: tree.finished,
+        tool_ok,
+        tool_err,
         last_tool: stats.tool_calls.back().cloned(),
         started_at_ms: live.map(|l| l.started_at_ms).or_else(|| dt_ms(stats.first_at)).unwrap_or(0),
         last_activity_ms: live
             .map_or(0, |l| l.status_updated_at_ms)
             .max(dt_ms(stats.last_at).unwrap_or(0)),
         git_branch: stats.git_branch.clone(),
+        host_kind,
     }
 }
 
 impl Monitor {
     pub fn new(claude_dir: PathBuf) -> Self {
         let locator = Locator::new(claude_dir.join("projects"));
-        Self { claude_dir, locator, states: HashMap::new(), pump_budget: PUMP_BUDGET }
+        Self { claude_dir, locator, states: HashMap::new(), pump_budget: PUMP_BUDGET, last_live: HashMap::new() }
     }
 
     /// Finds the transcript for a live session (misses retried at most every
@@ -242,8 +261,45 @@ impl Monitor {
         (total, self.states.keys().cloned().collect())
     }
 
+    /// Cost per local day of each session live at the last refresh (main
+    /// transcript plus agents), by session id. The Geçmiş charts add these to
+    /// the closed sessions' rows (which exclude live ids).
+    pub fn live_cost_by_day(&self) -> HashMap<String, BTreeMap<chrono::NaiveDate, f64>> {
+        fn add_agents(nodes: &[AgentNode], out: &mut BTreeMap<chrono::NaiveDate, f64>) {
+            for n in nodes {
+                if n.kind == AgentKind::Agent {
+                    for (d, c) in &n.stats.cost_by_day {
+                        *out.entry(*d).or_insert(0.0) += c;
+                    }
+                }
+                add_agents(&n.children, out);
+            }
+        }
+        self.states
+            .iter()
+            .map(|(id, st)| {
+                let mut by_day = st.stats.cost_by_day.clone();
+                add_agents(&st.tree.roots, &mut by_day);
+                (id.clone(), by_day)
+            })
+            .collect()
+    }
+
     pub fn refresh(&mut self, probe: &dyn ProcessProbe, now: SystemTime) -> Snapshot {
-        let live = read_live_sessions(&self.claude_dir.join("sessions"), probe);
+        let mut live = read_live_sessions(&self.claude_dir.join("sessions"), probe);
+        let mut next: HashMap<String, (LiveSession, u8)> =
+            live.iter().map(|l| (l.session_id.clone(), (l.clone(), 0))).collect();
+        for (sid, (l, missed)) in &self.last_live {
+            if next.contains_key(sid) {
+                continue;
+            }
+            let missed = missed + 1;
+            if missed <= MAX_MISSED_TICKS && probe.start_filetime(l.pid) == Some(l.proc_start) {
+                live.push(l.clone());
+                next.insert(sid.clone(), (l.clone(), missed));
+            }
+        }
+        self.last_live = next;
         let ids: HashSet<&str> = live.iter().map(|l| l.session_id.as_str()).collect();
         self.states.retain(|k, _| ids.contains(k.as_str()));
 
@@ -256,7 +312,7 @@ impl Monitor {
                 waiting += 1;
             }
             let stats = &self.states[&l.session_id].stats;
-            cards.push(make_card(&l.session_id, Some(l), probe.parent_pid(l.pid), stats, &tree));
+            cards.push(make_card(&l.session_id, Some(l), probe.parent_pid(l.pid), probe.host_kind(l.pid), stats, &tree));
         }
         cards.sort_by(|a, b| {
             status_rank(&a.status)
@@ -291,12 +347,38 @@ impl Monitor {
         let tree = self.update_live(session_id, now);
         let stats = &self.states[session_id].stats;
         Some(SessionDetail {
-            card: make_card(session_id, Some(&l), probe.parent_pid(l.pid), stats, &tree),
+            card: make_card(session_id, Some(&l), probe.parent_pid(l.pid), probe.host_kind(l.pid), stats, &tree),
+            first_cwd: stats.first_cwd.clone(),
             tokens: stats.tokens,
             tool_call_count: stats.tool_call_count,
             main_tool_calls: stats.tool_calls.iter().cloned().collect(),
             tree,
         })
+    }
+
+    /// Detail of a session that the last snapshot listed as live (`card` is its
+    /// snapshot card) when the registry cannot be read right now, e.g. while
+    /// Claude Code rewrites its file. Built from the state the snapshot keeps,
+    /// so a live session is never shown as closed or empty because of one miss.
+    pub fn known_detail(&self, card: &SessionCard) -> SessionDetail {
+        match self.states.get(&card.session_id) {
+            Some(st) => SessionDetail {
+                card: card.clone(),
+                first_cwd: st.stats.first_cwd.clone(),
+                tokens: st.stats.tokens,
+                tool_call_count: st.stats.tool_call_count,
+                main_tool_calls: st.stats.tool_calls.iter().cloned().collect(),
+                tree: st.tree.clone(),
+            },
+            None => SessionDetail {
+                card: card.clone(),
+                first_cwd: None,
+                tokens: Usage::default(),
+                tool_call_count: 0,
+                main_tool_calls: Vec::new(),
+                tree: AgentTree::default(),
+            },
+        }
     }
 
     /// Locates a closed session's files; the expensive streaming is done by
@@ -343,7 +425,8 @@ impl ClosedJob {
             None => AgentTree::default(),
         };
         Some(SessionDetail {
-            card: make_card(session_id, None, None, &stats, &tree),
+            card: make_card(session_id, None, None, HostKind::Other, &stats, &tree),
+            first_cwd: stats.first_cwd.clone(),
             tokens: stats.tokens,
             tool_call_count: stats.tool_call_count,
             main_tool_calls: stats.tool_calls.iter().cloned().collect(),
@@ -413,6 +496,73 @@ mod tests {
         )
     }
 
+    struct DeadProbe;
+    impl ProcessProbe for DeadProbe {
+        fn start_filetime(&self, _pid: u32) -> Option<u64> {
+            None
+        }
+        fn parent_pid(&self, _pid: u32) -> Option<u32> {
+            None
+        }
+    }
+
+    fn miss(e: &Env, pid: u32) {
+        fs::write(e.dir.path().join("sessions").join(format!("{pid}.json")), "{ half-writ").unwrap();
+    }
+
+    #[test]
+    fn transient_registry_miss_keeps_session() {
+        let e = Env::new();
+        let sid = id(1);
+        e.reg(1, &sid, "busy", 10, Some("demo"));
+        e.append(&e.transcript(&sid), &asst("m1", 5, "2026-11-02T07:00:00Z"));
+        let mut m = e.mon();
+        m.refresh(&FakeProbe, now());
+        miss(&e, 1);
+        let snap = m.refresh(&FakeProbe, now());
+        assert_eq!(snap.sessions.len(), 1, "kept through a miss");
+        assert_eq!(snap.sessions[0].name, "demo");
+        assert_eq!(snap.sessions[0].pid, 1);
+        assert_eq!(m.states[&sid].stats.tokens.output, 5, "state kept");
+        let applied = m.states[&sid].applied;
+        let snap = m.refresh(&FakeProbe, now());
+        assert_eq!(snap.sessions.len(), 1, "kept through the second miss");
+        assert_eq!(m.states[&sid].applied, applied, "not re-read from scratch");
+        // reappearing resets the miss counter
+        e.reg(1, &sid, "busy", 11, Some("demo"));
+        m.refresh(&FakeProbe, now());
+        miss(&e, 1);
+        m.refresh(&FakeProbe, now());
+        assert_eq!(m.refresh(&FakeProbe, now()).sessions.len(), 1);
+    }
+
+    #[test]
+    fn dead_process_drops_immediately() {
+        let e = Env::new();
+        let sid = id(1);
+        e.reg(1, &sid, "busy", 10, None);
+        let mut m = e.mon();
+        m.refresh(&FakeProbe, now());
+        miss(&e, 1);
+        let snap = m.refresh(&DeadProbe, now());
+        assert!(snap.sessions.is_empty());
+        assert!(!m.states.contains_key(&sid));
+    }
+
+    #[test]
+    fn third_consecutive_miss_drops() {
+        let e = Env::new();
+        let sid = id(1);
+        e.reg(1, &sid, "busy", 10, None);
+        let mut m = e.mon();
+        m.refresh(&FakeProbe, now());
+        miss(&e, 1);
+        assert_eq!(m.refresh(&FakeProbe, now()).sessions.len(), 1);
+        assert_eq!(m.refresh(&FakeProbe, now()).sessions.len(), 1);
+        assert!(m.refresh(&FakeProbe, now()).sessions.is_empty());
+        assert!(!m.states.contains_key(&sid));
+    }
+
     #[test]
     fn snapshot_lists_only_live_sessions() {
         let e = Env::new();
@@ -428,6 +578,38 @@ mod tests {
         assert_eq!(snap.sessions.len(), 1);
         assert_eq!(snap.sessions[0].session_id, id(1));
         assert_eq!(snap.sessions[0].parent_pid, Some(2));
+        assert_eq!(snap.sessions[0].host_kind, HostKind::Other, "default probe knows no host");
+    }
+
+    struct WtProbe;
+    impl ProcessProbe for WtProbe {
+        fn start_filetime(&self, pid: u32) -> Option<u64> {
+            Some(1000 + pid as u64)
+        }
+        fn parent_pid(&self, pid: u32) -> Option<u32> {
+            Some(pid + 1)
+        }
+        fn host_kind(&self, pid: u32) -> HostKind {
+            if pid == 1 { HostKind::WindowsTerminal } else { HostKind::Embedded }
+        }
+    }
+
+    #[test]
+    fn cards_carry_the_probe_host_kind_live_only() {
+        let e = Env::new();
+        e.reg(1, &id(1), "idle", 10, None);
+        e.reg(2, &id(2), "idle", 5, None);
+        let mut m = e.mon();
+        let snap = m.refresh(&WtProbe, now());
+        let kind = |sid: &str| snap.sessions.iter().find(|c| c.session_id == sid).unwrap().host_kind;
+        assert_eq!(kind(&id(1)), HostKind::WindowsTerminal);
+        assert_eq!(kind(&id(2)), HostKind::Embedded);
+        assert_eq!(m.live_detail(&id(1), &WtProbe, now()).unwrap().card.host_kind, HostKind::WindowsTerminal);
+        let v = serde_json::to_value(&snap.sessions[0]).unwrap();
+        assert!(v.get("hostKind").is_some());
+        // closed sessions are never reachable
+        e.append(&e.transcript(&id(9)), &asst("m1", 5, "2026-11-02T07:00:00Z"));
+        assert_eq!(e.mon().detail(&id(9), &WtProbe, now()).unwrap().card.host_kind, HostKind::Other);
     }
 
     #[test]
@@ -511,6 +693,11 @@ mod tests {
         assert!((cost - 2.0 * main).abs() < 1e-9, "{cost} vs {main}");
         assert_eq!(ids, HashSet::from([sid.clone()]));
         assert_eq!(m.live_cost_on(day.succ_opt().unwrap()).0, 0.0);
+        // Per day and session: the same total, on the same day.
+        let by_day = m.live_cost_by_day();
+        assert_eq!(by_day.len(), 1);
+        assert_eq!(by_day[&sid].len(), 1);
+        assert!((by_day[&sid][&day] - cost).abs() < 1e-9);
     }
 
     #[test]
@@ -536,7 +723,7 @@ mod tests {
         m.refresh(&FakeProbe, now());
         assert!(m.states.contains_key(&sid));
         fs::remove_file(e.dir.path().join("sessions/1.json")).unwrap();
-        let snap = m.refresh(&FakeProbe, now());
+        let snap = m.refresh(&DeadProbe, now());
         assert!(snap.sessions.is_empty());
         assert!(m.states.is_empty());
     }
@@ -562,6 +749,18 @@ mod tests {
     }
 
     #[test]
+    fn card_serializes_tool_outcome_counts_camel_case() {
+        let e = Env::new();
+        let sid = id(1);
+        e.reg(1, &sid, "busy", 10, None);
+        e.append(&e.transcript(&sid), &asst("m1", 5, "2026-11-02T07:00:00Z"));
+        let snap = e.mon().refresh(&FakeProbe, now());
+        let v = serde_json::to_value(&snap.sessions[0]).unwrap();
+        assert_eq!(v["toolOk"], 0);
+        assert_eq!(v["toolErr"], 0);
+    }
+
+    #[test]
     fn name_falls_back_to_cwd_folder() {
         let e = Env::new();
         e.reg(1, &id(1), "idle", 10, None);
@@ -570,6 +769,47 @@ mod tests {
         let by = |p| snap.sessions.iter().find(|c| c.pid == p).unwrap();
         assert_eq!(by(1).name, "demo");
         assert_eq!(by(2).name, "kayitli");
+    }
+
+    #[test]
+    fn closed_job_reads_a_transcript_larger_than_the_pump_budget() {
+        let e = Env::new();
+        let sid = id(9);
+        let t = e.transcript(&sid);
+        // ~34 MiB in 64 KiB-read chunks: more than one PUMP_BUDGET, lines
+        // straddling every read boundary.
+        let pad = "x".repeat(40_000);
+        let n = 900u64;
+        {
+            let mut f = fs::File::create(&t).unwrap();
+            for i in 0..n {
+                let line = asst(&format!("m{i}"), 1, "2026-11-02T07:00:00Z")
+                    .replacen(r#""content":[]"#, &format!(r#""content":[],"pad":"{pad}""#), 1);
+                writeln!(f, "{line}").unwrap();
+            }
+        }
+        assert!(fs::metadata(&t).unwrap().len() > PUMP_BUDGET);
+        let d = e.mon().closed_job(&sid).unwrap().run(&sid, now()).unwrap();
+        assert_eq!(d.tokens.output, n);
+        assert_eq!(d.card.model.as_deref(), Some("claude-sonnet-5-5"));
+        assert_eq!(d.card.cwd, r"C:\work\demo");
+    }
+
+    #[test]
+    fn known_detail_uses_live_state_and_snapshot_card() {
+        let e = Env::new();
+        let sid = id(1);
+        e.reg(1, &sid, "busy", 10, None);
+        e.append(&e.transcript(&sid), &asst("m1", 5, "2026-11-02T07:00:00Z"));
+        let mut m = e.mon();
+        let card = m.refresh(&FakeProbe, now()).sessions[0].clone();
+        let d = m.known_detail(&card);
+        assert_eq!(d.card.pid, 1);
+        assert_eq!(d.tokens.output, 5);
+        // No state yet: the card alone, never a closed-looking card.
+        let mut other = card.clone();
+        other.session_id = id(2);
+        assert_eq!(m.known_detail(&other).card.pid, 1);
     }
 
     #[test]

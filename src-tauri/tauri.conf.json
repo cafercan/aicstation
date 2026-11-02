@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Claude Pano",
+  "productName": "SessionStation",
   "version": "0.1.0",
-  "identifier": "com.cafercan.claudepano",
+  "identifier": "com.cafercan.sessionstation",
   "build": {
     "frontendDist": "../ui/dist",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,8 @@
     "windows": [
       {
         "label": "main",
-        "title": "Claude Pano",
+        "create": false,
+        "title": "SessionStation",
         "width": 1280,
         "height": 800
       }
@@ -32,6 +33,11 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "resources": {
+      "../LICENSE": "LICENSE",
+      "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
+    },
+    "licenseFile": "../LICENSE",
     "windows": {
       "nsis": { "installMode": "currentUser" }
     }

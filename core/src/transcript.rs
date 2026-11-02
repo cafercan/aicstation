@@ -1,9 +1,10 @@
 //! JSONL transcript line parsing and an incremental, read-only reader.
-use crate::model::{ToolCall, ToolState, Usage};
+use crate::model::{cap_display, cap_path, ToolCall, ToolState, Usage};
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
+use std::ops::ControlFlow;
 use std::path::PathBuf;
 
 /// Read buffer size used by [`TranscriptReader`].
@@ -131,8 +132,8 @@ pub fn parse_line(line: &str) -> Vec<Entry> {
             if let (Some(msg), Some(at)) = (v.get("message"), at) {
                 out.push(Entry::Assistant {
                     message_id: str_of(msg, "id").unwrap_or_default().to_string(),
-                    model: str_of(msg, "model").map(String::from),
-                    requested_model: str_of(&v, "requestedModel").map(String::from),
+                    model: str_of(msg, "model").map(cap_display),
+                    requested_model: str_of(&v, "requestedModel").map(cap_display),
                     usage: usage_of(msg),
                     tool_uses: tool_uses_of(msg, at),
                     at,
@@ -162,20 +163,20 @@ pub fn parse_line(line: &str) -> Vec<Entry> {
         }
         Some("custom-title") => {
             if let Some(t) = str_of(&v, "customTitle") {
-                out.push(Entry::Title(t.to_string()));
+                out.push(Entry::Title(cap_display(t)));
             }
         }
         Some("agent-name") => {
             if let Some(t) = str_of(&v, "agentName") {
-                out.push(Entry::Title(t.to_string()));
+                out.push(Entry::Title(cap_display(t)));
             }
         }
         _ => {}
     }
 
     if matches!(kind, Some("assistant" | "user" | "system" | "attachment")) {
-        let cwd = str_of(&v, "cwd").map(String::from);
-        let git_branch = str_of(&v, "gitBranch").map(String::from);
+        let cwd = str_of(&v, "cwd").and_then(cap_path);
+        let git_branch = str_of(&v, "gitBranch").map(cap_display);
         if cwd.is_some() || git_branch.is_some() {
             out.push(Entry::Meta { cwd, git_branch, at });
         }
@@ -229,14 +230,69 @@ impl TranscriptReader {
     /// Like [`read_each`](Self::read_each) but stops once about `max_bytes` have been
     /// read in this call (the partial line stays in `carry`, so nothing is lost or
     /// repeated). Returns true when the file holds more unread bytes.
-    pub fn read_each_limited(&mut self, max_bytes: u64, mut f: impl FnMut(ReadEvent)) -> io::Result<bool> {
+    pub fn read_each_limited(&mut self, max_bytes: u64, f: impl FnMut(ReadEvent)) -> io::Result<bool> {
+        // Both callbacks deliver through `f`.
+        let f = std::cell::RefCell::new(f);
+        let (more, _) = self.scan(
+            max_bytes,
+            || (f.borrow_mut())(ReadEvent::Reset),
+            |s| {
+                for e in parse_line(s) {
+                    (f.borrow_mut())(ReadEvent::Entry(e));
+                }
+                ControlFlow::Continue(())
+            },
+        )?;
+        Ok(more)
+    }
+
+    /// Streams the raw text of every complete line (UTF-8, at most `MAX_LINE`
+    /// bytes) from the current offset to the end, without parsing it. `f` may
+    /// return `ControlFlow::Break` to stop early; the reader is then spent
+    /// (its position is somewhere inside the last read chunk) and must not be
+    /// read again. Returns true when `f` stopped the read.
+    pub fn read_lines(&mut self, f: impl FnMut(&str) -> ControlFlow<()>) -> io::Result<bool> {
+        self.read_lines_checked(|_| ControlFlow::Continue(()), f)
+    }
+
+    /// [`read_lines`](Self::read_lines) with `on_chunk(bytes)` called after
+    /// every chunk read from disk, before its lines are handed out. It also
+    /// runs while an over-long line is being skipped (when no line is
+    /// delivered for a long time), so a caller can stop on cancellation or a
+    /// byte budget there too. A Break stops the read like one from `f`.
+    pub fn read_lines_checked(
+        &mut self,
+        on_chunk: impl FnMut(u64) -> ControlFlow<()>,
+        f: impl FnMut(&str) -> ControlFlow<()>,
+    ) -> io::Result<bool> {
+        self.scan_with(u64::MAX, || {}, on_chunk, f).map(|(_, stopped)| stopped)
+    }
+
+    /// Shared line splitter of [`read_each_limited`](Self::read_each_limited)
+    /// and [`read_lines`](Self::read_lines). Returns (more unread bytes, stopped).
+    fn scan(
+        &mut self,
+        max_bytes: u64,
+        on_reset: impl FnMut(),
+        on_line: impl FnMut(&str) -> ControlFlow<()>,
+    ) -> io::Result<(bool, bool)> {
+        self.scan_with(max_bytes, on_reset, |_| ControlFlow::Continue(()), on_line)
+    }
+
+    fn scan_with(
+        &mut self,
+        max_bytes: u64,
+        mut on_reset: impl FnMut(),
+        mut on_chunk: impl FnMut(u64) -> ControlFlow<()>,
+        mut on_line: impl FnMut(&str) -> ControlFlow<()>,
+    ) -> io::Result<(bool, bool)> {
         let mut file = File::open(&self.path)?;
         let len = file.metadata()?.len();
         if len < self.offset {
             self.offset = 0;
             self.carry.clear();
             self.skipping = false;
-            f(ReadEvent::Reset);
+            on_reset();
         }
         file.seek(SeekFrom::Start(self.offset))?;
         let mut buf = vec![0u8; READ_BUF];
@@ -248,6 +304,9 @@ impl TranscriptReader {
             }
             read += n as u64;
             self.offset += n as u64;
+            if on_chunk(n as u64).is_break() {
+                return Ok((self.offset < len, true));
+            }
             let mut chunk = &buf[..n];
             if self.skipping {
                 match chunk.iter().position(|&b| b == b'\n') {
@@ -269,13 +328,14 @@ impl TranscriptReader {
                 continue;
             };
             let rest = self.carry.split_off(start + pos + 1);
-            for line in self.carry.split(|&b| b == b'\n') {
+            // `carry` ends with the newline found above; the empty piece after it is not a line.
+            for line in self.carry[..self.carry.len() - 1].split(|&b| b == b'\n') {
                 if line.len() > self.max_line {
                     continue;
                 }
                 if let Ok(s) = std::str::from_utf8(line) {
-                    for e in parse_line(s) {
-                        f(ReadEvent::Entry(e));
+                    if on_line(s).is_break() {
+                        return Ok((self.offset < len, true));
                     }
                 }
             }
@@ -285,7 +345,7 @@ impl TranscriptReader {
                 self.skipping = true;
             }
         }
-        Ok(self.offset < len)
+        Ok((self.offset < len, false))
     }
 
     /// Collecting variant of [`read_each`](Self::read_each); only for small reads/tests.
@@ -303,6 +363,71 @@ impl TranscriptReader {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn read_lines_streams_raw_lines_and_stops_on_break() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join("t.jsonl");
+        std::fs::write(&p, "bir\n\niki\nüç\nyarım").unwrap();
+        let mut seen = Vec::new();
+        let stopped = TranscriptReader::new(p.clone())
+            .read_lines(|l| {
+                seen.push(l.to_string());
+                ControlFlow::Continue(())
+            })
+            .unwrap();
+        assert!(!stopped);
+        // The unterminated tail is not a line yet.
+        assert_eq!(seen, ["bir", "", "iki", "üç"]);
+        let mut n = 0;
+        let stopped = TranscriptReader::new(p)
+            .read_lines(|_| {
+                n += 1;
+                if n == 2 { ControlFlow::Break(()) } else { ControlFlow::Continue(()) }
+            })
+            .unwrap();
+        assert!(stopped);
+        assert_eq!(n, 2);
+    }
+
+    #[test]
+    fn read_lines_checked_polls_per_chunk_even_while_skipping_an_overlong_line() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join("t.jsonl");
+        // One line far longer than max_line: no line is ever delivered.
+        std::fs::write(&p, "x".repeat(5 * READ_BUF) + "
+kısa
+").unwrap();
+        let mut r = TranscriptReader::new(p.clone());
+        r.max_line = 1000;
+        let mut chunks = 0;
+        let mut lines = 0;
+        let stopped = r
+            .read_lines_checked(
+                |n| {
+                    assert!(n > 0);
+                    chunks += 1;
+                    if chunks == 2 { ControlFlow::Break(()) } else { ControlFlow::Continue(()) }
+                },
+                |_| {
+                    lines += 1;
+                    ControlFlow::Continue(())
+                },
+            )
+            .unwrap();
+        assert!(stopped);
+        assert_eq!((chunks, lines), (2, 0));
+        // Unchecked, the long line is skipped and the short one delivered.
+        let mut r = TranscriptReader::new(p);
+        r.max_line = 1000;
+        let mut seen = Vec::new();
+        r.read_lines(|l| {
+            seen.push(l.to_string());
+            ControlFlow::Continue(())
+        })
+        .unwrap();
+        assert_eq!(seen, ["kısa"]);
+    }
 
     const ASSISTANT: &str = r#"{"type":"assistant","timestamp":"2026-11-02T07:12:52.197Z","requestedModel":"claude-opus-5-5[1m]","message":{"id":"msg_1","model":"claude-opus-5-5","content":[{"type":"tool_use","id":"toolu_A","name":"Read","input":{"file_path":"C:\\demo\\adc.c"}}],"usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":100,"cache_creation_input_tokens":20}}}"#;
 
@@ -350,6 +475,36 @@ mod tests {
     fn title_from_custom_title() {
         let e = parse_line(r#"{"type":"custom-title","customTitle":"Pusula","sessionId":"s"}"#);
         assert_eq!(e, vec![Entry::Title("Pusula".into())]);
+    }
+
+    #[test]
+    fn display_strings_are_capped_at_ingestion() {
+        use crate::model::MAX_DISPLAY;
+        let long = "t".repeat(5000);
+        let e = parse_line(&format!(r#"{{"type":"custom-title","customTitle":"{long}"}}"#));
+        assert_eq!(e, vec![Entry::Title("t".repeat(MAX_DISPLAY))]);
+        let e = parse_line(&format!(r#"{{"type":"agent-name","agentName":"{long}"}}"#));
+        assert_eq!(e, vec![Entry::Title("t".repeat(MAX_DISPLAY))]);
+        let l = format!(
+            r#"{{"type":"assistant","timestamp":"2026-11-02T07:12:52Z","gitBranch":"{long}","requestedModel":"{long}","message":{{"id":"m","model":"{long}","content":[]}}}}"#
+        );
+        let e = parse_line(&l);
+        let Entry::Assistant { model, requested_model, .. } = &e[0] else { panic!() };
+        assert_eq!(model.as_ref().unwrap().chars().count(), MAX_DISPLAY);
+        assert_eq!(requested_model.as_ref().unwrap().chars().count(), MAX_DISPLAY);
+        let Entry::Meta { git_branch, .. } = &e[1] else { panic!() };
+        assert_eq!(git_branch.as_ref().unwrap().chars().count(), MAX_DISPLAY);
+    }
+
+    #[test]
+    fn overlong_cwd_is_dropped_not_truncated() {
+        // A truncated path is a different (possibly existing) folder.
+        let long = format!(r"C:\\{}", "d".repeat(400));
+        let l = format!(r#"{{"type":"user","timestamp":"2026-11-02T07:12:52Z","cwd":"{long}","gitBranch":"main","message":{{"content":"x"}}}}"#);
+        let e = parse_line(&l);
+        assert!(matches!(&e[0], Entry::Meta { cwd: None, git_branch: Some(g), .. } if g == "main"));
+        let ok = r#"{"type":"user","timestamp":"2026-11-02T07:12:52Z","cwd":"C:\\demo","message":{"content":"x"}}"#;
+        assert!(matches!(&parse_line(ok)[0], Entry::Meta { cwd: Some(c), .. } if c == r"C:\demo"));
     }
 
     fn msg_line(i: usize) -> String {

@@ -1,6 +1,22 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+/// Longest display string (session name, title, branch, model, agent type,
+/// description...) kept from Claude Code's files, in characters. Applied at
+/// ingestion so an oversized value is never stored or sent to the UI.
+pub const MAX_DISPLAY: usize = 256;
+
+/// `s` cut to [`MAX_DISPLAY`] characters.
+pub fn cap_display(s: &str) -> String {
+    s.chars().take(MAX_DISPLAY).collect()
+}
+
+/// A path is never cut (a shortened path names a different folder): one over
+/// [`MAX_DISPLAY`] characters is dropped.
+pub fn cap_path(s: &str) -> Option<String> {
+    (s.chars().nth(MAX_DISPLAY).is_none()).then(|| s.to_string())
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Usage {

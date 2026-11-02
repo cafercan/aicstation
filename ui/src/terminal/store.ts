@@ -1,9 +1,14 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon } from "@xterm/addon-search";
+import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { Terminal } from "@xterm/xterm";
 import { useSyncExternalStore } from "react";
-import type { SessionCard } from "../api";
-import { ubuntuTheme, terminalFont } from "./theme";
+import { ptySpawnResume, type PtyInfo, type SessionCard } from "../api";
+import { t, type Key, type Params } from "../i18n";
+import { onTestReset } from "../prefs";
+import { clampFontSize } from "./keys";
+import { renderOptions, ubuntuTheme, terminalFont } from "./theme";
 
 export interface TerminalEntry {
   id: number;
@@ -12,9 +17,21 @@ export interface TerminalEntry {
   n: number;
   term: Terminal;
   fit: FitAddon;
+  search: SearchAddon;
+  /** Name given at creation (resume terminals); else "PowerShell N". */
+  title?: TerminalTitle;
 }
 
-interface PtyInfo { id: number; pid: number }
+/**
+ * A creation-time name: literal text (a session name) or a dictionary key
+ * with params, translated when shown so it follows the language switch.
+ */
+export type TerminalTitle = { text: string } | { key: Key; params?: Params };
+
+function titleText(title: TerminalTitle | undefined): string {
+  if (!title) return "";
+  return "text" in title ? title.text : t(title.key, title.params);
+}
 
 let terminals: TerminalEntry[] = [];
 let counter = 0;
@@ -30,13 +47,13 @@ export function useTerminals(): TerminalEntry[] {
   return useSyncExternalStore(subscribe, getTerminals);
 }
 
-/** Test helper: forget all terminals without touching the backend. */
-export function resetTerminals(): void {
-  for (const t of terminals) t.term.dispose();
+/** Between tests: forget all terminals without touching the backend. */
+onTestReset(() => {
+  for (const t of terminals) t.term.dispose?.();
   terminals = [];
   counter = 0;
   emit();
-}
+});
 
 /** Terminal id whose PTY pid equals the Claude session's parent pid. */
 export function terminalForPid(parentPid: number | null | undefined): number | undefined {
@@ -49,7 +66,7 @@ export function sessionsIn(t: TerminalEntry, sessions: SessionCard[]): SessionCa
 }
 
 export function terminalName(t: TerminalEntry, sessions: SessionCard[]): string {
-  return sessionsIn(t, sessions)[0]?.name || `PowerShell ${t.n}`;
+  return sessionsIn(t, sessions)[0]?.name || titleText(t.title) || `PowerShell ${t.n}`;
 }
 
 function removeEntry(id: number): void {
@@ -60,20 +77,47 @@ function removeEntry(id: number): void {
   emit();
 }
 
-/** Starts a PowerShell PTY; the xterm instance lives here so it survives tab switches. */
 /** OSC 8 links in terminal output never open a window or browser. */
 const NO_LINKS = { activate: () => {} };
 
 /** Spawns in flight; `killOrphans` must not kill a PTY whose id is not known yet. */
 let spawning = 0;
 
-export async function openTerminal(): Promise<TerminalEntry> {
+type Spawn = (cols: number, rows: number, onOutput: Channel<number[]>, onExit: Channel<number>) => Promise<PtyInfo>;
+
+/** Starts a PowerShell PTY; the xterm instance lives here so it survives tab switches. */
+export function openTerminal(): Promise<TerminalEntry> {
+  return startTerminal((cols, rows, onOutput, onExit) =>
+    invoke<PtyInfo>("pty_spawn", { cols, rows, onOutput, onExit }));
+}
+
+/**
+ * New terminal running `claude --resume <sessionId>` in the session's folder.
+ * Only the id goes to the backend, which looks up the folder itself.
+ */
+export function openResumeTerminal(sessionId: string, name?: string): Promise<TerminalEntry> {
+  return startTerminal(
+    (cols, rows, onOutput, onExit) => ptySpawnResume(sessionId, cols, rows, onOutput, onExit),
+    name ? { text: name } : { key: "term.resumeTitle", params: { id: sessionId.slice(0, 8) } },
+  );
+}
+
+/** Shared lifecycle: xterm + addons, input queued until the spawn resolves, exit handling. */
+async function startTerminal(spawn: Spawn, title?: TerminalTitle): Promise<TerminalEntry> {
   const term = new Terminal({
-    ...terminalFont, theme: ubuntuTheme, cursorBlink: true, scrollback: 5000,
+    ...terminalFont, ...renderOptions, theme: ubuntuTheme, cursorBlink: true, scrollback: 10000,
     linkHandler: NO_LINKS, windowsPty: { backend: "conpty" },
+    // term.unicode (width tables) is a proposed API in xterm 6.
+    allowProposedApi: true,
   });
   const fit = new FitAddon();
   term.loadAddon(fit);
+  // Unicode 11 widths: emoji/CJK/symbols in Claude Code's TUI take the same
+  // number of cells as in ConPTY, so the right edge of boxes lines up.
+  term.loadAddon(new Unicode11Addon());
+  term.unicode.activeVersion = "11";
+  const search = new SearchAddon();
+  term.loadAddon(search);
 
   const onOutput = new Channel<number[]>();
   const onExit = new Channel<number>();
@@ -92,7 +136,7 @@ export async function openTerminal(): Promise<TerminalEntry> {
   let info: PtyInfo;
   spawning++;
   try {
-    info = await invoke<PtyInfo>("pty_spawn", { cols: term.cols, rows: term.rows, onOutput, onExit });
+    info = await spawn(term.cols, term.rows, onOutput, onExit);
   } catch (e) {
     term.dispose();
     throw e;
@@ -102,7 +146,7 @@ export async function openTerminal(): Promise<TerminalEntry> {
   id = info.id;
   for (const d of queued.splice(0)) send(d);
 
-  const entry: TerminalEntry = { id, pid: info.pid, n: ++counter, term, fit };
+  const entry: TerminalEntry = { id, pid: info.pid, n: ++counter, term, fit, search, title };
   terminals = [...terminals, entry];
   emit();
   // The shell may have exited before pty_spawn resolved.
@@ -113,6 +157,14 @@ export async function openTerminal(): Promise<TerminalEntry> {
 export function resizeTerminal(t: TerminalEntry): void {
   try { t.fit.fit(); } catch { return; }
   invoke("pty_resize", { id: t.id, cols: t.term.cols, rows: t.term.rows }).catch(() => {});
+}
+
+/** Applies a font size (clamped to 8–32), refits and resizes the PTY. */
+export function setFontSize(t: TerminalEntry, size: number): number {
+  const n = clampFontSize(size);
+  t.term.options.fontSize = n;
+  resizeTerminal(t);
+  return n;
 }
 
 export async function closeTerminal(id: number): Promise<void> {
@@ -127,7 +179,7 @@ export function confirmClose(ids: number[], sessions: SessionCard[]): boolean {
     .flatMap((t) => sessionsIn(t, sessions));
   if (active.length === 0) return true;
   return window.confirm(
-    `Terminalde açık ${active.length} Claude oturumu var (${active.map((s) => s.name).join(", ")}). Yine de kapatılsın mı?`,
+    t("term.confirmClose", { n: active.length, names: active.map((s) => s.name).join(", ") }),
   );
 }
 

@@ -82,3 +82,114 @@ fn no_updater_or_network_plugins() {
     let conf: serde_json::Value = serde_json::from_str(&read("tauri.conf.json")).unwrap();
     assert!(conf["plugins"]["updater"].is_null(), "plugins.updater must not exist");
 }
+
+/// The main window is not created from config (`create: false`); main.rs
+/// builds it so WebView2 clipboard-read is enabled without a plugin. Both
+/// halves must stay together or the app starts without a window.
+#[test]
+fn main_window_built_in_code_with_clipboard_access() {
+    let conf: serde_json::Value = serde_json::from_str(&read("tauri.conf.json")).unwrap();
+    let main = conf["app"]["windows"]
+        .as_array()
+        .and_then(|w| w.iter().find(|w| w["label"] == "main"))
+        .expect("main window config");
+    assert_eq!(main["create"], serde_json::Value::Bool(false));
+    let src = read("src/main.rs");
+    assert!(src.contains("WebviewWindowBuilder::from_config"));
+    assert!(src.contains(".enable_clipboard_access()"));
+    assert!(!read("Cargo.toml").contains("tauri-plugin-clipboard"), "no clipboard plugin");
+}
+
+/// Commands registered with `generate_handler!` in main.rs, in order.
+fn handler_commands() -> Vec<String> {
+    let src = read("src/main.rs");
+    let start = src.find("generate_handler![").expect("generate_handler! in main.rs") + "generate_handler![".len();
+    let end = start + src[start..].find(']').unwrap();
+    src[start..end]
+        .split(',')
+        .map(|s| s.trim().trim_start_matches("commands::").to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+/// Commands declared in build.rs's AppManifest (`COMMANDS`).
+fn manifest_commands() -> Vec<String> {
+    let src = read("build.rs");
+    let start = src.find("COMMANDS: &[&str] = &[").expect("COMMANDS in build.rs") + "COMMANDS: &[&str] = &[".len();
+    let end = start + src[start..].find(']').unwrap();
+    src[start..end]
+        .split(',')
+        .map(|s| s.trim().trim_matches('"').to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+/// Every app command is declared in the AppManifest, so the ACL gates it.
+#[test]
+fn app_commands_are_declared_in_the_app_manifest() {
+    let mut handlers = handler_commands();
+    let mut manifest = manifest_commands();
+    assert!(!handlers.is_empty());
+    handlers.sort();
+    manifest.sort();
+    assert_eq!(manifest, handlers);
+    assert!(read("build.rs").contains(".app_manifest("), "build.rs passes the manifest to tauri_build");
+}
+
+/// The capability grants exactly what the UI uses: event listen/unlisten,
+/// window destroy (close button) and the app's own commands. No `core:default`.
+#[test]
+fn capability_is_narrowed_to_what_the_ui_uses() {
+    let cap: serde_json::Value = serde_json::from_str(&read("capabilities/default.json")).unwrap();
+    assert_eq!(cap["windows"], serde_json::json!(["main"]));
+    let mut got: Vec<String> = cap["permissions"]
+        .as_array()
+        .expect("permissions array")
+        .iter()
+        .map(|p| p.as_str().expect("plain permission identifiers").to_string())
+        .collect();
+    let mut want: Vec<String> = ["core:event:allow-listen", "core:event:allow-unlisten", "core:window:allow-destroy"]
+        .iter()
+        .map(|s| s.to_string())
+        .chain(handler_commands().iter().map(|c| format!("allow-{}", c.replace('_', "-"))))
+        .collect();
+    got.sort();
+    want.sort();
+    assert_eq!(got, want);
+}
+
+/// Product identity: "SessionStation", never a "Claude" product name.
+#[test]
+fn product_is_session_station() {
+    let conf: serde_json::Value = serde_json::from_str(&read("tauri.conf.json")).unwrap();
+    assert_eq!(conf["productName"], "SessionStation");
+    assert_eq!(conf["identifier"], "com.cafercan.sessionstation");
+    let main = conf["app"]["windows"].as_array().unwrap().iter().find(|w| w["label"] == "main").unwrap();
+    assert_eq!(main["title"], "SessionStation");
+    let cargo = read("Cargo.toml");
+    assert!(cargo.contains("name = \"session-station\""), "binary is session-station.exe");
+    assert!(cargo.contains("station-core = { path = \"../core\" }"));
+    for text in [conf.to_string(), cargo] {
+        assert!(!text.to_lowercase().contains("claude pano") && !text.contains("claude-pano") && !text.contains("claudepano"));
+    }
+}
+
+/// LICENSE and THIRD_PARTY_NOTICES.md ship with the installer (next to the
+/// exe), and the NSIS installer shows the license page.
+#[test]
+fn installer_ships_license_and_third_party_notices() {
+    let conf: serde_json::Value = serde_json::from_str(&read("tauri.conf.json")).unwrap();
+    let res = conf["bundle"]["resources"].as_object().expect("bundle.resources is a source -> target map");
+    assert_eq!(res.get("../LICENSE").and_then(|v| v.as_str()), Some("LICENSE"));
+    assert_eq!(res.get("../THIRD_PARTY_NOTICES.md").and_then(|v| v.as_str()), Some("THIRD_PARTY_NOTICES.md"));
+    assert_eq!(conf["bundle"]["licenseFile"], "../LICENSE");
+    for src in res.keys() {
+        let text = read(src);
+        assert!(!text.trim().is_empty(), "{src} is empty");
+    }
+    let notices = read("../THIRD_PARTY_NOTICES.md");
+    assert!(notices.starts_with("# Third-party notices"));
+    for must in ["### MIT", "### Apache-2.0", "### MPL-2.0", "## MPL-2.0 source code"] {
+        assert!(notices.contains(must), "THIRD_PARTY_NOTICES.md lacks {must}");
+    }
+}

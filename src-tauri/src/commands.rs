@@ -1,14 +1,16 @@
 //! IPC commands and the shared application state. Every command is a thin
 //! wrapper over a plain function on `AppState` so tests can call the handlers
 //! without a webview. All arguments from the UI are untrusted.
-use pano_core::history::{cost_on_rows, HistoryIndex, HistoryRow};
-use pano_core::locate::Locator;
-use pano_core::monitor::{ClosedKey, Monitor, SessionDetail, Snapshot};
-use pano_core::registry::ProcessProbe;
+use crate::errors;
+use station_core::history::{cost_on_rows, HistoryIndex, HistoryRow};
+use station_core::locate::{cwd_matches_project_dir, is_session_id, Locator};
+use station_core::monitor::{ClosedKey, Monitor, SessionDetail, Snapshot};
+use station_core::registry::ProcessProbe;
+use station_core::search::{search_transcripts_limited, validate_query, Limits, SearchOutcome};
 use serde::Serialize;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -24,15 +26,35 @@ pub struct HistoryView {
     pub today_cost: f64,
     pub today_complete: bool,
     pub indexing: bool,
+    /// Cost per day of the live sessions (left out of `rows`), so the cost
+    /// charts can count them on every day like `today_cost` does for today.
+    pub live: Vec<LiveCost>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveCost {
+    pub session_id: String,
+    pub cwd: String,
+    pub model: Option<String>,
+    pub cost_by_day: BTreeMap<chrono::NaiveDate, f64>,
 }
 
 /// Last snapshot plus what history needs from the same refresh: the live ids
-/// (= `snap.sessions`) and their cost on `day`.
+/// (= `snap.sessions`) and their cost on `day` and per day.
 struct SnapCache {
     at: Instant,
     snap: Snapshot,
     day: chrono::NaiveDate,
     live_cost: f64,
+    live_by_day: HashMap<String, BTreeMap<chrono::NaiveDate, f64>>,
+}
+
+/// What a resume is bound to: the session's first recorded cwd and the name
+/// of the `projects/` folder its transcript is in.
+struct ResumeSource {
+    first_cwd: String,
+    project_dir: String,
 }
 
 pub struct AppState {
@@ -51,6 +73,9 @@ pub struct AppState {
     history_dirty: AtomicBool,
     /// Last built closed-session detail, keyed by transcript (path, len, mtime).
     closed_cache: Mutex<Option<(ClosedKey, SessionDetail)>>,
+    /// Generation of the latest content search; a running search whose
+    /// generation differs stops at its next line.
+    search_gen: AtomicU32,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -76,6 +101,7 @@ impl AppState {
             index_disabled: AtomicBool::new(false),
             history_dirty: AtomicBool::new(false),
             closed_cache: Mutex::new(None),
+            search_gen: AtomicU32::new(0),
         };
         state.publish_history();
         state
@@ -91,12 +117,12 @@ impl AppState {
     /// before the snapshot lock is taken, and before the caller emits.
     pub fn refresh(&self) -> Snapshot {
         let day = chrono::Local::now().date_naive();
-        let (snap, live_cost) = {
+        let (snap, live_cost, live_by_day) = {
             let mut m = lock(&self.monitor);
             let snap = m.refresh(self.probe.as_ref(), SystemTime::now());
-            (snap, m.live_cost_on(day).0)
+            (snap, m.live_cost_on(day).0, m.live_cost_by_day())
         };
-        *lock(&self.snapshot) = Some(SnapCache { at: Instant::now(), snap: snap.clone(), day, live_cost });
+        *lock(&self.snapshot) = Some(SnapCache { at: Instant::now(), snap: snap.clone(), day, live_cost, live_by_day });
         snap
     }
 
@@ -121,10 +147,18 @@ impl AppState {
             return None;
         }
         let now = SystemTime::now();
+        // Live per the latest snapshot: never the closed path (one failed
+        // registry read must not turn a running session into a closed one).
+        let live_card = lock(&self.snapshot)
+            .as_ref()
+            .and_then(|c| c.snap.sessions.iter().find(|s| s.session_id == session_id).cloned());
         let closed = {
             let mut m = lock(&self.monitor);
             if let Some(d) = m.live_detail(session_id, self.probe.as_ref(), now) {
                 return Some(d);
+            }
+            if let Some(card) = live_card {
+                return Some(m.known_detail(&card));
             }
             m.closed_job(session_id)?
         };
@@ -150,9 +184,23 @@ impl AppState {
     /// monitor; both use the live set of the same refresh, so nothing is counted
     /// twice. `today_complete` covers the closed part only.
     pub fn get_history(&self) -> HistoryView {
-        let (live, day, live_cost) = self.fresh_cache(|c| {
+        let (live, day, live_cost, live_rows) = self.fresh_cache(|c| {
             let ids: HashSet<String> = c.snap.sessions.iter().map(|s| s.session_id.clone()).collect();
-            (ids, c.day, c.live_cost)
+            let rows: Vec<LiveCost> = c
+                .snap
+                .sessions
+                .iter()
+                .filter_map(|s| {
+                    let by_day = c.live_by_day.get(&s.session_id)?;
+                    Some(LiveCost {
+                        session_id: s.session_id.clone(),
+                        cwd: s.cwd.clone(),
+                        model: s.model.clone(),
+                        cost_by_day: by_day.clone(),
+                    })
+                })
+                .collect();
+            (ids, c.day, c.live_cost, rows)
         });
         let rows = lock(&self.history_rows);
         let (closed_cost, today_complete) = cost_on_rows(rows.iter(), day, &live);
@@ -161,6 +209,7 @@ impl AppState {
             today_cost: closed_cost + live_cost,
             today_complete,
             indexing: self.is_indexing(),
+            live: live_rows,
         }
     }
 
@@ -231,46 +280,173 @@ impl AppState {
         }
     }
 
+    /// Session id and folder for `claude --resume`. The id must be a lowercase
+    /// UUID of a session that is not live; the folder is looked up here (history
+    /// rows, then the cached closed detail), never taken from the UI. It is the
+    /// session's FIRST recorded cwd, never a later one the session moved to, and
+    /// it must be an absolute, local, existing directory whose Claude Code
+    /// project-folder name is the folder the transcript sits in. Anything else
+    /// is refused with `resume_folder_mismatch[:<folder code>]`.
+    pub fn resume_target(&self, session_id: &str) -> Result<(String, PathBuf), String> {
+        if !is_session_id(session_id) {
+            return Err(errors::SESSION_INVALID.into());
+        }
+        if self.live_ids().contains(session_id) {
+            return Err(errors::SESSION_LIVE.into());
+        }
+        let src = self.resume_source(session_id).ok_or(errors::SESSION_UNKNOWN)?;
+        let dir = validate_open_folder(&src.first_cwd, std::slice::from_ref(&src.first_cwd))
+            .map_err(|e| errors::with(errors::RESUME_FOLDER_MISMATCH, e))?;
+        if !cwd_matches_project_dir(&src.first_cwd, &src.project_dir) {
+            return Err(errors::RESUME_FOLDER_MISMATCH.into());
+        }
+        Ok((session_id.to_string(), dir))
+    }
+
+    /// Pid and name of a live session for "Sekmeye git", both from the
+    /// latest snapshot (the UI sends only the id).
+    pub fn focus_target(&self, session_id: &str) -> Result<(u32, String), String> {
+        if !is_session_id(session_id) {
+            return Err(errors::SESSION_INVALID.into());
+        }
+        self.fresh_cache(|c| {
+            c.snap
+                .sessions
+                .iter()
+                .find(|s| s.session_id == session_id && s.pid != 0)
+                .map(|s| (s.pid, s.name.clone()))
+        })
+        .ok_or_else(|| errors::SESSION_NOT_LIVE.into())
+    }
+
+    /// First cwd and transcript folder of a closed session. Only an indexed
+    /// row carries the transcript's cwd (an unindexed one only has the project
+    /// folder name); the cached closed detail is the fallback.
+    fn resume_source(&self, session_id: &str) -> Option<ResumeSource> {
+        fn folder_of(p: &Path) -> Option<String> {
+            p.parent().and_then(Path::file_name).map(|n| n.to_string_lossy().into_owned())
+        }
+        let from_rows = lock(&self.history_rows).iter().find(|r| r.session_id == session_id).and_then(|r| {
+            Some(ResumeSource { first_cwd: r.summary.as_ref()?.first_cwd.clone()?, project_dir: folder_of(&r.path)? })
+        });
+        from_rows.filter(|s| !s.first_cwd.is_empty()).or_else(|| {
+            let cache = lock(&self.closed_cache);
+            let (key, d) = cache.as_ref().filter(|(_, d)| d.card.session_id == session_id)?;
+            let first_cwd = d.first_cwd.clone().filter(|c| !c.is_empty())?;
+            Some(ResumeSource { first_cwd, project_dir: folder_of(&key.0)? })
+        })
+    }
+
+    /// "İçerikte ara": streams every transcript (live ones too), newest file
+    /// first, for user/assistant text containing `query`. The latest call
+    /// wins: storing its generation makes any older search still running stop
+    /// at its next line and return `cancelled`. Last-writer-wins rather than
+    /// "highest wins" so a reloaded UI, whose counter restarts, is not locked
+    /// out by a higher number from before the reload.
+    pub fn search_history(&self, query: &str, generation: u32) -> Result<SearchOutcome, String> {
+        let query = validate_query(query).ok_or(errors::SEARCH_QUERY_INVALID)?;
+        self.search_gen.store(generation, Ordering::SeqCst);
+        let mut files: Vec<(u64, String, PathBuf)> = Locator::new(self.projects_dir.clone())
+            .all_transcripts()
+            .into_iter()
+            .filter_map(|(p, md)| {
+                let id = p.file_stem()?.to_str()?.to_string();
+                let modified = md.modified().ok()?.duration_since(SystemTime::UNIX_EPOCH).ok()?.as_millis() as u64;
+                Some((modified, id, p))
+            })
+            .collect();
+        files.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+        let files: Vec<(String, PathBuf)> = files.into_iter().map(|(_, id, p)| (id, p)).collect();
+        let gen = &self.search_gen;
+        Ok(search_transcripts_limited(&files, &query, Limits::DEFAULT, &|| gen.load(Ordering::SeqCst) != generation))
+    }
+
+    /// Stops the running content search (History page left or cleared): the
+    /// stored generation moves on, so the search sees a mismatch at its next
+    /// check and returns `cancelled`. A later search stores its own generation
+    /// and runs normally.
+    pub fn cancel_search(&self) {
+        self.search_gen.fetch_add(1, Ordering::SeqCst);
+    }
+
     pub fn open_folder(&self, path: &str) -> Result<(), String> {
         let mut known: Vec<String> =
             self.get_snapshot().sessions.iter().map(|c| c.cwd.clone()).collect();
         known.extend(lock(&self.history_rows).iter().filter_map(|r| r.cwd.clone()));
         let dir = validate_open_folder(path, &known)?;
-        std::process::Command::new("explorer.exe")
+        std::process::Command::new(crate::platform::explorer_exe())
             .arg(dir)
             .spawn()
             .map(|_| ())
-            .map_err(|e| format!("Klasör açılamadı: {e}"))
+            .map_err(|e| errors::with(errors::FOLDER_OPEN_FAILED, e))
     }
 }
 
 /// Accepts only a path equal to a known session cwd that is an absolute,
 /// local, existing directory. explorer.exe would execute a file path, treats
 /// `,`/leading `/` as switches, and `is_dir` on a UNC path would make an
-/// outbound SMB request. The returned path ends with `\` so explorer always
+/// outbound SMB request. Before the folder itself is touched, its drive must
+/// be a local fixed or removable disk (a mapped network drive is refused) and
+/// no component of the path may be a symlink or junction (either could point
+/// at `\\host\share`). The returned path ends with `\` so explorer always
 /// treats it as a folder.
 pub fn validate_open_folder(path: &str, known_cwds: &[String]) -> Result<PathBuf, String> {
+    validate_open_folder_on(path, known_cwds, crate::platform::drive_kind)
+}
+
+/// [`validate_open_folder`] with the drive-kind lookup passed in (tests).
+pub fn validate_open_folder_on(
+    path: &str,
+    known_cwds: &[String],
+    drive_kind: impl Fn(&Path) -> crate::platform::DriveKind,
+) -> Result<PathBuf, String> {
+    use crate::platform::DriveKind;
     if path.is_empty() || !known_cwds.iter().any(|c| c == path) {
-        return Err("Bilinmeyen klasör".into());
+        return Err(errors::FOLDER_UNKNOWN.into());
     }
     if path.starts_with(r"\\") || path.starts_with("//") {
-        return Err("Ağ yolları desteklenmiyor".into());
+        return Err(errors::FOLDER_NETWORK.into());
     }
     if path.contains(',') || path.starts_with('/') || path.starts_with('-') {
-        return Err("Geçersiz yol".into());
+        return Err(errors::FOLDER_INVALID.into());
     }
     let p = Path::new(path);
     if !p.is_absolute() {
-        return Err("Yol mutlak olmalı".into());
+        return Err(errors::FOLDER_RELATIVE.into());
+    }
+    let root = drive_root(path).ok_or(errors::FOLDER_INVALID)?;
+    match drive_kind(Path::new(&root)) {
+        DriveKind::Local => {}
+        DriveKind::Remote => return Err(errors::FOLDER_NETWORK.into()),
+        DriveKind::Other => return Err(errors::FOLDER_INVALID.into()),
+    }
+    // `is_symlink` is true for symlinks and junctions (name surrogates), not
+    // for cloud placeholders such as OneDrive folders.
+    if p.ancestors().any(|a| std::fs::symlink_metadata(a).is_ok_and(|m| m.file_type().is_symlink())) {
+        return Err(errors::FOLDER_INVALID.into());
     }
     if !p.is_dir() {
-        return Err("Yol var olan bir klasör değil".into());
+        return Err(errors::FOLDER_MISSING.into());
     }
     let mut s = p.as_os_str().to_os_string();
     if !path.ends_with('\\') {
         s.push("\\");
     }
     Ok(PathBuf::from(s))
+}
+
+/// `X:\` of an absolute, non-UNC Windows path, or None. (On a non-Windows
+/// host, tests only, an absolute POSIX path has the root `/`.)
+fn drive_root(path: &str) -> Option<String> {
+    let b = path.as_bytes();
+    if b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'\\' {
+        return Some(format!("{}\\", &path[..2]));
+    }
+    #[cfg(not(windows))]
+    if path.starts_with('/') {
+        return Some("/".into());
+    }
+    None
 }
 
 #[tauri::command(async)]
@@ -288,12 +464,43 @@ pub async fn get_session_detail(
     use tauri::Manager;
     tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().get_session_detail(&session_id))
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| errors::with(errors::TASK_FAILED, e))
+}
+
+/// Content search on the blocking pool (it streams every transcript).
+/// Both arguments are untrusted: the query is validated (2..=200 chars), the
+/// generation is only compared.
+#[tauri::command]
+pub async fn search_history(app: tauri::AppHandle, query: String, generation: u32) -> Result<SearchOutcome, String> {
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().search_history(&query, generation))
+        .await
+        .map_err(|e| errors::with(errors::TASK_FAILED, e))?
+}
+
+/// Stops a running content search (no arguments; it only bumps the
+/// generation counter).
+#[tauri::command]
+pub fn cancel_search(state: tauri::State<'_, AppState>) {
+    state.cancel_search();
 }
 
 #[tauri::command(async)]
 pub fn get_history(state: tauri::State<'_, AppState>) -> HistoryView {
     state.get_history()
+}
+
+/// "Sekmeye git" for a session in a Windows Terminal tab: brings its window
+/// forward and selects the tab (best effort, Win32 + UI Automation on the
+/// blocking pool). Only the id comes from the UI. Ok(Some(note code)) when the
+/// window was focused but no single tab could be selected.
+#[tauri::command]
+pub async fn focus_session_tab(app: tauri::AppHandle, session_id: String) -> Result<Option<String>, String> {
+    use tauri::Manager;
+    let (pid, name) = app.state::<AppState>().focus_target(&session_id)?;
+    tauri::async_runtime::spawn_blocking(move || crate::platform::focus_session_tab(pid, &name))
+        .await
+        .map_err(|e| errors::with(errors::TASK_FAILED, e))?
 }
 
 #[tauri::command(async)]
@@ -322,8 +529,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let real = dir.path().to_string_lossy().into_owned();
         // An existing directory that no session uses is refused.
-        assert!(validate_open_folder(&real, &["D:\\baska".to_string()]).is_err());
-        assert!(validate_open_folder("", &[String::new()]).is_err());
+        assert_eq!(validate_open_folder(&real, &["D:\\baska".to_string()]).unwrap_err(), errors::FOLDER_UNKNOWN);
+        assert_eq!(validate_open_folder("", &[String::new()]).unwrap_err(), errors::FOLDER_UNKNOWN);
         // Known and existing is accepted.
         assert!(validate_open_folder(&real, std::slice::from_ref(&real)).is_ok());
     }
@@ -333,17 +540,70 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let real = dir.path().to_string_lossy().into_owned();
         // Each is listed as "known", so only the hardening rules can reject.
-        for bad in [
-            r"\\sunucu\paylasim".to_string(),
-            "//sunucu/paylasim".to_string(),
-            "/windows".to_string(),
-            "-Ac".to_string(),
-            r"bagil\yol".to_string(),
-            format!("{real},/select"),
-            r"C:\a,b".to_string(),
+        for (bad, code) in [
+            (r"\\sunucu\paylasim".to_string(), errors::FOLDER_NETWORK),
+            ("//sunucu/paylasim".to_string(), errors::FOLDER_NETWORK),
+            ("/windows".to_string(), errors::FOLDER_INVALID),
+            ("-Ac".to_string(), errors::FOLDER_INVALID),
+            (r"bagil\yol".to_string(), errors::FOLDER_RELATIVE),
+            (format!("{real},/select"), errors::FOLDER_INVALID),
+            (r"C:\a,b".to_string(), errors::FOLDER_INVALID),
+            (format!(r"{real}\yok"), errors::FOLDER_MISSING),
         ] {
-            assert!(validate_open_folder(&bad, std::slice::from_ref(&bad)).is_err(), "should reject {bad}");
+            assert_eq!(validate_open_folder(&bad, std::slice::from_ref(&bad)).unwrap_err(), code, "should reject {bad}");
         }
+    }
+
+    #[test]
+    fn open_folder_only_on_local_fixed_or_removable_drives() {
+        use crate::platform::DriveKind;
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().to_string_lossy().into_owned();
+        let known = std::slice::from_ref(&real);
+        assert!(validate_open_folder_on(&real, known, |_| DriveKind::Local).is_ok());
+        assert_eq!(validate_open_folder_on(&real, known, |_| DriveKind::Remote).unwrap_err(), errors::FOLDER_NETWORK);
+        assert_eq!(validate_open_folder_on(&real, known, |_| DriveKind::Other).unwrap_err(), errors::FOLDER_INVALID);
+        // The probe is asked about the drive root, before the folder is touched.
+        let asked = std::cell::RefCell::new(None);
+        let missing = format!(r"{real}\yok");
+        let _ = validate_open_folder_on(&missing, std::slice::from_ref(&missing), |r| {
+            *asked.borrow_mut() = Some(r.to_path_buf());
+            DriveKind::Remote
+        });
+        assert_eq!(asked.into_inner().unwrap(), PathBuf::from(&real[..3]));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn temp_folder_is_on_a_local_drive() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().to_string_lossy().into_owned();
+        assert_eq!(crate::platform::drive_kind(Path::new(&real[..3])), crate::platform::DriveKind::Local);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn open_folder_rejects_a_junction_anywhere_on_the_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("hedef");
+        fs::create_dir_all(target.join("alt")).unwrap();
+        let link = dir.path().join("baglanti");
+        let made = std::process::Command::new("cmd.exe")
+            .args(["/c", "mklink", "/J"])
+            .arg(&link)
+            .arg(&target)
+            .output()
+            .is_ok_and(|o| o.status.success());
+        if !made {
+            eprintln!("junction could not be created here; skipping");
+            return;
+        }
+        for bad in [link.clone(), link.join("alt")] {
+            let p = bad.to_string_lossy().into_owned();
+            assert_eq!(validate_open_folder(&p, std::slice::from_ref(&p)).unwrap_err(), errors::FOLDER_INVALID, "{p}");
+        }
+        let ok = target.join("alt").to_string_lossy().into_owned();
+        assert!(validate_open_folder(&ok, std::slice::from_ref(&ok)).is_ok());
     }
 
     #[test]
@@ -404,6 +664,13 @@ mod tests {
         let one = hv.rows[0].summary.as_ref().unwrap().cost_usd;
         assert!(one > 0.0);
         assert!((hv.today_cost - 2.0 * one).abs() < 1e-9, "{} vs 2 x {one}", hv.today_cost);
+        // The live session's per-day cost comes along for the charts, with its folder and model.
+        assert_eq!(hv.live.len(), 1);
+        let live = &hv.live[0];
+        assert_eq!((live.session_id.as_str(), live.cwd.as_str()), (LIVE_ID, r"C:\demo"));
+        assert_eq!(live.model.as_deref(), Some("claude-sonnet-5-5"));
+        let live_total: f64 = live.cost_by_day.values().sum();
+        assert!((live_total - one).abs() < 1e-9);
     }
 
     #[test]
@@ -442,6 +709,219 @@ mod tests {
         assert!(!state.save_history_if_dirty().unwrap(), "unchanged -> no write");
         state.index_step(Duration::from_secs(5)); // no work left
         assert!(!state.save_history_if_dirty().unwrap());
+    }
+
+    #[test]
+    fn live_session_never_served_as_closed_when_registry_read_misses() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, probe) = two_sessions(tmp.path(), 5);
+        let reg = claude.join("sessions").join("4242.json");
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(probe));
+        assert_eq!(state.get_snapshot().sessions[0].session_id, LIVE_ID);
+        // Claude Code is rewriting its registry file at this very moment.
+        fs::write(&reg, "").unwrap();
+        let d = state.get_session_detail(LIVE_ID).unwrap();
+        assert_eq!(d.card.pid, 4242, "still live per the latest snapshot");
+        assert_eq!(d.tokens.output, 5, "stats from the live state, not empty");
+        assert_eq!(d.card.model.as_deref(), Some("claude-sonnet-5-5"));
+        // The registry miss is debounced (process still alive): kept for 2 ticks.
+        for _ in 0..2 {
+            state.refresh();
+            assert_eq!(state.get_session_detail(LIVE_ID).unwrap().card.pid, 4242);
+        }
+        // Once the miss persists, the closed path takes over.
+        state.refresh();
+        assert_eq!(state.get_session_detail(LIVE_ID).unwrap().card.pid, 0);
+    }
+
+    #[test]
+    fn focus_target_takes_pid_and_name_from_the_live_snapshot() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, probe) = two_sessions(tmp.path(), 5);
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(probe));
+        let (pid, name) = state.focus_target(LIVE_ID).unwrap();
+        assert_eq!(pid, 4242);
+        assert_eq!(name, "demo", "card name (cwd folder fallback)");
+        assert_eq!(state.focus_target(CLOSED_ID).unwrap_err(), errors::SESSION_NOT_LIVE);
+        for bad in ["", "../x", "11111111-2222-4333-8444-55555555555G", "x; calc", "AAAAAAAA-2222-4333-8444-555555555555"] {
+            assert_eq!(state.focus_target(bad).unwrap_err(), errors::SESSION_INVALID, "{bad}");
+        }
+    }
+
+    const OK_ID: &str = "bbbbbbbb-2222-4333-8444-555555555555";
+    const UNC_ID: &str = "cccccccc-2222-4333-8444-555555555555";
+    const REL_ID: &str = "dddddddd-2222-4333-8444-555555555555";
+    const UNKNOWN_ID: &str = "eeeeeeee-2222-4333-8444-555555555555";
+    const MULTI_ID: &str = "ffffffff-2222-4333-8444-555555555555";
+    const MISMATCH_ID: &str = "abababab-2222-4333-8444-555555555555";
+
+    /// `<dir>/<id>.jsonl` with one user line per cwd, in order.
+    fn write_session(dir: &Path, id: &str, cwds: &[&str]) {
+        fs::create_dir_all(dir).unwrap();
+        let ts = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let body: String = cwds
+            .iter()
+            .map(|c| {
+                let cwd = serde_json::to_string(c).unwrap();
+                format!(r#"{{"type":"user","timestamp":"{ts}","cwd":{cwd},"message":{{"content":"x"}}}}"#) + "\n"
+            })
+            .collect();
+        fs::write(dir.join(format!("{id}.jsonl")), body).unwrap();
+    }
+
+    /// Live LIVE_ID plus closed sessions:
+    /// - OK_ID in the project folder of an existing `work` folder;
+    /// - UNC_ID / REL_ID naming a network / relative path;
+    /// - MULTI_ID started in `work`, later moved to the existing `work\other`
+    ///   (the multi-cwd case from the audit's needs-validation note);
+    /// - MISMATCH_ID whose first cwd is `work` but which sits in `C--demo`.
+    fn resume_env(tmp: &Path) -> (AppState, PathBuf) {
+        let (claude, probe) = two_sessions(tmp, 5);
+        let projects = claude.join("projects");
+        let demo = projects.join("C--demo");
+        let work = tmp.join("is klasoru");
+        let other = work.join("other");
+        fs::create_dir_all(&other).unwrap();
+        let (w, o) = (work.to_string_lossy().into_owned(), other.to_string_lossy().into_owned());
+        let home = projects.join(station_core::locate::project_dir_name(&w));
+        write_session(&home, OK_ID, &[&w]);
+        write_session(&home, MULTI_ID, &[&w, &o, &o]);
+        write_session(&demo, UNC_ID, &[r"\\sunucu\pay"]);
+        write_session(&demo, REL_ID, &[r"bagil\yol"]);
+        write_session(&demo, MISMATCH_ID, &[&w]);
+        (AppState::new(claude, tmp.join("c.json"), Box::new(probe)), work)
+    }
+
+    fn indexed(state: &AppState) {
+        state.rescan_history();
+        while state.index_step(Duration::from_secs(5)) {}
+    }
+
+    #[test]
+    fn resume_rejects_ids_that_are_not_lowercase_uuids() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, _) = resume_env(tmp.path());
+        indexed(&state);
+        for bad in ["", "../x", "BBBBBBBB-2222-4333-8444-555555555555", "bbbbbbbb-2222-4333-8444-55555555555", "x; calc"] {
+            assert_eq!(state.resume_target(bad).unwrap_err(), errors::SESSION_INVALID, "{bad}");
+        }
+    }
+
+    #[test]
+    fn resume_rejects_unknown_live_unc_and_relative() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, _) = resume_env(tmp.path());
+        indexed(&state);
+        assert_eq!(state.resume_target(UNKNOWN_ID).unwrap_err(), errors::SESSION_UNKNOWN);
+        assert_eq!(state.resume_target(LIVE_ID).unwrap_err(), errors::SESSION_LIVE);
+        assert_eq!(state.resume_target(UNC_ID).unwrap_err(), "resume_folder_mismatch:folder_network");
+        assert_eq!(state.resume_target(REL_ID).unwrap_err(), "resume_folder_mismatch:folder_relative");
+    }
+
+    fn same_dir(dir: &Path, want: &Path) {
+        assert_eq!(dir.to_string_lossy().trim_end_matches('\\'), want.to_string_lossy());
+    }
+
+    #[test]
+    fn resume_uses_the_first_cwd_when_the_session_moved_later() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, work) = resume_env(tmp.path());
+        indexed(&state);
+        let (_, dir) = state.resume_target(MULTI_ID).unwrap();
+        same_dir(&dir, &work);
+    }
+
+    #[test]
+    fn resume_refuses_a_first_cwd_outside_the_project_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, _) = resume_env(tmp.path());
+        indexed(&state);
+        assert_eq!(state.resume_target(MISMATCH_ID).unwrap_err(), errors::RESUME_FOLDER_MISMATCH);
+    }
+
+    #[test]
+    fn resume_binding_also_applies_to_the_closed_detail_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, work) = resume_env(tmp.path());
+        // Not indexed: the cwd comes from the cached closed detail.
+        state.get_session_detail(MULTI_ID).unwrap();
+        let (_, dir) = state.resume_target(MULTI_ID).unwrap();
+        same_dir(&dir, &work);
+        state.get_session_detail(MISMATCH_ID).unwrap();
+        assert_eq!(state.resume_target(MISMATCH_ID).unwrap_err(), errors::RESUME_FOLDER_MISMATCH);
+    }
+
+    #[test]
+    fn resume_binding_applies_to_a_tampered_history_cache() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, work) = resume_env(tmp.path());
+        indexed(&state);
+        assert!(state.save_history_if_dirty().unwrap());
+        let cache = tmp.path().join("c.json");
+        // Someone rewrites the cached first cwd to another existing folder.
+        let other = work.join("other").to_string_lossy().into_owned();
+        let mut v: serde_json::Value = serde_json::from_str(&fs::read_to_string(&cache).unwrap()).unwrap();
+        for e in v["entries"].as_array_mut().unwrap() {
+            if e["path"].as_str().unwrap().contains(OK_ID) {
+                e["summary"]["firstCwd"] = other.clone().into();
+                e["summary"]["cwd"] = other.clone().into();
+            }
+        }
+        fs::write(&cache, v.to_string()).unwrap();
+        let (claude, probe) = (tmp.path().join("claude"), FakeProbe(HashMap::from([(4242, 777)])));
+        let reloaded = AppState::new(claude, cache, Box::new(probe));
+        assert_eq!(reloaded.get_history().rows.iter().find(|r| r.session_id == OK_ID).unwrap().cwd.as_deref(), Some(&*other));
+        assert_eq!(reloaded.resume_target(OK_ID).unwrap_err(), errors::RESUME_FOLDER_MISMATCH);
+    }
+
+    #[test]
+    fn resume_cwd_comes_from_history_row() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, work) = resume_env(tmp.path());
+        indexed(&state);
+        let (id, dir) = state.resume_target(OK_ID).unwrap();
+        assert_eq!(id, OK_ID);
+        assert_eq!(dir.to_string_lossy().trim_end_matches('\\'), work.to_string_lossy());
+    }
+
+    #[test]
+    fn resume_cwd_comes_from_closed_detail_before_indexing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, work) = resume_env(tmp.path());
+        assert!(state.resume_target(OK_ID).is_err(), "nothing known yet");
+        assert_eq!(state.get_session_detail(OK_ID).unwrap().card.pid, 0);
+        assert_eq!(state.get_session_detail(OK_ID).unwrap().card.pid, 0);
+        let (_, dir) = state.resume_target(OK_ID).unwrap();
+        assert_eq!(dir.to_string_lossy().trim_end_matches('\\'), work.to_string_lossy());
+    }
+
+    #[test]
+    fn resume_happy_path_spawns_in_the_session_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, work) = resume_env(tmp.path());
+        indexed(&state);
+        let (id, dir) = state.resume_target(OK_ID).unwrap();
+        // Same code path as pty_spawn_resume, with a stub program instead of powershell/claude.
+        let ptys = PtyManager::new();
+        let (tx, rx) = std::sync::mpsc::channel::<Option<Vec<u8>>>();
+        let tx2 = tx.clone();
+        let args = vec!["/c".to_string(), format!("cd & echo {id}")];
+        let info = ptys
+            .spawn_in(std::ffi::OsStr::new("cmd.exe"), &args, &dir, 500, 24, move |b| tx.send(Some(b.to_vec())).is_ok(), move |_| {
+                let _ = tx2.send(None);
+            })
+            .unwrap();
+        let mut text = String::new();
+        while let Some(b) = rx.recv_timeout(Duration::from_secs(20)).expect("timed out") {
+            text.push_str(&String::from_utf8_lossy(&b));
+            if text.contains("\x1b[6n") {
+                text = text.replace("\x1b[6n", "");
+                let _ = ptys.write(info.id, "\x1b[1;1R");
+            }
+        }
+        let flat: String = text.chars().filter(|c| *c != '\r' && *c != '\n').collect();
+        assert!(flat.contains(&*work.to_string_lossy()), "cwd not used: {text:?}");
+        assert!(flat.contains(OK_ID), "{text:?}");
     }
 
     #[test]
@@ -484,6 +964,70 @@ mod tests {
         // open_folder refuses anything that is not a known history/live cwd.
         assert!(state.open_folder("C:\\Windows").is_err());
     }
+
+    fn user_line(text: &str) -> String {
+        serde_json::json!({"type":"user","timestamp":"2026-11-02T10:00:00Z","message":{"content":text}}).to_string()
+    }
+
+    #[test]
+    fn search_history_validates_the_query_and_finds_live_and_closed_text() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, probe) = two_sessions(tmp.path(), 5);
+        let proj = claude.join("projects").join("C--demo");
+        fs::write(proj.join(format!("{CLOSED_ID}.jsonl")), user_line("Kalibrasyon ADC") + "\n").unwrap();
+        fs::write(proj.join(format!("{LIVE_ID}.jsonl")), user_line("ADC KALİBRASYONU") + "\n").unwrap();
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(probe));
+        assert_eq!(state.search_history("a", 1), Err(errors::SEARCH_QUERY_INVALID.into()));
+        assert_eq!(state.search_history(&"x".repeat(201), 1), Err(errors::SEARCH_QUERY_INVALID.into()));
+        let out = state.search_history("  kalibrasyon ", 2).unwrap();
+        let mut ids: Vec<&str> = out.hits.iter().map(|h| h.session_id.as_str()).collect();
+        ids.sort();
+        assert_eq!(ids, [LIVE_ID, CLOSED_ID]);
+        assert!(!out.cancelled);
+    }
+
+    #[test]
+    fn a_newer_search_generation_cancels_the_running_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, probe) = two_sessions(tmp.path(), 5);
+        let proj = claude.join("projects").join("C--demo");
+        // A large closed transcript so the first search is still running.
+        let body: String = (0..200_000).map(|i| user_line(&format!("satır {i}")) + "\n").collect();
+        fs::write(proj.join(format!("{CLOSED_ID}.jsonl")), body).unwrap();
+        let state = std::sync::Arc::new(AppState::new(claude, tmp.path().join("c.json"), Box::new(probe)));
+        let s1 = state.clone();
+        let first = std::thread::spawn(move || s1.search_history("bulunmayan metin", 1).unwrap());
+        // Wait until the first search has registered its generation.
+        while state.search_gen.load(Ordering::SeqCst) != 1 {
+            std::thread::yield_now();
+        }
+        let second = state.search_history("satır 5", 2).unwrap();
+        assert!(!second.cancelled);
+        assert!(!second.hits.is_empty());
+        assert!(first.join().unwrap().cancelled, "the older search stops");
+        // A stale generation arriving later still runs (last writer wins).
+        assert!(!state.search_history("satır 7", 1).unwrap().cancelled);
+    }
+
+    #[test]
+    fn cancel_search_stops_the_running_search_and_later_searches_still_run() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, probe) = two_sessions(tmp.path(), 5);
+        let proj = claude.join("projects").join("C--demo");
+        let body: String = (0..200_000).map(|i| user_line(&format!("satır {i}")) + "\n").collect();
+        fs::write(proj.join(format!("{CLOSED_ID}.jsonl")), body).unwrap();
+        let state = std::sync::Arc::new(AppState::new(claude, tmp.path().join("c.json"), Box::new(probe)));
+        let s1 = state.clone();
+        let first = std::thread::spawn(move || s1.search_history("bulunmayan metin", 7).unwrap());
+        while state.search_gen.load(Ordering::SeqCst) != 7 {
+            std::thread::yield_now();
+        }
+        state.cancel_search();
+        assert!(first.join().unwrap().cancelled, "the search stops after cancel_search");
+        // The same UI generation counter keeps working afterwards.
+        let next = state.search_history("satır 5", 8).unwrap();
+        assert!(!next.cancelled && !next.hits.is_empty());
+    }
 }
 
 // ---- terminals (ConPTY) ----------------------------------------------------
@@ -506,6 +1050,34 @@ pub fn pty_spawn(
         rows,
         // A failed send means the webview side is gone (e.g. reload); the
         // manager then kills the orphaned terminal.
+        move |b| on_output.send(b.to_vec()).is_ok(),
+        move |code| {
+            let _ = on_exit.send(code);
+        },
+    )
+}
+
+/// New terminal resuming a closed session: the UI sends only the session id;
+/// folder and command line are derived here (see `AppState::resume_target`).
+/// A session still held by the terminal that resumed it is refused with
+/// `session_resume_terminal_open:<terminal>` before the generic live check.
+#[tauri::command(async)]
+pub fn pty_spawn_resume(
+    app: tauri::State<'_, AppState>,
+    state: tauri::State<'_, PtyManager>,
+    session_id: String,
+    cols: u16,
+    rows: u16,
+    on_output: Channel<Vec<u8>>,
+    on_exit: Channel<i32>,
+) -> Result<PtyInfo, String> {
+    state.check_resume_terminal(&session_id)?;
+    let (id, cwd) = app.resume_target(&session_id)?;
+    state.spawn_resume(
+        &cwd,
+        &id,
+        cols,
+        rows,
         move |b| on_output.send(b.to_vec()).is_ok(),
         move |code| {
             let _ = on_exit.send(code);
@@ -536,4 +1108,53 @@ pub fn pty_kill(state: tauri::State<'_, PtyManager>, id: u32) -> Result<(), Stri
 #[tauri::command(async)]
 pub fn pty_list(state: tauri::State<'_, PtyManager>) -> Vec<PtyInfo> {
     state.list()
+}
+
+/// Opens a new PowerShell tab in Windows Terminal. Takes nothing from the UI:
+/// program and arguments are fixed (see `wt.rs`).
+#[tauri::command(async)]
+pub fn open_windows_terminal() -> Result<(), String> {
+    crate::wt::open()
+}
+
+#[cfg(test)]
+mod wt_command_tests {
+    #[test]
+    fn open_windows_terminal_takes_no_arguments() {
+        // Compile-time check: any parameter would change the fn type.
+        let _f: fn() -> Result<(), String> = super::open_windows_terminal;
+    }
+}
+
+// ---- settings, notifications, tray ------------------------------------------
+
+use crate::notifier::Notifier;
+use crate::settings::{Settings, SettingsStore};
+
+#[tauri::command(async)]
+pub fn get_settings(store: tauri::State<'_, SettingsStore>) -> Settings {
+    store.get()
+}
+
+/// Validated (unknown language refused), unknown keys ignored, missing keys
+/// defaulted; `trayNoticeShown` from the UI is ignored. Returns what is stored.
+#[tauri::command(async)]
+pub fn set_settings(store: tauri::State<'_, SettingsStore>, settings: Settings) -> Result<Settings, String> {
+    store.set_from_ui(settings)
+}
+
+/// The sessions the UI shows (the detail view's session, or the Claude
+/// sessions in the visible terminal panes; at most two, empty for any other
+/// view); their notifications are held back while the window is focused.
+/// Each id is validated; more than two are refused.
+#[tauri::command(async)]
+pub fn set_focus_context(notifier: tauri::State<'_, Notifier>, session_ids: Vec<String>) -> Result<(), String> {
+    notifier.set_focus(session_ids)
+}
+
+/// Window close with "minimize to tray" on: hides the window (terminals and
+/// monitoring keep running). Takes nothing from the UI.
+#[tauri::command(async)]
+pub fn hide_to_tray(app: tauri::AppHandle) -> Result<(), String> {
+    crate::notifier::hide_to_tray(&app)
 }

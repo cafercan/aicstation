@@ -1,22 +1,46 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { getHistory, getSnapshot, onSnapshot, type HistoryView, type Snapshot } from "./api";
+import {
+  getHistory, getSnapshot, hideToTray, onNavigate, onSnapshot, onTrayQuit, openWindowsTerminal, setFocusContext,
+  type HistoryView, type Snapshot,
+} from "./api";
 import Sidebar, { type View } from "./components/Sidebar";
 import StatusBar from "./components/StatusBar";
 import Dashboard from "./pages/Dashboard";
 import History from "./pages/History";
 import SessionDetailPage from "./pages/SessionDetail";
-import TerminalView from "./pages/TerminalView";
-import { statusClass } from "./format";
+import SettingsPage from "./pages/Settings";
+import { currentSettings, loadSettings, pushLang } from "./settings";
+import { statusKind } from "./format";
+import { useLang, useT } from "./i18n";
+import { useTheme } from "./theme";
 import {
-  allTerminalIds, closeTerminal, confirmClose, killOrphans, openTerminal, sessionsIn, terminalName,
+  allTerminalIds, closeTerminal, confirmClose, killOrphans, openResumeTerminal, openTerminal, sessionsIn,
+  terminalName,
   useTerminals,
 } from "./terminal/store";
 import "./app.css";
+import "./features.css";
+import { splitAfterClose, type Split } from "./terminal/split";
+import { Overlays, TerminalArea, useShortcuts, useSplitCleanup, type Overlay } from "./workspace";
 
 const EMPTY: Snapshot = { sessions: [], runningAgents: 0, waitingCount: 0 };
 
+/** Claude sessions inside the shown terminals, in pane order, without repeats (at most two). */
+function focusSessions(ids: number[], terminals: ReturnType<typeof useTerminals>, sessions: Snapshot["sessions"]): string[] {
+  const out: string[] = [];
+  for (const id of ids) {
+    const entry = terminals.find((t) => t.id === id);
+    const s = entry ? sessionsIn(entry, sessions)[0]?.sessionId : undefined;
+    if (s && !out.includes(s)) out.push(s);
+  }
+  return out.slice(0, 2);
+}
+
 export default function App() {
+  // Language and theme changes re-render the whole tree (labels, inline SVG colors).
+  useTheme();
+  const t = useT();
   const [view, setView] = useState<View>("dashboard");
   const [snapshot, setSnapshot] = useState<Snapshot>(EMPTY);
   const [history, setHistory] = useState<HistoryView | null>(null);
@@ -40,58 +64,111 @@ export default function App() {
   useEffect(() => { void killOrphans(); }, []);
 
   const terminals = useTerminals();
+  const [split, setSplit] = useState<Split | null>(null);
+  const [overlay, setOverlay] = useState<Overlay>(null);
+  useSplitCleanup(terminals, split, setSplit, setView);
+  const splitRef = useRef(split);
+  splitRef.current = split;
   const snapRef = useRef(snapshot);
   snapRef.current = snapshot;
+
+  // Settings live in the backend; it also needs the UI language (toasts, tray).
+  const lang = useLang();
+  useEffect(() => { void loadSettings(); }, []);
+  useEffect(() => { pushLang(lang).catch(() => {}); }, [lang]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     let alive = true;
+    /** Real exit (window close without tray, or "Quit" in the tray menu). */
+    const exitApp = () => {
+      if (!confirmClose(allTerminalIds(), snapRef.current.sessions)) return;
+      allTerminalIds().forEach((id) => { void closeTerminal(id); });
+      // Destroy explicitly so a rejected destroy is logged, not swallowed.
+      getCurrentWindow().destroy().catch((err) => console.error("Pencere kapatılamadı:", err));
+    };
+    const unlistens: Promise<() => void>[] = [onTrayQuit(exitApp)];
     try {
-      getCurrentWindow()
-        .onCloseRequested((e) => {
-          // Destroy explicitly so a rejected destroy is logged, not swallowed.
-          e.preventDefault();
-          if (!confirmClose(allTerminalIds(), snapRef.current.sessions)) return;
-          allTerminalIds().forEach((id) => { void closeTerminal(id); });
-          getCurrentWindow().destroy().catch((err) => console.error("Pencere kapatılamadı:", err));
-        })
-        .then((u) => { if (alive) unlisten = u; else u(); })
-        .catch(() => {});
+      unlistens.push(getCurrentWindow().onCloseRequested((e) => {
+        e.preventDefault();
+        // Until the settings have loaded, the default (minimize to tray) applies.
+        if (!(currentSettings()?.closeToTray ?? true)) return exitApp();
+        hideToTray().catch((err) => { console.error("Tepsiye küçültülemedi:", err); exitApp(); });
+      }));
     } catch { /* not running inside Tauri */ }
+    const all = Promise.all(unlistens);
+    all.then((us) => { if (alive) unlisten = () => us.forEach((u) => u()); else us.forEach((u) => u()); })
+      .catch(() => {});
+    return () => { alive = false; unlisten?.(); };
+  }, []);
+
+  // Tray menu and toast clicks open a session's detail or the dashboard.
+  useEffect(() => {
+    let alive = true;
+    let unlisten: (() => void) | undefined;
+    onNavigate((id) => setView(id ? { session: id } : "dashboard"))
+      .then((u) => { if (alive) unlisten = u; else u(); })
+      .catch(() => {});
     return () => { alive = false; unlisten?.(); };
   }, []);
 
   const onNew = useCallback(() => {
     openTerminal().then((t) => setView({ terminal: t.id })).catch(() => {});
   }, []);
+  /** Rejections reach the page, which shows them inline. */
+  const onResume = useCallback((sessionId: string, name: string) =>
+    openResumeTerminal(sessionId, name).then((t) => setView({ terminal: t.id })), []);
   const onClose = useCallback((id: number) => {
     if (!confirmClose([id], snapRef.current.sessions)) return;
-    setView((v) => (typeof v === "object" && "terminal" in v && v.terminal === id ? "dashboard" : v));
+    // Closing a split pane leaves the other pane on screen.
+    const other = splitAfterClose(splitRef.current, id).show;
+    setView((v) => (typeof v === "object" && "terminal" in v && v.terminal === id ? (other !== null ? { terminal: other } : "dashboard") : v));
     void closeTerminal(id);
   }, []);
 
   const termId = typeof view === "object" && "terminal" in view ? view.terminal : null;
+  const splitShown = split !== null && (termId === split.left || termId === split.right);
   const sideTerms = terminals.map((t) => {
     const inside = sessionsIn(t, snapshot.sessions)[0];
-    return { id: t.id, label: terminalName(t, snapshot.sessions), status: inside ? statusClass(inside.status) : null };
+    return {
+      id: t.id, label: terminalName(t, snapshot.sessions), status: inside ? statusKind(inside.status, inside.pid) : null,
+      split: splitShown ? (t.id === split.left ? "left" as const : t.id === split.right ? "right" as const : undefined) : undefined,
+    };
   });
+  const area = {
+    terminals, labels: new Map(sideTerms.map((s) => [s.id, s.label])), termId, split, setSplit, setView,
+    newTerminal: () => openTerminal().then((t) => t.id),
+  };
+  const shortcuts = { ...area, sessions: snapshot.sessions, overlay, setOverlay, onNew, onClose };
+  useShortcuts(shortcuts);
 
   const selectedId = typeof view === "object" && "session" in view ? view.session : null;
+  // The sessions on screen (the detail view's, or the Claude sessions in the
+  // visible terminal panes, both panes of a shown split): the backend holds
+  // back their notifications while the window is focused.
+  const shownTerms = splitShown ? [split.left, split.right] : termId !== null ? [termId] : [];
+  const focusIds = selectedId ? [selectedId] : focusSessions(shownTerms, terminals, snapshot.sessions);
+  const focusKey = focusIds.join("\n");
+  useEffect(() => { setFocusContext(focusKey ? focusKey.split("\n") : []).catch(() => {}); }, [focusKey]);
 
   let page;
   if (view === "dashboard") {
     page = <Dashboard snapshot={snapshot} history={history} now={now}
-      onOpen={(id) => setView({ session: id })} />;
+      onOpen={(id) => setView({ session: id })} onTerminal={(id) => setView({ terminal: id })} />;
   } else if (view === "history") {
-    page = <History onOpen={(id) => setView({ session: id })} />;
+    page = <History onOpen={(id) => setView({ session: id })} onResume={onResume}
+      onTerminal={(id) => setView({ terminal: id })} />;
+  } else if (view === "settings") {
+    page = <SettingsPage />;
   } else if ("session" in view) {
     page = <SessionDetailPage key={view.session} sessionId={view.session}
+      live={snapshot.sessions.some((s) => s.sessionId === view.session)} onResume={onResume}
       onBack={() => setView("dashboard")} onTerminal={(id) => setView({ terminal: id })} />;
   } else if (!terminals.some((t) => t.id === termId)) {
     page = (
       <div className="empty">
-        <p>Terminal bulunamadı.</p>
-        <button onClick={() => setView("dashboard")}>← Dashboard</button>
+        <p>{t("app.terminalMissing")}</p>
+        <button onClick={() => setView("dashboard")}>{t("app.backToDashboard")}</button>
       </div>
     );
   }
@@ -99,13 +176,15 @@ export default function App() {
   return (
     <div className="app">
       <div className="body">
-        <Sidebar view={view} terminals={sideTerms} onSelect={setView} onNew={onNew} onClose={onClose} />
+        <Sidebar view={view} terminals={sideTerms} onSelect={setView} onNew={onNew} onClose={onClose}
+          onOpenWt={openWindowsTerminal} />
         <main className="main">
           {page}
-          {terminals.map((t) => <TerminalView key={t.id} entry={t} visible={t.id === termId} />)}
+          <TerminalArea {...area} />
         </main>
       </div>
       <StatusBar sessions={snapshot.sessions} selectedId={selectedId} />
+      <Overlays {...shortcuts} />
     </div>
   );
 }

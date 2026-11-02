@@ -17,32 +17,39 @@ let dataCb: (d: string) => void = () => {};
 vi.mock("@xterm/xterm", () => ({
   Terminal: class {
     cols = 80; rows = 24;
-    constructor(public opts: unknown) {}
+    addons: unknown[] = [];
+    unicode = { activeVersion: "6" };
+    options: Record<string, unknown>;
+    constructor(public opts: Record<string, unknown>) { this.options = { ...opts }; }
     onData(cb: (d: string) => void) { dataCb = cb; return { dispose() {} }; }
     write(d: unknown) { writes.push(d); }
     dispose() {}
-    loadAddon() {}
+    loadAddon(a: unknown) { this.addons.push(a); }
     open() {}
   },
 }));
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: class { fit() {} } }));
+vi.mock("@xterm/addon-unicode11", () => ({ Unicode11Addon: class { kind = "unicode11"; } }));
+vi.mock("@xterm/addon-search", () => ({ SearchAddon: class { kind = "search"; } }));
 
-import { ubuntuTheme, terminalFont } from "./theme";
+import { ubuntuTheme, terminalFont, renderOptions } from "./theme";
 import {
-  confirmClose, getTerminals, killOrphans, openTerminal, resetTerminals, terminalForPid, terminalName,
+  confirmClose, getTerminals, killOrphans, openResumeTerminal, openTerminal, setFontSize, terminalForPid, terminalName,
 } from "./store";
+import { resetUiState } from "../testing/reset";
 import type { SessionCard } from "../api";
+import { setLang } from "../i18n";
 
 function card(over: Partial<SessionCard>): SessionCard {
   return {
     sessionId: "s", pid: 1, parentPid: null, name: "demo", cwd: "C:/x", status: "idle",
     waitingFor: null, model: null, contextPct: null, costUsd: 0, agentsTotal: 0,
-    agentsFinished: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 0, gitBranch: null, ...over,
+    agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 0, gitBranch: null, hostKind: "other", ...over,
   };
 }
 
 beforeEach(() => {
-  resetTerminals();
+  resetUiState();
   FakeChannel.all = [];
   writes.length = 0;
   invoke.mockReset();
@@ -58,7 +65,40 @@ test("tema spec değerleriyle birebir", () => {
     brightBlue: "#8FBEFF", brightMagenta: "#AD7FA8", brightCyan: "#34E2E2", brightWhite: "#EEEEEC",
   });
   expect(Object.keys(ubuntuTheme)).toHaveLength(20);
-  expect(terminalFont).toEqual({ fontFamily: "Consolas", fontSize: 13 });
+  expect(terminalFont).toEqual({
+    fontFamily: '"Cascadia Mono", "Cascadia Code", Consolas, monospace', fontSize: 13,
+    fontWeight: 350, fontWeightBold: "bold",
+  });
+});
+
+test("render ayarları: hücre ızgarası sıkı, renkler değiştirilmez", () => {
+  expect(renderOptions).toEqual({
+    customGlyphs: true, lineHeight: 1, letterSpacing: 0,
+    drawBoldTextInBrightColors: false, minimumContrastRatio: 1, allowTransparency: false,
+  });
+});
+
+test("xterm seçenekleri: 10.000 satır geçmiş, unicode 11 genişlikleri, arama eklentisi", async () => {
+  const t = await openTerminal();
+  const term = t.term as unknown as {
+    opts: Record<string, unknown>; unicode: { activeVersion: string }; addons: { kind?: string }[];
+  };
+  expect(term.opts).toMatchObject({
+    ...terminalFont, ...renderOptions, theme: ubuntuTheme, scrollback: 10000, allowProposedApi: true,
+  });
+  expect(term.unicode.activeVersion).toBe("11");
+  expect(term.addons.map((a) => a.kind).filter(Boolean)).toEqual(["unicode11", "search"]);
+  expect((t.search as unknown as { kind: string }).kind).toBe("search");
+});
+
+test("setFontSize: 8–32 aralığında uygular, yeniden sığdırır ve pty_resize gönderir", async () => {
+  const t = await openTerminal();
+  const opts = (t.term as unknown as { options: { fontSize: number } }).options;
+  expect(setFontSize(t, 40)).toBe(32);
+  expect(opts.fontSize).toBe(32);
+  expect(invoke).toHaveBeenCalledWith("pty_resize", { id: 7, cols: 80, rows: 24 });
+  expect(setFontSize(t, 2)).toBe(8);
+  expect(opts.fontSize).toBe(8);
 });
 
 test("terminal adı: içindeki oturumun adı, yoksa \"PowerShell N\"", async () => {
@@ -96,6 +136,10 @@ test("kapatma: içinde herhangi bir Claude oturumu varsa onay ister", async () =
   expect(ask).toHaveBeenCalledTimes(3);
   ask.mockReturnValue(true);
   expect(confirmClose([7], [card({ parentPid: 4242, status: "busy" })])).toBe(true);
+  expect(ask).toHaveBeenLastCalledWith("Terminalde açık 1 Claude oturumu var (demo). Yine de kapatılsın mı?");
+  setLang("en");
+  confirmClose([7], [card({ parentPid: 4242 }), card({ parentPid: 4242, name: "iki" })]);
+  expect(ask).toHaveBeenLastCalledWith("The terminal has 2 open Claude sessions (demo, iki). Close it anyway?");
 });
 
 test("süreç çıkınca terminal menüden düşer", async () => {
@@ -152,4 +196,44 @@ test("exit_before_spawn_resolves_removes_terminal", async () => {
   await openTerminal();
   expect(getTerminals()).toHaveLength(0);
   expect(terminalForPid(55)).toBeUndefined();
+});
+
+test("devam terminali: yalnız oturum kimliği gönderilir, ad oturum adı, aynı yaşam döngüsü", async () => {
+  invoke.mockImplementation(async (cmd: string) => {
+    if (cmd !== "pty_spawn_resume") return undefined;
+    dataCb("\x1b[1;1R"); // answered before the spawn resolves: queued
+    return { id: 11, pid: 99 };
+  });
+  const t = await openResumeTerminal("f00dcafe-0000-4000-8000-000000000001", "projem");
+  const call = invoke.mock.calls.find((c) => c[0] === "pty_spawn_resume")!;
+  expect(Object.keys(call[1] as object).sort()).toEqual(["cols", "onExit", "onOutput", "rows", "sessionId"]);
+  expect(call[1]).toMatchObject({ sessionId: "f00dcafe-0000-4000-8000-000000000001", cols: 80, rows: 24 });
+  expect(invoke).toHaveBeenCalledWith("pty_write", { id: 11, data: "\x1b[1;1R" });
+  expect(getTerminals().map((x) => x.id)).toEqual([11]);
+  expect(terminalName(t, [])).toBe("projem");
+  // Claude inside reports its own name once it is live.
+  expect(terminalName(t, [card({ parentPid: 99, name: "canli" })])).toBe("canli");
+  const term = t.term as unknown as { opts: Record<string, unknown>; addons: { kind?: string }[] };
+  expect(term.opts).toMatchObject({ theme: ubuntuTheme, scrollback: 10000 });
+  expect(term.addons.map((a) => a.kind).filter(Boolean)).toEqual(["unicode11", "search"]);
+  FakeChannel.all[1].onmessage(0 as never); // exit
+  expect(getTerminals()).toHaveLength(0);
+});
+
+test("devam terminali: ad yoksa \"Devam: <kısa id>\"; hata atılır ve terminal eklenmez", async () => {
+  invoke.mockImplementation(async (cmd: string) => (cmd === "pty_spawn_resume" ? { id: 12, pid: 5 } : undefined));
+  const t = await openResumeTerminal("f00dcafe-0000-4000-8000-000000000001");
+  expect(terminalName(t, [])).toBe("Devam: f00dcafe");
+  // The fallback title follows the language (key + params, not a frozen string).
+  setLang("en");
+  expect(terminalName(t, [])).toBe("Resume: f00dcafe");
+  setLang("az");
+  expect(terminalName(t, [])).toBe("Davam: f00dcafe");
+  setLang("tr");
+  invoke.mockImplementation(async (cmd: string) => {
+    if (cmd === "pty_spawn_resume") throw "session_live";
+    return undefined;
+  });
+  await expect(openResumeTerminal("f00dcafe-0000-4000-8000-000000000001", "x")).rejects.toBe("session_live");
+  expect(getTerminals().map((x) => x.id)).toEqual([12]);
 });

@@ -1,11 +1,19 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod alerts;
 mod commands;
+mod errors;
+mod native_text;
+mod notifier;
 mod platform;
 mod pty;
+mod settings;
+mod toast;
+mod tray;
+mod wt;
 
 use commands::AppState;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
-use pano_core::locate::claude_dir;
+use station_core::locate::claude_dir;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::time::{Duration, Instant};
@@ -20,9 +28,14 @@ const INDEX_BUDGET: Duration = Duration::from_millis(50);
 const INDEX_IDLE: Duration = Duration::from_secs(1);
 const MAX_INDEX_PANICS: u32 = 3;
 
+/// Refreshes, lets the resume holds follow the live set, emits, then runs
+/// the notifications and the tray off the same snapshot.
 fn emit_snapshot(app: &tauri::AppHandle) {
     let snap = app.state::<AppState>().refresh();
-    let _ = app.emit("snapshot", snap);
+    let live: std::collections::HashSet<String> = snap.sessions.iter().map(|s| s.session_id.clone()).collect();
+    app.state::<pty::PtyManager>().observe_live(&live);
+    let _ = app.emit("snapshot", &snap);
+    notifier::after_snapshot(app, &snap);
 }
 
 /// What the snapshot thread does next.
@@ -153,11 +166,85 @@ fn indexer_loop(app: tauri::AppHandle) {
     }
 }
 
+/// The dev server URL the webview may navigate to: only under `tauri dev`
+/// (`is_dev`, i.e. tauri's `custom-protocol` feature is off). `tauri build
+/// --debug` (debug-preview) loads the bundled assets like a release build, so
+/// `debug_assertions` alone must not open the dev origin.
+fn dev_origin(is_dev: bool, dev_url: Option<tauri::Url>) -> Option<tauri::Url> {
+    dev_url.filter(|_| is_dev)
+}
+
+/// `window.open` / `target=_blank` never open a window, whatever the URL.
+/// wry 0.57 on WebView2 already marks a new-window request handled (no
+/// window) when no handler is set; the explicit deny keeps that from
+/// depending on a runtime default (WebView2's own default is a popup that
+/// bypasses the navigation guard).
+fn new_window_allowed(_url: &tauri::Url) -> bool {
+    false
+}
+
+/// The app's own origin (`tauri://localhost`, `http(s)://tauri.localhost`)
+/// and, under `tauri dev`, the dev server's origin. Everything else is refused.
+fn navigation_allowed(url: &tauri::Url, dev: Option<&tauri::Url>) -> bool {
+    let app_origin = match url.scheme() {
+        "tauri" => url.host_str() == Some("localhost"),
+        "http" | "https" => url.host_str() == Some("tauri.localhost") && url.port().is_none(),
+        _ => false,
+    };
+    app_origin || dev.is_some_and(|d| url.origin() == d.origin())
+}
+
+/// Icon of the toasts (registered with the AppUserModelID).
+const TOAST_ICON: &[u8] = include_bytes!("../icons/64x64.png");
+
+/// Writes the toast icon into the app data dir when missing or different.
+fn toast_icon(data: &std::path::Path) -> Option<PathBuf> {
+    let p = data.join("toast-icon.png");
+    if std::fs::read(&p).ok().as_deref() != Some(TOAST_ICON) {
+        std::fs::write(&p, TOAST_ICON).ok()?;
+    }
+    Some(p)
+}
+
+/// Bundle identifier (tauri.conf.json); also names the single-instance objects.
+const APP_ID: &str = "com.cafercan.sessionstation";
+
+/// settings.json before Tauri runs: Tauri's app data dir on Windows is
+/// `%APPDATA%\<identifier>` (the roaming known folder). Only used to pick the
+/// message box language, so a wrong guess just means English.
+#[cfg(windows)]
+fn settings_path_guess() -> Option<PathBuf> {
+    let appdata = PathBuf::from(std::env::var_os("APPDATA")?);
+    appdata.is_absolute().then(|| appdata.join(APP_ID).join("settings.json"))
+}
+
 fn main() {
+    // A second launch brings the running instance forward and exits; when
+    // that instance does not answer, the user is told instead.
+    #[cfg(windows)]
+    let activation = match platform::single::acquire(APP_ID) {
+        platform::single::Instance::First(a) => a,
+        platform::single::Instance::Second { responded: true } => return,
+        platform::single::Instance::Second { responded: false } => {
+            let lang = settings_path_guess().and_then(|p| settings::stored_lang(&p));
+            platform::single::message_box("SessionStation", native_text::already_running(lang.as_deref()));
+            return;
+        }
+    };
     tauri::Builder::default()
-        .setup(|app| {
+        .setup(move |app| {
             let data = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data)?;
+            let settings = settings::SettingsStore::open(data.join("settings.json"));
+            let lang = settings.get().lang;
+            app.manage(settings);
+            app.manage(notifier::Notifier::default());
+            app.manage(tray::TrayState::default());
+            app.manage(toast::Toaster::new(
+                &app.config().identifier,
+                app.config().product_name.as_deref().unwrap_or("SessionStation"),
+                toast_icon(&data).as_deref(),
+            ));
             let dir = claude_dir();
             app.manage(AppState::new(
                 dir.clone(),
@@ -165,11 +252,55 @@ fn main() {
                 platform::probe(),
             ));
             app.manage(pty::PtyManager::new());
+            // The main window is built here (config has `create: false`) only
+            // to enable WebView2 clipboard-read access, so right-click paste
+            // via navigator.clipboard.readText works without a prompt. No
+            // clipboard plugin and no new IPC permission are involved. It is
+            // built after the state is managed (commands may run at once) and
+            // may only navigate within the app (it can read the clipboard).
+            let main_conf = app
+                .config()
+                .app
+                .windows
+                .iter()
+                .find(|w| w.label == "main")
+                .cloned()
+                .ok_or("main penceresi yapılandırmada yok")?;
+            let dev_url = dev_origin(tauri::is_dev(), app.config().build.dev_url.clone());
+            tauri::WebviewWindowBuilder::from_config(app.handle(), &main_conf)?
+                .enable_clipboard_access()
+                .on_navigation(move |url| navigation_allowed(url, dev_url.as_ref()))
+                .on_new_window(|url, _features| {
+                    if new_window_allowed(&url) {
+                        tauri::webview::NewWindowResponse::Allow
+                    } else {
+                        tauri::webview::NewWindowResponse::Deny
+                    }
+                })
+                .build()?;
+            tray::create(app.handle(), &lang)?;
+            #[cfg(windows)]
+            {
+                let handle = app.handle().clone();
+                activation.listen(move |ack| {
+                    // Answer from the event loop, so a hung UI does not count as alive.
+                    let h = handle.clone();
+                    let _ = handle.run_on_main_thread(move || {
+                        tray::show_main(&h);
+                        ack.done();
+                    });
+                });
+            }
             let handle = app.handle().clone();
             std::thread::spawn(move || snapshot_loop(handle, dir));
             let handle = app.handle().clone();
             std::thread::spawn(move || indexer_loop(handle));
             Ok(())
+        })
+        .on_window_event(|w, ev| {
+            if let (tauri::WindowEvent::Focused(f), "main") = (ev, w.label()) {
+                tray::on_main_focus(w.app_handle(), *f);
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_snapshot,
@@ -177,13 +308,22 @@ fn main() {
             commands::get_history,
             commands::open_folder,
             commands::pty_spawn,
+            commands::pty_spawn_resume,
             commands::pty_write,
             commands::pty_resize,
             commands::pty_kill,
-            commands::pty_list
+            commands::pty_list,
+            commands::open_windows_terminal,
+            commands::focus_session_tab,
+            commands::get_settings,
+            commands::set_settings,
+            commands::set_focus_context,
+            commands::hide_to_tray,
+            commands::search_history,
+            commands::cancel_search
         ])
         .build(tauri::generate_context!())
-        .expect("Claude Pano başlatılamadı")
+        .expect("SessionStation başlatılamadı")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 app.state::<pty::PtyManager>().kill_all();
@@ -195,6 +335,57 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn u(s: &str) -> tauri::Url {
+        tauri::Url::parse(s).unwrap()
+    }
+
+    #[test]
+    fn navigation_only_within_the_app() {
+        for ok in ["tauri://localhost/", "tauri://localhost/index.html", "http://tauri.localhost/", "https://tauri.localhost/x"] {
+            assert!(navigation_allowed(&u(ok), None), "{ok}");
+        }
+        for bad in [
+            "https://example.com/",
+            "http://tauri.localhost.example.com/",
+            "http://tauri.localhost:8080/",
+            "tauri://evil/",
+            "file:///C:/Windows/win.ini",
+            "http://localhost:1420/",
+            "javascript:alert(1)",
+        ] {
+            assert!(!navigation_allowed(&u(bad), None), "{bad}");
+        }
+        let dev = u("http://localhost:1420");
+        assert!(navigation_allowed(&u("http://localhost:1420/src/main.tsx"), Some(&dev)));
+        assert!(!navigation_allowed(&u("http://localhost:1421/"), Some(&dev)));
+    }
+
+    #[test]
+    fn dev_server_origin_only_under_tauri_dev() {
+        let dev = Some(u("http://localhost:1420"));
+        // `tauri dev`: the UI comes from the dev server.
+        assert_eq!(dev_origin(true, dev.clone()), dev);
+        // `tauri build` (release or --debug, e.g. debug-preview): bundled
+        // assets, so the dev origin is refused even with debug_assertions.
+        assert_eq!(dev_origin(false, dev), None);
+        assert_eq!(dev_origin(true, None), None);
+        assert!(!navigation_allowed(&u("http://localhost:1420/"), dev_origin(false, Some(u("http://localhost:1420"))).as_ref()));
+    }
+
+    #[test]
+    fn new_windows_are_never_opened() {
+        for url in [
+            "https://example.com/",
+            "tauri://localhost/",
+            "http://tauri.localhost/",
+            "http://localhost:1420/",
+            "about:blank",
+            "javascript:alert(1)",
+        ] {
+            assert!(!new_window_allowed(&u(url)), "{url}");
+        }
+    }
 
     #[test]
     fn loop_emits_when_tick_elapsed() {
