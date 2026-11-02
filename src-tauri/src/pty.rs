@@ -8,6 +8,7 @@ use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 
 pub const MAX_PTYS: usize = 32;
+pub const MAX_WRITE: usize = 64 * 1024;
 const MIN_DIM: u16 = 1;
 const MAX_DIM: u16 = 1000;
 
@@ -21,7 +22,7 @@ pub struct PtyInfo {
 struct Entry {
     pid: u32,
     master: Box<dyn MasterPty + Send>,
-    writer: Box<dyn Write + Send>,
+    writer: Arc<Mutex<Box<dyn Write + Send>>>,
     killer: Box<dyn ChildKiller + Send + Sync>,
 }
 
@@ -58,7 +59,7 @@ impl PtyManager {
         Self::default()
     }
 
-    /// The only shell the UI can start: `powershell.exe -NoLogo` in the home dir.
+    /// The only shell the UI can start: `powershell.exe -NoLogo` (absolute path) in the home dir.
     pub fn spawn_shell(
         &self,
         cols: u16,
@@ -66,7 +67,13 @@ impl PtyManager {
         on_output: impl Fn(&[u8]) + Send + 'static,
         on_exit: impl FnOnce(i32) + Send + 'static,
     ) -> Result<PtyInfo, String> {
-        let mut cmd = CommandBuilder::new("powershell.exe");
+        let root = std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into());
+        let exe = std::path::PathBuf::from(root)
+            .join("System32")
+            .join("WindowsPowerShell")
+            .join("v1.0")
+            .join("powershell.exe");
+        let mut cmd = CommandBuilder::new(exe);
         cmd.arg("-NoLogo");
         if let Some(home) = std::env::var_os("USERPROFILE")
             .or_else(|| std::env::var_os("HOME"))
@@ -129,7 +136,7 @@ impl PtyManager {
                 let _ = child.kill();
                 return Err(format!("en fazla {MAX_PTYS} terminal açılabilir"));
             }
-            g.ptys.insert(id, Entry { pid, master: pair.master, writer, killer });
+            g.ptys.insert(id, Entry { pid, master: pair.master, writer: Arc::new(Mutex::new(writer)), killer });
         }
 
         let reader_thread = std::thread::spawn(move || {
@@ -156,10 +163,18 @@ impl PtyManager {
     }
 
     pub fn write(&self, id: u32, data: &str) -> Result<(), String> {
-        let mut g = self.inner.lock().map_err(poisoned)?;
-        let e = g.ptys.get_mut(&id).ok_or_else(|| unknown(id))?;
-        e.writer.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
-        e.writer.flush().map_err(|e| e.to_string())
+        if data.len() > MAX_WRITE {
+            return Err(format!("veri çok büyük (en fazla {MAX_WRITE} bayt)"));
+        }
+        // Release the global lock before the (possibly blocking) write so a
+        // stuck child cannot stall kill/resize/list/spawn.
+        let writer = {
+            let g = self.inner.lock().map_err(poisoned)?;
+            Arc::clone(&g.ptys.get(&id).ok_or_else(|| unknown(id))?.writer)
+        };
+        let mut w = writer.lock().map_err(poisoned)?;
+        w.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
+        w.flush().map_err(|e| e.to_string())
     }
 
     pub fn resize(&self, id: u32, cols: u16, rows: u16) -> Result<(), String> {
@@ -176,6 +191,17 @@ impl PtyManager {
         let mut killer = entry.killer;
         let _ = killer.kill(); // already-dead is fine
         Ok(())
+    }
+
+    /// Kill every terminal (app shutdown).
+    pub fn kill_all(&self) {
+        let entries: Vec<Entry> = match self.inner.lock() {
+            Ok(mut g) => g.ptys.drain().map(|(_, e)| e).collect(),
+            Err(_) => return,
+        };
+        for mut e in entries {
+            let _ = e.killer.kill();
+        }
     }
 
     pub fn list(&self) -> Vec<PtyInfo> {
@@ -263,6 +289,78 @@ mod tests {
         assert!(m.write(42, "x").is_err());
         assert!(m.resize(42, 80, 24).is_err());
         assert!(m.kill(42).is_err());
+    }
+
+    struct BlockingWriter {
+        entered: mpsc::Sender<()>,
+        release: mpsc::Receiver<()>,
+    }
+    impl Write for BlockingWriter {
+        fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+            let _ = self.entered.send(());
+            let _ = self.release.recv_timeout(T);
+            Ok(b.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn write_does_not_block_other_commands() {
+        let m = Arc::new(PtyManager::new());
+        let info = m.spawn_cmd("cmd.exe", &["/k"], 80, 24, |_| {}, |_| {}).unwrap();
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (rel_tx, rel_rx) = mpsc::channel();
+        {
+            let g = m.inner.lock().unwrap();
+            *g.ptys[&info.id].writer.lock().unwrap() =
+                Box::new(BlockingWriter { entered: entered_tx, release: rel_rx });
+        }
+        let m2 = Arc::clone(&m);
+        let h = std::thread::spawn(move || m2.write(info.id, "x"));
+        entered_rx.recv_timeout(T).unwrap(); // writer is now stuck
+        let (done_tx, done_rx) = mpsc::channel();
+        let m3 = Arc::clone(&m);
+        std::thread::spawn(move || {
+            let listed = m3.list();
+            let killed = m3.kill(info.id);
+            let _ = done_tx.send((listed, killed));
+        });
+        let (listed, killed) = done_rx.recv_timeout(Duration::from_secs(5)).expect("list/kill blocked");
+        assert_eq!(listed.len(), 1);
+        killed.unwrap();
+        let _ = rel_tx.send(());
+        h.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn write_rejects_oversized_data() {
+        let m = PtyManager::new();
+        let big = "a".repeat(MAX_WRITE + 1);
+        assert!(m.write(1, &big).is_err());
+        let info = m.spawn_cmd("cmd.exe", &["/k"], 80, 24, |_| {}, |_| {}).unwrap();
+        assert!(m.write(info.id, &big).unwrap_err().contains("büyük"));
+        m.kill(info.id).unwrap();
+    }
+
+    #[test]
+    fn kill_all_kills_everything() {
+        let m = PtyManager::new();
+        let (tx, rx) = mpsc::channel();
+        for _ in 0..3 {
+            let tx = tx.clone();
+            m.spawn_cmd("cmd.exe", &["/k"], 80, 24, |_| {}, move |c| {
+                let _ = tx.send(c);
+            })
+            .unwrap();
+        }
+        assert_eq!(m.list().len(), 3);
+        m.kill_all();
+        assert!(m.list().is_empty());
+        for _ in 0..3 {
+            rx.recv_timeout(T).unwrap();
+        }
     }
 
     #[test]

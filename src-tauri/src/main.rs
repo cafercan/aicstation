@@ -141,8 +141,13 @@ fn main() {
             commands::pty_kill,
             commands::pty_list
         ])
-        .run(tauri::generate_context!())
-        .expect("Claude Pano başlatılamadı");
+        .build(tauri::generate_context!())
+        .expect("Claude Pano başlatılamadı")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                app.state::<pty::PtyManager>().kill_all();
+            }
+        });
 }
 
 #[cfg(test)]
