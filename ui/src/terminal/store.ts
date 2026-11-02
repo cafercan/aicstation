@@ -70,7 +70,8 @@ export async function openTerminal(): Promise<TerminalEntry> {
   const onExit = new Channel<number>();
   onOutput.onmessage = (arr) => term.write(new Uint8Array(arr));
   let id = -1;
-  onExit.onmessage = () => { if (id >= 0) removeEntry(id); };
+  let exited = false;
+  onExit.onmessage = () => { exited = true; if (id >= 0) removeEntry(id); };
 
   let info: PtyInfo;
   try {
@@ -86,6 +87,8 @@ export async function openTerminal(): Promise<TerminalEntry> {
   const entry: TerminalEntry = { id, pid: info.pid, n: ++counter, term, fit };
   terminals = [...terminals, entry];
   emit();
+  // The shell may have exited before pty_spawn resolved.
+  if (exited) removeEntry(id);
   return entry;
 }
 

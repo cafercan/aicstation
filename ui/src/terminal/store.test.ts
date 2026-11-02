@@ -103,3 +103,14 @@ test("süreç çıkınca terminal menüden düşer", async () => {
   expect(getTerminals()).toHaveLength(0);
   expect(terminalForPid(4242)).toBeUndefined();
 });
+
+test("exit_before_spawn_resolves_removes_terminal", async () => {
+  invoke.mockImplementation(async (cmd: string) => {
+    if (cmd !== "pty_spawn") return undefined;
+    FakeChannel.all[1].onmessage(0 as never); // shell exits before spawn resolves
+    return { id: 9, pid: 55 };
+  });
+  await openTerminal();
+  expect(getTerminals()).toHaveLength(0);
+  expect(terminalForPid(55)).toBeUndefined();
+});

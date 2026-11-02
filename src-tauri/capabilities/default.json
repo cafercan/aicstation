@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Ana pencere için varsayılan izinler",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "core:window:allow-destroy"]
 }

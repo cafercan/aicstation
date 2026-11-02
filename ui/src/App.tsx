@@ -45,8 +45,11 @@ export default function App() {
     try {
       getCurrentWindow()
         .onCloseRequested((e) => {
-          if (!confirmClose(allTerminalIds(), snapRef.current.sessions)) { e.preventDefault(); return; }
+          // Destroy explicitly so a rejected destroy is logged, not swallowed.
+          e.preventDefault();
+          if (!confirmClose(allTerminalIds(), snapRef.current.sessions)) return;
           allTerminalIds().forEach((id) => { void closeTerminal(id); });
+          getCurrentWindow().destroy().catch((err) => console.error("Pencere kapatılamadı:", err));
         })
         .then((u) => { if (alive) unlisten = u; else u(); })
         .catch(() => {});
