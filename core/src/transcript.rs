@@ -85,6 +85,11 @@ fn usage_of(m: &Value) -> Option<Usage> {
         output: n("output_tokens"),
         cache_read: n("cache_read_input_tokens"),
         cache_creation: n("cache_creation_input_tokens"),
+        cache_creation_1h: u
+            .get("cache_creation")
+            .and_then(|c| c.get("ephemeral_1h_input_tokens"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
     })
 }
 
@@ -251,7 +256,7 @@ mod tests {
         assert_eq!(requested_model.as_deref(), Some("claude-opus-5-5[1m]"));
         assert_eq!(
             *usage,
-            Some(Usage { input: 10, output: 5, cache_read: 100, cache_creation: 20 })
+            Some(Usage { input: 10, output: 5, cache_read: 100, cache_creation: 20, cache_creation_1h: 0 })
         );
         assert_eq!(tool_uses.len(), 1);
         assert_eq!(tool_uses[0].name, "Read");
@@ -362,5 +367,18 @@ mod tests {
         let o = TranscriptReader::new(p).read_new().unwrap();
         // user meta, assistant + meta, tool_result, title
         assert_eq!(o.entries.len(), 5);
+    }
+
+    #[test]
+    fn cache_creation_1h_split_is_parsed() {
+        let line = r#"{"type":"assistant","timestamp":"2026-11-02T07:12:52.197Z","message":{"id":"m","model":"claude-opus-5-5","content":[],"usage":{"input_tokens":1,"output_tokens":2,"cache_read_input_tokens":3,"cache_creation_input_tokens":30,"cache_creation":{"ephemeral_5m_input_tokens":10,"ephemeral_1h_input_tokens":20}}}}"#;
+        let e = parse_line(line).into_iter().next().expect("entry");
+        match e {
+            Entry::Assistant { usage, .. } => {
+                let u = usage.unwrap();
+                assert_eq!((u.cache_creation, u.cache_creation_1h), (30, 20));
+            }
+            other => panic!("unexpected {other:?}"),
+        }
     }
 }

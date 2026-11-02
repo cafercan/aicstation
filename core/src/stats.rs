@@ -55,6 +55,7 @@ impl SessionStats {
                         self.tokens.output += u.output;
                         self.tokens.cache_read += u.cache_read;
                         self.tokens.cache_creation += u.cache_creation;
+                        self.tokens.cache_creation_1h += u.cache_creation_1h;
                         let m = model.as_deref().or(requested_model.as_deref());
                         if let Some(c) = m.and_then(|m| pricing::cost_usd(m, u)) {
                             self.cost_usd += c;
@@ -116,7 +117,7 @@ mod tests {
         Local.with_ymd_and_hms(2026, 6, 10, h, m, 0).unwrap().to_utc()
     }
     fn usage(i: u64, o: u64, cr: u64, cc: u64) -> Usage {
-        Usage { input: i, output: o, cache_read: cr, cache_creation: cc }
+        Usage { input: i, output: o, cache_read: cr, cache_creation: cc, cache_creation_1h: 0 }
     }
     fn asst(id: &str, model: &str, req: Option<&str>, u: Usage, tools: Vec<ToolCall>, t: DateTime<Utc>) -> Entry {
         Entry::Assistant {
