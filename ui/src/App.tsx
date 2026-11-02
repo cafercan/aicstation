@@ -3,6 +3,8 @@ import { getHistory, getSnapshot, onSnapshot, type HistoryView, type Snapshot } 
 import Sidebar, { type View } from "./components/Sidebar";
 import StatusBar from "./components/StatusBar";
 import Dashboard from "./pages/Dashboard";
+import History from "./pages/History";
+import SessionDetailPage from "./pages/SessionDetail";
 import "./app.css";
 
 const EMPTY: Snapshot = { sessions: [], runningAgents: 0, waitingCount: 0 };
@@ -33,11 +35,15 @@ export default function App() {
   if (view === "dashboard") {
     page = <Dashboard snapshot={snapshot} history={history} now={now}
       onOpen={(id) => setView({ session: id })} />;
+  } else if (view === "history") {
+    page = <History onOpen={(id) => setView({ session: id })} />;
+  } else if ("session" in view) {
+    page = <SessionDetailPage key={view.session} sessionId={view.session}
+      onBack={() => setView("dashboard")} onTerminal={(id) => setView({ terminal: id })} />;
   } else {
-    const what = view === "history" ? "Geçmiş" : "session" in view ? "Oturum ayrıntısı" : "Terminal";
     page = (
       <div className="empty">
-        <p>{what} yakında.</p>
+        <p>Terminal yakında.</p>
         <button onClick={() => setView("dashboard")}>← Dashboard</button>
       </div>
     );

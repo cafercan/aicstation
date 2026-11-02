@@ -79,12 +79,43 @@ export interface Usage {
   cacheCreation1h: number;
 }
 
-/** Tree shape is filled in by the detail page (Task 12). */
+/** Rust AgentKind: internally tagged by "kind". */
+export type AgentKind =
+  | { kind: "agent" }
+  | { kind: "workflow"; id: string }
+  | { kind: "phase"; name: string };
+
+export interface AgentStats {
+  tokens: Usage;
+  costUsd: number;
+  toolCalls: ToolCall[];
+  toolCallCount: number;
+  firstAt: string | null;
+  lastAt: string | null;
+  model?: string | null;
+}
+
+export interface AgentNode {
+  id: string;
+  kind: AgentKind;
+  agentType: string | null;
+  description: string | null;
+  state: "running" | "finished";
+  stats: AgentStats;
+  children: AgentNode[];
+}
+
+export interface AgentTree {
+  roots: AgentNode[];
+  total: number;
+  finished: number;
+}
+
 export interface SessionDetail {
   card: SessionCard;
   tokens: Usage;
   toolCallCount: number;
-  tree: { roots: unknown[]; total: number; finished: number };
+  tree: AgentTree;
   mainToolCalls: ToolCall[];
 }
 

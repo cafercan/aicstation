@@ -32,3 +32,22 @@ body { font-family: "Segoe UI", sans-serif; font-size: 13px; color: #ddd; backgr
 .sb .g { color: #6c6; } .sb .c2 { color: #6cd; }
 .empty { color: #999; }
 .empty button { background: #2b3140; color: #fff; border: 0; border-radius: 4px; padding: 4px 10px; cursor: pointer; }
+
+.hd { display: flex; justify-content: space-between; align-items: center; }
+.hd h3 { margin: 0; color: #fff; font-size: 15px; }
+.hd .back { cursor: pointer; margin-right: 6px; }
+.btn { background: #2b3140; color: #cde; border: 0; border-radius: 4px; padding: 4px 10px; font-size: 11px; margin-left: 6px; cursor: pointer; }
+.meta { color: #888; font-size: 11px; margin: 2px 0 8px; }
+.kpis.six { grid-template-columns: repeat(6, 1fr); }
+.cols { display: flex; gap: 8px; }
+.tree { width: 44%; background: #202329; border-radius: 5px; padding: 8px; font-size: 11.5px; line-height: 1.7; }
+.tree .node { cursor: pointer; border-radius: 3px; padding: 0 4px; }
+.tree .node.sel { background: #2b3140; }
+.log { flex: 1; background: #202329; border-radius: 5px; padding: 8px; font-family: Consolas, monospace; font-size: 11px; line-height: 1.6; }
+.cap { color: #777; font-size: 10px; font-family: "Segoe UI", sans-serif; }
+.g { color: #6c6; } .y { color: #fd6; } .x { color: #888; } .r { color: #f77; } .c2 { color: #6cd; }
+table.hist { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+table.hist th { text-align: left; color: #999; font-weight: normal; padding: 4px 6px; }
+table.hist td { padding: 4px 6px; border-top: 1px solid #2a2a2a; }
+table.hist tbody tr { cursor: pointer; }
+table.hist tbody tr:hover { background: #23262d; }
