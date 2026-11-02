@@ -131,6 +131,12 @@ impl AppState {
         self.indexing.load(Ordering::Relaxed)
     }
 
+    /// Gives up indexing for this run (after repeated panics) and publishes what exists.
+    pub fn disable_indexing(&self) {
+        self.indexing.store(false, Ordering::Relaxed);
+        self.publish_history();
+    }
+
     /// Runs one indexing slice, then publishes the result. Only the background
     /// thread calls this; commands read the published cache and never wait on it.
     pub fn index_step(&self, budget: Duration) -> bool {

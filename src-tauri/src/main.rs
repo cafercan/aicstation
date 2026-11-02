@@ -14,6 +14,7 @@ const TICK: Duration = Duration::from_secs(1);
 const MIN_GAP: Duration = Duration::from_millis(250); // max 4 Hz
 const SAVE_EVERY: Duration = Duration::from_secs(30);
 const INDEX_BUDGET: Duration = Duration::from_millis(50);
+const MAX_INDEX_PANICS: u32 = 3;
 
 fn emit_snapshot(app: &tauri::AppHandle) {
     let snap = app.state::<AppState>().refresh();
@@ -58,6 +59,8 @@ fn background_loop(app: tauri::AppHandle, dir: PathBuf) {
     let mut last_emit = Instant::now() - TICK;
     let mut last_save = Instant::now();
     let mut changed = false;
+    let mut index_panics = 0u32;
+    let mut in_index = false;
     loop {
         // Collect pending notify events without blocking.
         while rx.try_recv().is_ok() {
@@ -73,7 +76,10 @@ fn background_loop(app: tauri::AppHandle, dir: PathBuf) {
                     changed = false;
                 }
                 Action::Index => {
+                    in_index = true;
                     app.state::<AppState>().index_step(INDEX_BUDGET);
+                    in_index = false;
+                    index_panics = 0;
                 }
                 Action::Wait(d) => match rx.recv_timeout(d) {
                     Ok(()) => changed = true,
@@ -92,7 +98,16 @@ fn background_loop(app: tauri::AppHandle, dir: PathBuf) {
         }));
         if step.is_err() {
             eprintln!("arka plan döngüsünde hata; devam ediliyor");
-            last_emit = Instant::now(); // avoid a hot panic loop
+            // No tick-clock reset: the sleep prevents a hot loop and `since`
+            // keeps growing, so an Emit is forced within a few iterations.
+            if in_index {
+                in_index = false;
+                index_panics += 1;
+                if index_panics >= MAX_INDEX_PANICS {
+                    eprintln!("indeksleme tekrar tekrar çöktü; bu oturumda durduruldu");
+                    app.state::<AppState>().disable_indexing();
+                }
+            }
             std::thread::sleep(Duration::from_millis(250));
         }
     }
@@ -131,6 +146,23 @@ mod tests {
     fn loop_emits_when_tick_elapsed() {
         assert_eq!(decide(TICK, false, true), Action::Emit);
         assert_eq!(decide(Duration::from_millis(1500), false, false), Action::Emit);
+    }
+
+    #[test]
+    fn loop_still_emits_when_index_keeps_panicking() {
+        // Panic handler sleeps 250 ms and does not reset the tick clock.
+        let mut since = Duration::ZERO;
+        let mut emitted = false;
+        for _ in 0..MAX_INDEX_PANICS + 2 {
+            match decide(since, false, true) {
+                Action::Emit => {
+                    emitted = true;
+                    break;
+                }
+                _ => since += Duration::from_millis(250),
+            }
+        }
+        assert!(emitted, "snapshot emit must not be starved by index panics");
     }
 
     #[test]
