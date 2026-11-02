@@ -2,6 +2,7 @@
 mod commands;
 mod platform;
 mod pty;
+mod wt;
 
 use commands::AppState;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
@@ -195,7 +196,8 @@ fn main() {
             commands::pty_write,
             commands::pty_resize,
             commands::pty_kill,
-            commands::pty_list
+            commands::pty_list,
+            commands::open_windows_terminal
         ])
         .build(tauri::generate_context!())
         .expect("Claude Pano başlatılamadı")

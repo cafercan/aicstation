@@ -537,3 +537,19 @@ pub fn pty_kill(state: tauri::State<'_, PtyManager>, id: u32) -> Result<(), Stri
 pub fn pty_list(state: tauri::State<'_, PtyManager>) -> Vec<PtyInfo> {
     state.list()
 }
+
+/// Opens a new PowerShell tab in Windows Terminal. Takes nothing from the UI:
+/// program and arguments are fixed (see `wt.rs`).
+#[tauri::command(async)]
+pub fn open_windows_terminal() -> Result<(), String> {
+    crate::wt::open()
+}
+
+#[cfg(test)]
+mod wt_command_tests {
+    #[test]
+    fn open_windows_terminal_takes_no_arguments() {
+        // Compile-time check: any parameter would change the fn type.
+        let _f: fn() -> Result<(), String> = super::open_windows_terminal;
+    }
+}

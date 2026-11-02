@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { getHistory, getSnapshot, onSnapshot, type HistoryView, type Snapshot } from "./api";
+import { getHistory, getSnapshot, onSnapshot, openWindowsTerminal, type HistoryView, type Snapshot } from "./api";
 import Sidebar, { type View } from "./components/Sidebar";
 import StatusBar from "./components/StatusBar";
 import Dashboard from "./pages/Dashboard";
@@ -99,7 +99,8 @@ export default function App() {
   return (
     <div className="app">
       <div className="body">
-        <Sidebar view={view} terminals={sideTerms} onSelect={setView} onNew={onNew} onClose={onClose} />
+        <Sidebar view={view} terminals={sideTerms} onSelect={setView} onNew={onNew} onClose={onClose}
+          onOpenWt={openWindowsTerminal} />
         <main className="main">
           {page}
           {terminals.map((t) => <TerminalView key={t.id} entry={t} visible={t.id === termId} />)}

@@ -90,6 +90,7 @@ test("kart klavyeden Enter ve Boşluk ile açılır", () => {
 
 test("kenar çubuğu: Claude oturumu olan terminalde durum renkli işaret", () => {
   render(<Sidebar view="dashboard" onSelect={() => {}} onNew={() => {}} onClose={() => {}}
+    onOpenWt={async () => {}}
     terminals={[{ id: 1, label: "projem", status: "idle" }, { id: 2, label: "PowerShell 2", status: null }]} />);
   const mark = screen.getByRole("img", { name: "Claude: hazır" });
   expect(mark.querySelector("circle")?.getAttribute("fill")).toBe("#ff9f43");
@@ -141,4 +142,18 @@ test("status bar oturum adı yerine klasör adını gösterir", () => {
   const sb = screen.getByRole("contentinfo");
   expect(sb.textContent).toContain("pusula");
   expect(sb.textContent).not.toContain("oturum-adi");
+});
+
+test("kenar çubuğu: Windows Terminal'de aç; hata satır içinde gösterilir", async () => {
+  const onOpenWt = vi.fn()
+    .mockRejectedValueOnce("Windows Terminal bulunamadı")
+    .mockResolvedValueOnce(undefined);
+  render(<Sidebar view="dashboard" onSelect={() => {}} onNew={() => {}} onClose={() => {}}
+    onOpenWt={onOpenWt} terminals={[]} />);
+  const btn = screen.getByText("↗ Windows Terminal'de aç");
+  fireEvent.click(btn);
+  expect(onOpenWt).toHaveBeenCalledTimes(1);
+  expect((await screen.findByRole("alert")).textContent).toBe("Windows Terminal bulunamadı");
+  fireEvent.click(btn);
+  await vi.waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
 });

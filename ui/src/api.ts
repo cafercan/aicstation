@@ -126,6 +126,8 @@ export const getHistory = () => invoke<HistoryView>("get_history");
 export const getSessionDetail = (sessionId: string) =>
   invoke<SessionDetail | null>("get_session_detail", { sessionId });
 export const openFolder = (path: string) => invoke<void>("open_folder", { path });
+/** No arguments: the backend uses fixed wt.exe arguments. */
+export const openWindowsTerminal = () => invoke<void>("open_windows_terminal");
 
 export async function onSnapshot(cb: (s: Snapshot) => void): Promise<Unlisten> {
   return listen<Snapshot>("snapshot", (e) => cb(e.payload));

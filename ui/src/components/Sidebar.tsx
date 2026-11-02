@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { statusColor, statusLabel, type StatusKind } from "../format";
 import ClaudeMark from "./ClaudeMark";
 
@@ -20,9 +21,16 @@ interface Props {
   onSelect: (v: View) => void;
   onNew: () => void;
   onClose: (id: number) => void;
+  /** Opens a PowerShell tab in Windows Terminal; rejects with a message. */
+  onOpenWt: () => Promise<void>;
 }
 
-export default function Sidebar({ view, terminals, onSelect, onNew, onClose }: Props) {
+export default function Sidebar({ view, terminals, onSelect, onNew, onClose, onOpenWt }: Props) {
+  const [wtError, setWtError] = useState<string | null>(null);
+  const openWt = () => {
+    setWtError(null);
+    onOpenWt().catch((e: unknown) => setWtError(typeof e === "string" ? e : "Windows Terminal açılamadı"));
+  };
   const isDash = view === "dashboard" || (typeof view === "object" && "session" in view);
   return (
     <nav className="side">
@@ -42,6 +50,8 @@ export default function Sidebar({ view, terminals, onSelect, onNew, onClose }: P
         </div>
       ))}
       <div className="item sub new" onClick={onNew}>＋ Yeni terminal</div>
+      <div className="item sub new" onClick={openWt} title="Ev klasöründe yeni bir PowerShell sekmesi">↗ Windows Terminal'de aç</div>
+      {wtError && <div className="side-err" role="alert">{wtError}</div>}
     </nav>
   );
 }

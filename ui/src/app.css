@@ -56,6 +56,7 @@ select {
 .side .close { margin-left: auto; color: var(--muted); padding: 0 3px; border-radius: 4px; }
 .side .close:hover { color: #fff; background: #2c3340; }
 .side .new { color: #7fd8c8; cursor: pointer; }
+.side .side-err { margin: 2px 8px 0 14px; color: #ff7b72; font-size: 11px; }
 .cmark { flex: none; vertical-align: -2px; }
 
 /* KPI boxes */
