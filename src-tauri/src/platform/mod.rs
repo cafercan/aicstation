@@ -27,7 +27,7 @@ pub fn persistent_env_names() -> std::collections::HashSet<String> {
 
 #[cfg(not(windows))]
 pub fn focus_session_tab(_pid: u32, _name: &str) -> Result<Option<String>, String> {
-    Err("Sekme bulunamadı".into())
+    Err(crate::errors::TAB_NOT_FOUND.into())
 }
 
 #[cfg(windows)]

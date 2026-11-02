@@ -1,6 +1,7 @@
 //! IPC commands and the shared application state. Every command is a thin
 //! wrapper over a plain function on `AppState` so tests can call the handlers
 //! without a webview. All arguments from the UI are untrusted.
+use crate::errors;
 use pano_core::history::{cost_on_rows, HistoryIndex, HistoryRow};
 use pano_core::locate::{is_session_id, Locator};
 use pano_core::monitor::{ClosedKey, Monitor, SessionDetail, Snapshot};
@@ -245,14 +246,14 @@ impl AppState {
     /// an absolute, local, existing directory.
     pub fn resume_target(&self, session_id: &str) -> Result<(String, PathBuf), String> {
         if !is_session_id(session_id) {
-            return Err("Geçersiz oturum kimliği".into());
+            return Err(errors::SESSION_INVALID.into());
         }
         if self.live_ids().contains(session_id) {
-            return Err("Bu oturum zaten açık".into());
+            return Err(errors::SESSION_LIVE.into());
         }
-        let cwd = self.known_cwd(session_id).ok_or("Bilinmeyen oturum ya da klasörü yok")?;
+        let cwd = self.known_cwd(session_id).ok_or(errors::SESSION_UNKNOWN)?;
         let dir = validate_open_folder(&cwd, std::slice::from_ref(&cwd))
-            .map_err(|e| format!("Oturumun klasörü kullanılamıyor: {e}"))?;
+            .map_err(|e| errors::with(errors::SESSION_FOLDER, e))?;
         Ok((session_id.to_string(), dir))
     }
 
@@ -260,7 +261,7 @@ impl AppState {
     /// latest snapshot (the UI sends only the id).
     pub fn focus_target(&self, session_id: &str) -> Result<(u32, String), String> {
         if !is_session_id(session_id) {
-            return Err("Geçersiz oturum kimliği".into());
+            return Err(errors::SESSION_INVALID.into());
         }
         self.fresh_cache(|c| {
             c.snap
@@ -269,7 +270,7 @@ impl AppState {
                 .find(|s| s.session_id == session_id && s.pid != 0)
                 .map(|s| (s.pid, s.name.clone()))
         })
-        .ok_or_else(|| "Oturum açık değil".into())
+        .ok_or_else(|| errors::SESSION_NOT_LIVE.into())
     }
 
     fn known_cwd(&self, session_id: &str) -> Option<String> {
@@ -296,7 +297,7 @@ impl AppState {
             .arg(dir)
             .spawn()
             .map(|_| ())
-            .map_err(|e| format!("Klasör açılamadı: {e}"))
+            .map_err(|e| errors::with(errors::FOLDER_OPEN_FAILED, e))
     }
 }
 
@@ -307,20 +308,20 @@ impl AppState {
 /// treats it as a folder.
 pub fn validate_open_folder(path: &str, known_cwds: &[String]) -> Result<PathBuf, String> {
     if path.is_empty() || !known_cwds.iter().any(|c| c == path) {
-        return Err("Bilinmeyen klasör".into());
+        return Err(errors::FOLDER_UNKNOWN.into());
     }
     if path.starts_with(r"\\") || path.starts_with("//") {
-        return Err("Ağ yolları desteklenmiyor".into());
+        return Err(errors::FOLDER_NETWORK.into());
     }
     if path.contains(',') || path.starts_with('/') || path.starts_with('-') {
-        return Err("Geçersiz yol".into());
+        return Err(errors::FOLDER_INVALID.into());
     }
     let p = Path::new(path);
     if !p.is_absolute() {
-        return Err("Yol mutlak olmalı".into());
+        return Err(errors::FOLDER_RELATIVE.into());
     }
     if !p.is_dir() {
-        return Err("Yol var olan bir klasör değil".into());
+        return Err(errors::FOLDER_MISSING.into());
     }
     let mut s = p.as_os_str().to_os_string();
     if !path.ends_with('\\') {
@@ -344,7 +345,7 @@ pub async fn get_session_detail(
     use tauri::Manager;
     tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().get_session_detail(&session_id))
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| errors::with(errors::TASK_FAILED, e))
 }
 
 #[tauri::command(async)]
@@ -354,7 +355,7 @@ pub fn get_history(state: tauri::State<'_, AppState>) -> HistoryView {
 
 /// "Sekmeye git" for a session in a Windows Terminal tab: brings its window
 /// forward and selects the tab (best effort, Win32 + UI Automation on the
-/// blocking pool). Only the id comes from the UI. Ok(Some(note)) when the
+/// blocking pool). Only the id comes from the UI. Ok(Some(note code)) when the
 /// window was focused but no single tab could be selected.
 #[tauri::command]
 pub async fn focus_session_tab(app: tauri::AppHandle, session_id: String) -> Result<Option<String>, String> {
@@ -362,7 +363,7 @@ pub async fn focus_session_tab(app: tauri::AppHandle, session_id: String) -> Res
     let (pid, name) = app.state::<AppState>().focus_target(&session_id)?;
     tauri::async_runtime::spawn_blocking(move || crate::platform::focus_session_tab(pid, &name))
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(|e| errors::with(errors::TASK_FAILED, e))?
 }
 
 #[tauri::command(async)]
@@ -391,8 +392,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let real = dir.path().to_string_lossy().into_owned();
         // An existing directory that no session uses is refused.
-        assert!(validate_open_folder(&real, &["D:\\baska".to_string()]).is_err());
-        assert!(validate_open_folder("", &[String::new()]).is_err());
+        assert_eq!(validate_open_folder(&real, &["D:\\baska".to_string()]).unwrap_err(), errors::FOLDER_UNKNOWN);
+        assert_eq!(validate_open_folder("", &[String::new()]).unwrap_err(), errors::FOLDER_UNKNOWN);
         // Known and existing is accepted.
         assert!(validate_open_folder(&real, std::slice::from_ref(&real)).is_ok());
     }
@@ -402,16 +403,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let real = dir.path().to_string_lossy().into_owned();
         // Each is listed as "known", so only the hardening rules can reject.
-        for bad in [
-            r"\\sunucu\paylasim".to_string(),
-            "//sunucu/paylasim".to_string(),
-            "/windows".to_string(),
-            "-Ac".to_string(),
-            r"bagil\yol".to_string(),
-            format!("{real},/select"),
-            r"C:\a,b".to_string(),
+        for (bad, code) in [
+            (r"\\sunucu\paylasim".to_string(), errors::FOLDER_NETWORK),
+            ("//sunucu/paylasim".to_string(), errors::FOLDER_NETWORK),
+            ("/windows".to_string(), errors::FOLDER_INVALID),
+            ("-Ac".to_string(), errors::FOLDER_INVALID),
+            (r"bagil\yol".to_string(), errors::FOLDER_RELATIVE),
+            (format!("{real},/select"), errors::FOLDER_INVALID),
+            (r"C:\a,b".to_string(), errors::FOLDER_INVALID),
+            (format!(r"{real}\yok"), errors::FOLDER_MISSING),
         ] {
-            assert!(validate_open_folder(&bad, std::slice::from_ref(&bad)).is_err(), "should reject {bad}");
+            assert_eq!(validate_open_folder(&bad, std::slice::from_ref(&bad)).unwrap_err(), code, "should reject {bad}");
         }
     }
 
@@ -539,9 +541,9 @@ mod tests {
         let (pid, name) = state.focus_target(LIVE_ID).unwrap();
         assert_eq!(pid, 4242);
         assert_eq!(name, "demo", "card name (cwd folder fallback)");
-        assert_eq!(state.focus_target(CLOSED_ID).unwrap_err(), "Oturum açık değil");
+        assert_eq!(state.focus_target(CLOSED_ID).unwrap_err(), errors::SESSION_NOT_LIVE);
         for bad in ["", "../x", "11111111-2222-4333-8444-55555555555G", "x; calc", "AAAAAAAA-2222-4333-8444-555555555555"] {
-            assert_eq!(state.focus_target(bad).unwrap_err(), "Geçersiz oturum kimliği", "{bad}");
+            assert_eq!(state.focus_target(bad).unwrap_err(), errors::SESSION_INVALID, "{bad}");
         }
     }
 
@@ -580,7 +582,7 @@ mod tests {
         let (state, _) = resume_env(tmp.path());
         indexed(&state);
         for bad in ["", "../x", "BBBBBBBB-2222-4333-8444-555555555555", "bbbbbbbb-2222-4333-8444-55555555555", "x; calc"] {
-            assert!(state.resume_target(bad).unwrap_err().contains("Geçersiz"), "{bad}");
+            assert_eq!(state.resume_target(bad).unwrap_err(), errors::SESSION_INVALID, "{bad}");
         }
     }
 
@@ -589,10 +591,10 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let (state, _) = resume_env(tmp.path());
         indexed(&state);
-        assert!(state.resume_target(UNKNOWN_ID).unwrap_err().contains("Bilinmeyen"));
-        assert_eq!(state.resume_target(LIVE_ID).unwrap_err(), "Bu oturum zaten açık");
-        assert!(state.resume_target(UNC_ID).is_err());
-        assert!(state.resume_target(REL_ID).is_err());
+        assert_eq!(state.resume_target(UNKNOWN_ID).unwrap_err(), errors::SESSION_UNKNOWN);
+        assert_eq!(state.resume_target(LIVE_ID).unwrap_err(), errors::SESSION_LIVE);
+        assert_eq!(state.resume_target(UNC_ID).unwrap_err(), "session_folder:folder_network");
+        assert_eq!(state.resume_target(REL_ID).unwrap_err(), "session_folder:folder_relative");
     }
 
     #[test]

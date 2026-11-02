@@ -53,11 +53,19 @@ fn size(cols: u16, rows: u16) -> PtySize {
 }
 
 fn unknown(id: u32) -> String {
-    format!("bilinmeyen terminal: {id}")
+    crate::errors::with(crate::errors::PTY_UNKNOWN, id)
+}
+
+fn spawn_failed(e: impl std::fmt::Display) -> String {
+    crate::errors::with(crate::errors::PTY_SPAWN_FAILED, e)
+}
+
+fn io_failed(e: impl std::fmt::Display) -> String {
+    crate::errors::with(crate::errors::PTY_IO, e)
 }
 
 fn poisoned<T>(_: T) -> String {
-    "iç kilit hatası".to_string()
+    crate::errors::INTERNAL_LOCK.to_string()
 }
 
 /// Absolute path of Windows PowerShell (never resolved through PATH).
@@ -70,7 +78,7 @@ pub fn powershell_exe() -> PathBuf {
 /// accepted, so the `-Command` text can never carry anything else.
 pub fn resume_args(session_id: &str) -> Result<Vec<String>, String> {
     if !is_session_id(session_id) {
-        return Err("Geçersiz oturum kimliği".into());
+        return Err(crate::errors::SESSION_INVALID.into());
     }
     Ok(vec![
         "-NoLogo".into(),
@@ -188,7 +196,7 @@ impl PtyManager {
         on_exit: impl FnOnce(i32) + Send + 'static,
     ) -> Result<PtyInfo, String> {
         if !self.resumed.lock().map_err(poisoned)?.insert(session_id.to_string()) {
-            return Err("Bu oturum zaten açık".into());
+            return Err(crate::errors::SESSION_LIVE.into());
         }
         let release = {
             let resumed = Arc::clone(&self.resumed);
@@ -255,7 +263,7 @@ impl PtyManager {
         let id = {
             let mut g = self.inner.lock().map_err(poisoned)?;
             if g.ptys.len() >= MAX_PTYS {
-                return Err(format!("en fazla {MAX_PTYS} terminal açılabilir"));
+                return Err(crate::errors::with(crate::errors::PTY_LIMIT, MAX_PTYS));
             }
             g.next_id += 1;
             g.next_id
@@ -269,19 +277,19 @@ impl PtyManager {
 
         let pair = native_pty_system()
             .openpty(size(cols, rows))
-            .map_err(|e| e.to_string())?;
-        let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+            .map_err(spawn_failed)?;
+        let mut child = pair.slave.spawn_command(cmd).map_err(spawn_failed)?;
         drop(pair.slave);
         let pid = child.process_id().unwrap_or(0);
         let killer = child.clone_killer();
-        let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
-        let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+        let mut reader = pair.master.try_clone_reader().map_err(spawn_failed)?;
+        let writer = pair.master.take_writer().map_err(spawn_failed)?;
 
         {
             let mut g = self.inner.lock().map_err(poisoned)?;
             if g.ptys.len() >= MAX_PTYS {
                 let _ = child.kill();
-                return Err(format!("en fazla {MAX_PTYS} terminal açılabilir"));
+                return Err(crate::errors::with(crate::errors::PTY_LIMIT, MAX_PTYS));
             }
             g.ptys.insert(id, Entry { pid, master: pair.master, writer: Arc::new(Mutex::new(writer)), killer });
         }
@@ -322,7 +330,7 @@ impl PtyManager {
 
     pub fn write(&self, id: u32, data: &str) -> Result<(), String> {
         if data.len() > MAX_WRITE {
-            return Err(format!("veri çok büyük (en fazla {MAX_WRITE} bayt)"));
+            return Err(crate::errors::with(crate::errors::PTY_TOO_LARGE, MAX_WRITE));
         }
         // Release the global lock before the (possibly blocking) write so a
         // stuck child cannot stall kill/resize/list/spawn.
@@ -331,14 +339,14 @@ impl PtyManager {
             Arc::clone(&g.ptys.get(&id).ok_or_else(|| unknown(id))?.writer)
         };
         let mut w = writer.lock().map_err(poisoned)?;
-        w.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
-        w.flush().map_err(|e| e.to_string())
+        w.write_all(data.as_bytes()).map_err(io_failed)?;
+        w.flush().map_err(io_failed)
     }
 
     pub fn resize(&self, id: u32, cols: u16, rows: u16) -> Result<(), String> {
         let g = self.inner.lock().map_err(poisoned)?;
         let e = g.ptys.get(&id).ok_or_else(|| unknown(id))?;
-        e.master.resize(size(cols, rows)).map_err(|e| e.to_string())
+        e.master.resize(size(cols, rows)).map_err(io_failed)
     }
 
     pub fn kill(&self, id: u32) -> Result<(), String> {
@@ -444,9 +452,9 @@ mod tests {
     #[test]
     fn unknown_id_is_error() {
         let m = PtyManager::new();
-        assert!(m.write(42, "x").is_err());
-        assert!(m.resize(42, 80, 24).is_err());
-        assert!(m.kill(42).is_err());
+        assert_eq!(m.write(42, "x").unwrap_err(), "pty_unknown:42");
+        assert_eq!(m.resize(42, 80, 24).unwrap_err(), "pty_unknown:42");
+        assert_eq!(m.kill(42).unwrap_err(), "pty_unknown:42");
     }
 
     struct BlockingWriter {
@@ -498,7 +506,7 @@ mod tests {
         let big = "a".repeat(MAX_WRITE + 1);
         assert!(m.write(1, &big).is_err());
         let info = m.spawn_cmd("cmd.exe", &["/k"], 80, 24, |_| true, |_| {}).unwrap();
-        assert!(m.write(info.id, &big).unwrap_err().contains("büyük"));
+        assert_eq!(m.write(info.id, &big).unwrap_err(), format!("pty_too_large:{MAX_WRITE}"));
         m.kill(info.id).unwrap();
     }
 
@@ -690,7 +698,7 @@ mod tests {
             })
         };
         let first = start(tx.clone()).unwrap();
-        assert_eq!(start(tx.clone()).unwrap_err(), "Bu oturum zaten açık");
+        assert_eq!(start(tx.clone()).unwrap_err(), crate::errors::SESSION_LIVE);
         // Another session is not blocked.
         let other = m
             .spawn_resume_in(OsStr::new("cmd.exe"), &args, &dir, "aaaaaaaa-2222-4333-8444-555555555555", 80, 24, |_| true, |_| {})

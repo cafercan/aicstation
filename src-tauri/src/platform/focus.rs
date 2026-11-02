@@ -19,9 +19,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     IsWindowVisible, SetForegroundWindow, ShowWindow, SW_RESTORE,
 };
 
-pub const NOT_FOUND: &str = "Sekme bulunamadı";
-pub const DUPLICATE_NOTE: &str = "Pencere öne getirildi; aynı adlı birden çok sekme var";
-pub const NO_MATCH_NOTE: &str = "Pencere öne getirildi; oturumun sekmesi bulunamadı";
+use crate::errors::{TAB_AMBIGUOUS as DUPLICATE_NOTE, TAB_NOT_FOUND as NOT_FOUND, TAB_NO_MATCH as NO_MATCH_NOTE};
 
 const WT_WINDOW_CLASS: &str = "CASCADIA_HOSTING_WINDOW_CLASS";
 

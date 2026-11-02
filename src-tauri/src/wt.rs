@@ -5,7 +5,7 @@
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
-pub const WT_NOT_FOUND: &str = "Windows Terminal bulunamadı";
+use crate::errors;
 
 /// `wt.exe -w 0 nt -d <home> <absolute powershell.exe> -NoLogo`; the shell
 /// is never looked up through PATH or the start directory.
@@ -14,10 +14,10 @@ pub fn wt_args(home: &Path, powershell: &Path) -> Result<Vec<OsString>, String> 
     // inside quotes; a relative path would resolve against our cwd.
     let bad = |p: &Path| !p.is_absolute() || p.as_os_str().to_string_lossy().contains(';');
     if bad(home) {
-        return Err("Kullanıcı klasörü geçersiz".into());
+        return Err(errors::WT_HOME_INVALID.into());
     }
     if bad(powershell) {
-        return Err("PowerShell yolu geçersiz".into());
+        return Err(errors::WT_POWERSHELL_INVALID.into());
     }
     let mut a: Vec<OsString> = ["-w", "0", "nt", "-d"].iter().map(OsString::from).collect();
     a.push(home.as_os_str().to_owned());
@@ -40,7 +40,7 @@ pub fn wt_program(local_app_data: Option<&OsStr>, exists: impl Fn(&Path) -> bool
 
 /// Spawns Windows Terminal with the fixed arguments; takes no input.
 pub fn open() -> Result<(), String> {
-    let home = std::env::var_os("USERPROFILE").ok_or("Kullanıcı klasörü bulunamadı")?;
+    let home = std::env::var_os("USERPROFILE").ok_or(errors::WT_HOME_MISSING)?;
     let args = wt_args(Path::new(&home), &crate::pty::powershell_exe())?;
     // The alias is a reparse point that `metadata` may fail to follow.
     let program = wt_program(std::env::var_os("LOCALAPPDATA").as_deref(), |p| {
@@ -48,8 +48,8 @@ pub fn open() -> Result<(), String> {
     });
     match std::process::Command::new(program).args(args).spawn() {
         Ok(_) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(WT_NOT_FOUND.into()),
-        Err(e) => Err(format!("Windows Terminal açılamadı: {e}")),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(errors::WT_NOT_FOUND.into()),
+        Err(e) => Err(errors::with(errors::WT_OPEN_FAILED, e)),
     }
 }
 
@@ -72,8 +72,8 @@ mod tests {
     #[test]
     fn args_reject_relative_or_split_powershell_path() {
         let home = Path::new(r"C:\Users\x");
-        assert!(wt_args(home, Path::new("powershell.exe")).is_err());
-        assert!(wt_args(home, Path::new(r"C:\a;b\powershell.exe")).is_err());
+        assert_eq!(wt_args(home, Path::new("powershell.exe")).unwrap_err(), crate::errors::WT_POWERSHELL_INVALID);
+        assert_eq!(wt_args(home, Path::new(r"C:\a;b\powershell.exe")).unwrap_err(), crate::errors::WT_POWERSHELL_INVALID);
     }
 
     #[test]
@@ -88,9 +88,9 @@ mod tests {
     fn args_reject_home_wt_would_misparse() {
         // `;` separates wt subcommands; a relative or empty path is not a home.
         let ps = Path::new(PS);
-        assert!(wt_args(Path::new(r"C:\Users\a;b"), ps).is_err());
-        assert!(wt_args(Path::new(r"Users\x"), ps).is_err());
-        assert!(wt_args(Path::new(""), ps).is_err());
+        for home in [r"C:\Users\a;b", r"Users\x", ""] {
+            assert_eq!(wt_args(Path::new(home), ps).unwrap_err(), crate::errors::WT_HOME_INVALID, "{home}");
+        }
     }
 
     #[test]
