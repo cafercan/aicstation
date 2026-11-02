@@ -195,7 +195,7 @@ impl AgentCache {
                 .and_then(|m| m.modified())
                 .map(|mt| now.duration_since(mt).map_or(true, |d| d <= RUNNING_WINDOW))
                 .unwrap_or(false);
-            let open_tool = stats.tool_calls.back().map_or(false, |c| c.state == ToolState::Running);
+            let open_tool = stats.tool_calls.back().is_some_and(|c| c.state == ToolState::Running);
             if recent || open_tool {
                 AgentState::Running
             } else {

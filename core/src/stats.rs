@@ -30,10 +30,10 @@ pub struct SessionStats {
 
 impl SessionStats {
     fn touch(&mut self, at: DateTime<Utc>) {
-        if self.first_at.map_or(true, |f| at < f) {
+        if self.first_at.is_none_or(|f| at < f) {
             self.first_at = Some(at);
         }
-        if self.last_at.map_or(true, |l| at > l) {
+        if self.last_at.is_none_or(|l| at > l) {
             self.last_at = Some(at);
         }
     }

@@ -325,7 +325,7 @@ mod tests {
         assert!(validate_open_folder(&real, &["D:\\baska".to_string()]).is_err());
         assert!(validate_open_folder("", &[String::new()]).is_err());
         // Known and existing is accepted.
-        assert!(validate_open_folder(&real, &[real.clone()]).is_ok());
+        assert!(validate_open_folder(&real, std::slice::from_ref(&real)).is_ok());
     }
 
     #[test]
@@ -342,7 +342,7 @@ mod tests {
             format!("{real},/select"),
             r"C:\a,b".to_string(),
         ] {
-            assert!(validate_open_folder(&bad, &[bad.clone()]).is_err(), "should reject {bad}");
+            assert!(validate_open_folder(&bad, std::slice::from_ref(&bad)).is_err(), "should reject {bad}");
         }
     }
 
@@ -350,7 +350,7 @@ mod tests {
     fn open_folder_accepts_exact_known_absolute_dir_with_trailing_backslash() {
         let dir = tempfile::tempdir().unwrap();
         let real = dir.path().to_string_lossy().into_owned();
-        let out = validate_open_folder(&real, &[real.clone()]).unwrap();
+        let out = validate_open_folder(&real, std::slice::from_ref(&real)).unwrap();
         assert!(out.to_string_lossy().ends_with('\\'));
     }
 
@@ -360,7 +360,7 @@ mod tests {
         let f = dir.path().join("calistir.exe");
         fs::write(&f, b"x").unwrap();
         let p = f.to_string_lossy().into_owned();
-        assert!(validate_open_folder(&p, &[p.clone()]).is_err());
+        assert!(validate_open_folder(&p, std::slice::from_ref(&p)).is_err());
     }
 
     const LIVE_ID: &str = "11111111-2222-4333-8444-555555555555";
