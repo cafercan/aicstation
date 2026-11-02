@@ -45,8 +45,11 @@ fn csp_has_no_remote_origins() {
         .as_str()
         .expect("app.security.csp must be set");
     check_csp(csp).unwrap();
-    assert!(csp.contains("connect-src ipc: http://ipc.localhost"));
+    assert_eq!(csp, PLAN_CSP, "CSP must equal the plan string exactly");
 }
+
+/// The CSP fixed by the plan; any change must be a deliberate plan change.
+const PLAN_CSP: &str = "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' data:";
 
 #[test]
 fn csp_checker_rejects_bad_inputs() {

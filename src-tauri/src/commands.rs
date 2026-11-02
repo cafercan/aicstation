@@ -1,9 +1,9 @@
 //! IPC commands and the shared application state. Every command is a thin
 //! wrapper over a plain function on `AppState` so tests can call the handlers
 //! without a webview. All arguments from the UI are untrusted.
-use pano_core::history::{HistoryIndex, HistoryRow};
+use pano_core::history::{cost_on_rows, HistoryIndex, HistoryRow};
 use pano_core::locate::Locator;
-use pano_core::monitor::{Monitor, SessionDetail, Snapshot};
+use pano_core::monitor::{ClosedKey, Monitor, SessionDetail, Snapshot};
 use pano_core::registry::ProcessProbe;
 use serde::Serialize;
 use std::collections::HashSet;
@@ -26,22 +26,31 @@ pub struct HistoryView {
     pub indexing: bool,
 }
 
-/// Published by the background thread after each index step so commands never
-/// wait on `HistoryIndex::step`.
-#[derive(Default)]
-struct HistoryCache {
-    rows: Vec<HistoryRow>,
-    today_cost: f64,
-    today_complete: bool,
+/// Last snapshot plus what history needs from the same refresh: the live ids
+/// (= `snap.sessions`) and their cost on `day`.
+struct SnapCache {
+    at: Instant,
+    snap: Snapshot,
+    day: chrono::NaiveDate,
+    live_cost: f64,
 }
 
 pub struct AppState {
     monitor: Mutex<Monitor>,
     history: Mutex<HistoryIndex>,
-    history_cache: Mutex<HistoryCache>,
+    /// Rows published by the indexer thread after each step so commands never
+    /// wait on `HistoryIndex::step`.
+    history_rows: Mutex<Vec<HistoryRow>>,
+    projects_dir: PathBuf,
     probe: Box<dyn ProcessProbe + Send + Sync>,
-    snapshot: Mutex<Option<(Instant, Snapshot)>>,
+    snapshot: Mutex<Option<SnapCache>>,
     indexing: AtomicBool,
+    /// Set after repeated indexer panics; indexing stays off for this run.
+    index_disabled: AtomicBool,
+    /// Index changed since the last save.
+    history_dirty: AtomicBool,
+    /// Last built closed-session detail, keyed by transcript (path, len, mtime).
+    closed_cache: Mutex<Option<(ClosedKey, SessionDetail)>>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -54,48 +63,57 @@ impl AppState {
         cache_path: PathBuf,
         probe: Box<dyn ProcessProbe + Send + Sync>,
     ) -> Self {
-        let locator = Locator::new(claude_dir.join("projects"));
-        let history = HistoryIndex::load(cache_path, &locator);
+        let projects_dir = claude_dir.join("projects");
+        let history = HistoryIndex::load(cache_path, &Locator::new(projects_dir.clone()));
         let state = Self {
             monitor: Mutex::new(Monitor::new(claude_dir)),
             history: Mutex::new(history),
-            history_cache: Mutex::new(HistoryCache::default()),
+            history_rows: Mutex::new(Vec::new()),
+            projects_dir,
             probe,
             snapshot: Mutex::new(None),
             indexing: AtomicBool::new(true),
+            index_disabled: AtomicBool::new(false),
+            history_dirty: AtomicBool::new(false),
+            closed_cache: Mutex::new(None),
         };
         state.publish_history();
         state
     }
 
-    /// Rebuilds the cached history view (brief history lock, no indexing).
+    /// Copies the index rows into the published list (brief history lock).
     pub fn publish_history(&self) {
-        let cache = {
-            let h = lock(&self.history);
-            let (today_cost, today_complete) = h.cost_on(chrono::Local::now().date_naive(), &HashSet::new());
-            HistoryCache {
-                rows: h.rows(&HashSet::new()).into_iter().cloned().collect(),
-                today_cost,
-                today_complete,
-            }
-        };
-        *lock(&self.history_cache) = cache;
+        let rows: Vec<HistoryRow> = lock(&self.history).rows(&HashSet::new()).into_iter().cloned().collect();
+        *lock(&self.history_rows) = rows;
     }
 
     /// Recomputes the snapshot and stores it. The monitor lock is released
     /// before the snapshot lock is taken, and before the caller emits.
     pub fn refresh(&self) -> Snapshot {
-        let snap = lock(&self.monitor).refresh(self.probe.as_ref(), SystemTime::now());
-        *lock(&self.snapshot) = Some((Instant::now(), snap.clone()));
+        let day = chrono::Local::now().date_naive();
+        let (snap, live_cost) = {
+            let mut m = lock(&self.monitor);
+            let snap = m.refresh(self.probe.as_ref(), SystemTime::now());
+            (snap, m.live_cost_on(day).0)
+        };
+        *lock(&self.snapshot) = Some(SnapCache { at: Instant::now(), snap: snap.clone(), day, live_cost });
         snap
     }
 
+    fn fresh_cache<R>(&self, f: impl Fn(&SnapCache) -> R) -> R {
+        if let Some(r) = lock(&self.snapshot).as_ref().filter(|c| c.at.elapsed() < SNAPSHOT_MAX_AGE).map(&f) {
+            return r;
+        }
+        self.refresh();
+        f(lock(&self.snapshot).as_ref().expect("refresh stores a snapshot"))
+    }
+
     pub fn get_snapshot(&self) -> Snapshot {
-        let cached = lock(&self.snapshot)
-            .as_ref()
-            .filter(|(t, _)| t.elapsed() < SNAPSHOT_MAX_AGE)
-            .map(|(_, s)| s.clone());
-        cached.unwrap_or_else(|| self.refresh())
+        self.fresh_cache(|c| c.snap.clone())
+    }
+
+    fn live_ids(&self) -> HashSet<String> {
+        self.fresh_cache(|c| c.snap.sessions.iter().map(|s| s.session_id.clone()).collect())
     }
 
     pub fn get_session_detail(&self, session_id: &str) -> Option<SessionDetail> {
@@ -110,19 +128,39 @@ impl AppState {
             }
             m.closed_job(session_id)?
         };
-        // Transcript streaming happens without the monitor lock.
-        closed.run(session_id, now)
+        // Transcript streaming happens without the monitor lock; an unchanged
+        // closed transcript is served from the cache.
+        let key = closed.key();
+        if let Some(k) = &key {
+            if let Some((ck, d)) = lock(&self.closed_cache).as_ref() {
+                if ck == k {
+                    return Some(d.clone());
+                }
+            }
+        }
+        let d = closed.run(session_id, now)?;
+        if let Some(k) = key {
+            *lock(&self.closed_cache) = Some((k, d.clone()));
+        }
+        Some(d)
     }
 
+    /// Rows exclude live sessions. Today's cost = indexed cost of the closed
+    /// sessions + today's slice of each live session (and its agents) from the
+    /// monitor; both use the live set of the same refresh, so nothing is counted
+    /// twice. `today_complete` covers the closed part only.
     pub fn get_history(&self) -> HistoryView {
-        let snap = self.get_snapshot();
-        let live: HashSet<String> = snap.sessions.iter().map(|c| c.session_id.clone()).collect();
-        let c = lock(&self.history_cache);
+        let (live, day, live_cost) = self.fresh_cache(|c| {
+            let ids: HashSet<String> = c.snap.sessions.iter().map(|s| s.session_id.clone()).collect();
+            (ids, c.day, c.live_cost)
+        });
+        let rows = lock(&self.history_rows);
+        let (closed_cost, today_complete) = cost_on_rows(rows.iter(), day, &live);
         HistoryView {
-            rows: c.rows.iter().filter(|r| !live.contains(&r.session_id)).cloned().collect(),
-            today_cost: c.today_cost,
-            today_complete: c.today_complete,
-            indexing: self.indexing.load(Ordering::Relaxed),
+            rows: rows.iter().filter(|r| !live.contains(&r.session_id)).cloned().collect(),
+            today_cost: closed_cost + live_cost,
+            today_complete,
+            indexing: self.is_indexing(),
         }
     }
 
@@ -133,30 +171,70 @@ impl AppState {
 
     /// Gives up indexing for this run (after repeated panics) and publishes what exists.
     pub fn disable_indexing(&self) {
+        self.index_disabled.store(true, Ordering::Relaxed);
         self.indexing.store(false, Ordering::Relaxed);
         self.publish_history();
     }
 
-    /// Runs one indexing slice, then publishes the result. Only the background
-    /// thread calls this; commands read the published cache and never wait on it.
-    pub fn index_step(&self, budget: Duration) -> bool {
-        let more = lock(&self.history).step(budget);
+    /// Re-lists transcripts (new / changed closed sessions; live ones skipped)
+    /// and publishes. Returns whether indexing has work.
+    pub fn rescan_history(&self) -> bool {
+        if self.index_disabled.load(Ordering::Relaxed) {
+            return false;
+        }
+        let live = self.live_ids();
+        let more = lock(&self.history).rescan(&Locator::new(self.projects_dir.clone()), &live);
         self.publish_history();
         self.indexing.store(more, Ordering::Relaxed);
         more
     }
 
-    pub fn save_history(&self) -> std::io::Result<()> {
-        lock(&self.history).save()
+    /// Runs one indexing slice, then publishes the result. Only the indexer
+    /// thread calls this; commands read the published rows and never wait on it.
+    pub fn index_step(&self, budget: Duration) -> bool {
+        if self.index_disabled.load(Ordering::Relaxed) {
+            return false;
+        }
+        let more = {
+            let mut h = lock(&self.history);
+            let had_work = h.has_work();
+            let more = h.step(budget);
+            if had_work {
+                self.history_dirty.store(true, Ordering::Relaxed);
+            }
+            more
+        };
+        self.publish_history();
+        self.indexing.store(more, Ordering::Relaxed);
+        more
+    }
+
+    /// Saves the cache only when the index changed since the last save.
+    /// Returns Ok(true) when something was written.
+    pub fn save_history_if_dirty(&self) -> std::io::Result<bool> {
+        if !self.history_dirty.swap(false, Ordering::Relaxed) {
+            return Ok(false);
+        }
+        lock(&self.history).save().inspect_err(|_| self.history_dirty.store(true, Ordering::Relaxed))?;
+        Ok(true)
+    }
+
+    /// Exit-time save that never waits on an indexing step in progress.
+    pub fn save_history_on_exit(&self) {
+        if !self.history_dirty.load(Ordering::Relaxed) {
+            return;
+        }
+        if let Ok(h) = self.history.try_lock() {
+            if let Err(e) = h.save() {
+                eprintln!("geçmiş önbelleği kaydedilemedi: {e}");
+            }
+        }
     }
 
     pub fn open_folder(&self, path: &str) -> Result<(), String> {
         let mut known: Vec<String> =
             self.get_snapshot().sessions.iter().map(|c| c.cwd.clone()).collect();
-        {
-            let c = lock(&self.history_cache);
-            known.extend(c.rows.iter().filter_map(|r| r.cwd.clone()));
-        }
+        known.extend(lock(&self.history_rows).iter().filter_map(|r| r.cwd.clone()));
         let dir = validate_open_folder(path, &known)?;
         std::process::Command::new("explorer.exe")
             .arg(dir)
@@ -200,12 +278,17 @@ pub fn get_snapshot(state: tauri::State<'_, AppState>) -> Snapshot {
     state.get_snapshot()
 }
 
-#[tauri::command(async)]
-pub fn get_session_detail(
-    state: tauri::State<'_, AppState>,
+/// Runs on the blocking pool: a closed session's transcript may be hundreds
+/// of MB and must not occupy an async worker (pty_write shares them).
+#[tauri::command]
+pub async fn get_session_detail(
+    app: tauri::AppHandle,
     session_id: String,
-) -> Option<SessionDetail> {
-    state.get_session_detail(&session_id)
+) -> Result<Option<SessionDetail>, String> {
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().get_session_detail(&session_id))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]
@@ -280,6 +363,87 @@ mod tests {
         assert!(validate_open_folder(&p, &[p.clone()]).is_err());
     }
 
+    const LIVE_ID: &str = "11111111-2222-4333-8444-555555555555";
+    const CLOSED_ID: &str = "aaaaaaaa-2222-4333-8444-555555555555";
+
+    fn asst(mid: &str, out: u64, ts: &str) -> String {
+        format!(
+            r#"{{"type":"assistant","timestamp":"{ts}","cwd":"C:\\demo","message":{{"id":"{mid}","model":"claude-sonnet-5-5","usage":{{"input_tokens":0,"output_tokens":{out}}},"content":[]}}}}"#
+        )
+    }
+
+    /// claude dir with one live session (pid 4242) and one closed session,
+    /// each with one assistant line of `out` output tokens today.
+    fn two_sessions(tmp: &Path, out: u64) -> (PathBuf, FakeProbe) {
+        let claude = tmp.join("claude");
+        let sessions = claude.join("sessions");
+        let proj = claude.join("projects").join("C--demo");
+        fs::create_dir_all(&sessions).unwrap();
+        fs::create_dir_all(&proj).unwrap();
+        fs::write(
+            sessions.join("4242.json"),
+            format!(r#"{{"pid":4242,"sessionId":"{LIVE_ID}","cwd":"C:\\demo","procStart":"777","status":"busy"}}"#),
+        )
+        .unwrap();
+        let ts = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        fs::write(proj.join(format!("{LIVE_ID}.jsonl")), asst("m1", out, &ts) + "\n").unwrap();
+        fs::write(proj.join(format!("{CLOSED_ID}.jsonl")), asst("m2", out, &ts) + "\n").unwrap();
+        (claude, FakeProbe(HashMap::from([(4242, 777)])))
+    }
+
+    #[test]
+    fn today_cost_combines_closed_index_and_live_monitor_without_double_counting() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, probe) = two_sessions(tmp.path(), 1_000_000);
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(probe));
+        state.rescan_history();
+        while state.index_step(Duration::from_secs(5)) {}
+        let hv = state.get_history();
+        assert!(hv.today_complete);
+        assert_eq!(hv.rows.len(), 1, "live session is not a history row");
+        let one = hv.rows[0].summary.as_ref().unwrap().cost_usd;
+        assert!(one > 0.0);
+        assert!((hv.today_cost - 2.0 * one).abs() < 1e-9, "{} vs 2 x {one}", hv.today_cost);
+    }
+
+    #[test]
+    fn closed_detail_served_from_cache_until_transcript_changes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, probe) = two_sessions(tmp.path(), 5);
+        let path = claude.join("projects").join("C--demo").join(format!("{CLOSED_ID}.jsonl"));
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(probe));
+        assert_eq!(state.get_session_detail(CLOSED_ID).unwrap().tokens.output, 5);
+        // Same length and mtime, different content: a cache hit returns the old detail.
+        let mtime = fs::metadata(&path).unwrap().modified().unwrap();
+        let text = fs::read_to_string(&path).unwrap().replace("\"output_tokens\":5", "\"output_tokens\":7");
+        fs::write(&path, text).unwrap();
+        fs::OpenOptions::new().write(true).open(&path).unwrap().set_modified(mtime).unwrap();
+        assert_eq!(state.get_session_detail(CLOSED_ID).unwrap().tokens.output, 5, "cache hit");
+        // Grown file: rebuilt.
+        let ts = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let mut f = fs::OpenOptions::new().append(true).open(&path).unwrap();
+        std::io::Write::write_all(&mut f, (asst("m3", 1, &ts) + "\n").as_bytes()).unwrap();
+        drop(f);
+        assert_eq!(state.get_session_detail(CLOSED_ID).unwrap().tokens.output, 8);
+    }
+
+    #[test]
+    fn history_saved_only_when_dirty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, probe) = two_sessions(tmp.path(), 5);
+        let cache = tmp.path().join("c.json");
+        let state = AppState::new(claude, cache.clone(), Box::new(probe));
+        assert!(!state.save_history_if_dirty().unwrap(), "nothing indexed yet");
+        assert!(!cache.exists());
+        state.rescan_history();
+        while state.index_step(Duration::from_secs(5)) {}
+        assert!(state.save_history_if_dirty().unwrap());
+        assert!(cache.exists());
+        assert!(!state.save_history_if_dirty().unwrap(), "unchanged -> no write");
+        state.index_step(Duration::from_secs(5)); // no work left
+        assert!(!state.save_history_if_dirty().unwrap());
+    }
+
     #[test]
     fn handlers_report_fake_live_session_and_history() {
         let tmp = tempfile::tempdir().unwrap();
@@ -340,9 +504,9 @@ pub fn pty_spawn(
     state.spawn_shell(
         cols,
         rows,
-        move |b| {
-            let _ = on_output.send(b.to_vec());
-        },
+        // A failed send means the webview side is gone (e.g. reload); the
+        // manager then kills the orphaned terminal.
+        move |b| on_output.send(b.to_vec()).is_ok(),
         move |code| {
             let _ = on_exit.send(code);
         },

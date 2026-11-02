@@ -14,7 +14,10 @@ use tauri::{Emitter, Manager};
 const TICK: Duration = Duration::from_secs(1);
 const MIN_GAP: Duration = Duration::from_millis(250); // max 4 Hz
 const SAVE_EVERY: Duration = Duration::from_secs(30);
+const RESCAN_EVERY: Duration = Duration::from_secs(15);
 const INDEX_BUDGET: Duration = Duration::from_millis(50);
+/// Idle wait of the indexer when there is nothing to index.
+const INDEX_IDLE: Duration = Duration::from_secs(1);
 const MAX_INDEX_PANICS: u32 = 3;
 
 fn emit_snapshot(app: &tauri::AppHandle) {
@@ -22,22 +25,19 @@ fn emit_snapshot(app: &tauri::AppHandle) {
     let _ = app.emit("snapshot", snap);
 }
 
-/// What the background thread does next.
+/// What the snapshot thread does next.
 #[derive(Debug, PartialEq)]
 enum Action {
     Emit,
-    Index,
     Wait(Duration),
 }
 
-/// Pure scheduling decision. Emits are due every TICK, or at most every
-/// MIN_GAP when notify reported a change; any other time is spent indexing
-/// history while work remains, otherwise waiting for the next event.
-fn decide(since_emit: Duration, changed: bool, indexing: bool) -> Action {
+/// Pure scheduling decision of the snapshot thread. Emits are due every TICK,
+/// or at most every MIN_GAP when notify reported a change; otherwise it waits
+/// for the next event. Indexing runs on its own thread and never delays this.
+fn decide(since_emit: Duration, changed: bool) -> Action {
     if since_emit >= TICK || (changed && since_emit >= MIN_GAP) {
         Action::Emit
-    } else if indexing {
-        Action::Index
     } else if changed {
         Action::Wait(MIN_GAP - since_emit)
     } else {
@@ -45,7 +45,33 @@ fn decide(since_emit: Duration, changed: bool, indexing: bool) -> Action {
     }
 }
 
-fn background_loop(app: tauri::AppHandle, dir: PathBuf) {
+/// What the indexer thread does next.
+#[derive(Debug, PartialEq)]
+enum IndexAction {
+    Rescan,
+    Step,
+    Idle(Duration),
+}
+
+/// Pure scheduling decision of the indexer thread: rescan every RESCAN_EVERY,
+/// index while work remains, otherwise idle until the next rescan is due.
+fn decide_index(since_rescan: Duration, indexing: bool) -> IndexAction {
+    if since_rescan >= RESCAN_EVERY {
+        IndexAction::Rescan
+    } else if indexing {
+        IndexAction::Step
+    } else {
+        IndexAction::Idle(INDEX_IDLE.min(RESCAN_EVERY - since_rescan))
+    }
+}
+
+/// Panic bookkeeping of the indexer: true when indexing must be given up.
+fn index_panicked(panics: &mut u32) -> bool {
+    *panics += 1;
+    *panics >= MAX_INDEX_PANICS
+}
+
+fn snapshot_loop(app: tauri::AppHandle, dir: PathBuf) {
     let (tx, rx) = mpsc::channel::<()>();
     let mut watcher: Option<RecommendedWatcher> =
         notify::recommended_watcher(move |_res: notify::Result<notify::Event>| {
@@ -58,29 +84,18 @@ fn background_loop(app: tauri::AppHandle, dir: PathBuf) {
         }
     }
     let mut last_emit = Instant::now() - TICK;
-    let mut last_save = Instant::now();
     let mut changed = false;
-    let mut index_panics = 0u32;
-    let mut in_index = false;
     loop {
-        // Collect pending notify events without blocking.
         while rx.try_recv().is_ok() {
             changed = true;
         }
-        let indexing = app.state::<AppState>().is_indexing();
         // A panic in one iteration must not silently kill the thread.
         let step = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            match decide(last_emit.elapsed(), changed, indexing) {
+            match decide(last_emit.elapsed(), changed) {
                 Action::Emit => {
                     emit_snapshot(&app);
                     last_emit = Instant::now();
                     changed = false;
-                }
-                Action::Index => {
-                    in_index = true;
-                    app.state::<AppState>().index_step(INDEX_BUDGET);
-                    in_index = false;
-                    index_panics = 0;
                 }
                 Action::Wait(d) => match rx.recv_timeout(d) {
                     Ok(()) => changed = true,
@@ -88,28 +103,52 @@ fn background_loop(app: tauri::AppHandle, dir: PathBuf) {
                     Err(RecvTimeoutError::Disconnected) => std::thread::sleep(d),
                 },
             }
+        }));
+        if step.is_err() {
+            eprintln!("anlık görüntü döngüsünde hata; devam ediliyor");
+            std::thread::sleep(MIN_GAP);
+        }
+    }
+}
+
+/// History indexing (rescan, step, publish, periodic save) on its own thread
+/// so a large transcript never delays snapshot emits.
+fn indexer_loop(app: tauri::AppHandle) {
+    let mut last_rescan = Instant::now() - RESCAN_EVERY;
+    let mut last_save = Instant::now();
+    let mut panics = 0u32;
+    loop {
+        let st = app.state::<AppState>();
+        let step = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            match decide_index(last_rescan.elapsed(), st.is_indexing()) {
+                IndexAction::Rescan => {
+                    st.rescan_history();
+                    last_rescan = Instant::now();
+                }
+                IndexAction::Step => {
+                    st.index_step(INDEX_BUDGET);
+                }
+                IndexAction::Idle(d) => std::thread::sleep(d),
+            }
             if last_save.elapsed() >= SAVE_EVERY {
-                let st = app.state::<AppState>();
                 st.publish_history(); // also refreshes "today" across midnight
-                if let Err(e) = st.save_history() {
+                if let Err(e) = st.save_history_if_dirty() {
                     eprintln!("geçmiş önbelleği kaydedilemedi: {e}");
                 }
                 last_save = Instant::now();
             }
         }));
-        if step.is_err() {
-            eprintln!("arka plan döngüsünde hata; devam ediliyor");
-            // No tick-clock reset: the sleep prevents a hot loop and `since`
-            // keeps growing, so an Emit is forced within a few iterations.
-            if in_index {
-                in_index = false;
-                index_panics += 1;
-                if index_panics >= MAX_INDEX_PANICS {
+        match step {
+            Ok(()) => panics = 0,
+            Err(_) => {
+                eprintln!("indeksleme hatası; devam ediliyor");
+                if index_panicked(&mut panics) {
                     eprintln!("indeksleme tekrar tekrar çöktü; bu oturumda durduruldu");
-                    app.state::<AppState>().disable_indexing();
+                    st.disable_indexing();
+                    return;
                 }
+                std::thread::sleep(MIN_GAP);
             }
-            std::thread::sleep(Duration::from_millis(250));
         }
     }
 }
@@ -127,7 +166,9 @@ fn main() {
             ));
             app.manage(pty::PtyManager::new());
             let handle = app.handle().clone();
-            std::thread::spawn(move || background_loop(handle, dir));
+            std::thread::spawn(move || snapshot_loop(handle, dir));
+            let handle = app.handle().clone();
+            std::thread::spawn(move || indexer_loop(handle));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -146,6 +187,7 @@ fn main() {
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 app.state::<pty::PtyManager>().kill_all();
+                app.state::<AppState>().save_history_on_exit();
             }
         });
 }
@@ -156,46 +198,44 @@ mod tests {
 
     #[test]
     fn loop_emits_when_tick_elapsed() {
-        assert_eq!(decide(TICK, false, true), Action::Emit);
-        assert_eq!(decide(Duration::from_millis(1500), false, false), Action::Emit);
+        assert_eq!(decide(TICK, false), Action::Emit);
+        assert_eq!(decide(Duration::from_millis(1500), false), Action::Emit);
     }
 
     #[test]
-    fn loop_still_emits_when_index_keeps_panicking() {
-        // Panic handler sleeps 250 ms and does not reset the tick clock.
-        let mut since = Duration::ZERO;
-        let mut emitted = false;
-        for _ in 0..MAX_INDEX_PANICS + 2 {
-            match decide(since, false, true) {
-                Action::Emit => {
-                    emitted = true;
-                    break;
-                }
-                _ => since += Duration::from_millis(250),
-            }
+    fn loop_waits_out_the_tick_without_changes() {
+        assert_eq!(decide(Duration::from_millis(100), false), Action::Wait(Duration::from_millis(900)));
+    }
+
+    #[test]
+    fn loop_caps_emits_at_4hz_while_changes_keep_arriving() {
+        assert_eq!(decide(MIN_GAP, true), Action::Emit);
+        assert_eq!(decide(Duration::from_millis(100), true), Action::Wait(Duration::from_millis(150)));
+    }
+
+    #[test]
+    fn indexer_rescans_first_then_steps_while_work_remains() {
+        // First iteration: last_rescan starts RESCAN_EVERY in the past.
+        assert_eq!(decide_index(RESCAN_EVERY, false), IndexAction::Rescan);
+        assert_eq!(decide_index(RESCAN_EVERY, true), IndexAction::Rescan);
+        assert_eq!(decide_index(Duration::from_secs(1), true), IndexAction::Step);
+    }
+
+    #[test]
+    fn indexer_idles_until_next_rescan_when_done() {
+        assert_eq!(decide_index(Duration::from_secs(1), false), IndexAction::Idle(INDEX_IDLE));
+        assert_eq!(
+            decide_index(RESCAN_EVERY - Duration::from_millis(300), false),
+            IndexAction::Idle(Duration::from_millis(300))
+        );
+    }
+
+    #[test]
+    fn indexer_gives_up_after_max_panics() {
+        let mut p = 0;
+        for _ in 1..MAX_INDEX_PANICS {
+            assert!(!index_panicked(&mut p));
         }
-        assert!(emitted, "snapshot emit must not be starved by index panics");
-    }
-
-    #[test]
-    fn loop_indexes_between_ticks() {
-        assert_eq!(decide(Duration::from_millis(100), false, true), Action::Index);
-        // Nothing to index: wait out the rest of the tick.
-        assert_eq!(
-            decide(Duration::from_millis(100), false, false),
-            Action::Wait(Duration::from_millis(900))
-        );
-    }
-
-    #[test]
-    fn loop_indexes_while_changes_keep_arriving() {
-        // Continuous notify events: emits are capped at 4 Hz and the time in
-        // between goes to indexing, so it never starves.
-        assert_eq!(decide(Duration::from_millis(100), true, true), Action::Index);
-        assert_eq!(decide(MIN_GAP, true, true), Action::Emit);
-        assert_eq!(
-            decide(Duration::from_millis(100), true, false),
-            Action::Wait(Duration::from_millis(150))
-        );
+        assert!(index_panicked(&mut p));
     }
 }

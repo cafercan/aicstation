@@ -280,25 +280,34 @@ impl HistoryIndex {
     /// adds those from the live monitor -, whether every such file that could hold
     /// that day - modified on/after its local midnight - has been indexed).
     pub fn cost_on(&self, day: NaiveDate, live_ids: &HashSet<String>) -> (f64, bool) {
-        let midnight = day
-            .and_time(NaiveTime::MIN)
-            .and_local_timezone(Local)
-            .earliest()
-            .map_or(0, |t| t.timestamp_millis().max(0) as u64);
-        let mut total = 0.0;
-        let mut complete = true;
-        for r in self.rows.iter().filter(|r| !live_ids.contains(&r.session_id)) {
-            match &r.summary {
-                Some(s) => total += s.cost_by_day.get(&day).copied().unwrap_or(0.0),
-                None => {
-                    if r.modified_ms >= midnight {
-                        complete = false;
-                    }
+        cost_on_rows(&self.rows, day, live_ids)
+    }
+}
+
+/// [`HistoryIndex::cost_on`] over an already published row list.
+pub fn cost_on_rows<'a>(
+    rows: impl IntoIterator<Item = &'a HistoryRow>,
+    day: NaiveDate,
+    live_ids: &HashSet<String>,
+) -> (f64, bool) {
+    let midnight = day
+        .and_time(NaiveTime::MIN)
+        .and_local_timezone(Local)
+        .earliest()
+        .map_or(0, |t| t.timestamp_millis().max(0) as u64);
+    let mut total = 0.0;
+    let mut complete = true;
+    for r in rows.into_iter().filter(|r| !live_ids.contains(&r.session_id)) {
+        match &r.summary {
+            Some(s) => total += s.cost_by_day.get(&day).copied().unwrap_or(0.0),
+            None => {
+                if r.modified_ms >= midnight {
+                    complete = false;
                 }
             }
         }
-        (total, complete)
     }
+    (total, complete)
 }
 
 #[cfg(test)]

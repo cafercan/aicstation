@@ -64,7 +64,7 @@ impl PtyManager {
         &self,
         cols: u16,
         rows: u16,
-        on_output: impl Fn(&[u8]) + Send + 'static,
+        on_output: impl Fn(&[u8]) -> bool + Send + 'static,
         on_exit: impl FnOnce(i32) + Send + 'static,
     ) -> Result<PtyInfo, String> {
         let root = std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into());
@@ -93,7 +93,7 @@ impl PtyManager {
         args: &[&str],
         cols: u16,
         rows: u16,
-        on_output: impl Fn(&[u8]) + Send + 'static,
+        on_output: impl Fn(&[u8]) -> bool + Send + 'static,
         on_exit: impl FnOnce(i32) + Send + 'static,
     ) -> Result<PtyInfo, String> {
         let mut cmd = CommandBuilder::new(program);
@@ -106,7 +106,7 @@ impl PtyManager {
         mut cmd: CommandBuilder,
         cols: u16,
         rows: u16,
-        on_output: impl Fn(&[u8]) + Send + 'static,
+        on_output: impl Fn(&[u8]) -> bool + Send + 'static,
         on_exit: impl FnOnce(i32) + Send + 'static,
     ) -> Result<PtyInfo, String> {
         let id = {
@@ -139,12 +139,23 @@ impl PtyManager {
             g.ptys.insert(id, Entry { pid, master: pair.master, writer: Arc::new(Mutex::new(writer)), killer });
         }
 
+        let inner_r = Arc::clone(&self.inner);
         let reader_thread = std::thread::spawn(move || {
             let mut buf = [0u8; 8192];
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) | Err(_) => break,
-                    Ok(n) => on_output(&buf[..n]),
+                    Ok(n) => {
+                        if !on_output(&buf[..n]) {
+                            // Nobody receives the output any more (webview reloaded):
+                            // kill the orphan; the wait thread still reports the exit.
+                            let entry = inner_r.lock().ok().and_then(|mut g| g.ptys.remove(&id));
+                            if let Some(mut e) = entry {
+                                let _ = e.killer.kill();
+                            }
+                            break;
+                        }
+                    }
                 }
             }
         });
@@ -238,9 +249,7 @@ mod tests {
                 &["/c", "echo pano-ok"],
                 80,
                 24,
-                move |b| {
-                    let _ = tx.send(Ev::Out(b.to_vec()));
-                },
+                move |b| tx.send(Ev::Out(b.to_vec())).is_ok(),
                 move |c| {
                     let _ = tx2.send(Ev::Exit(c));
                 },
@@ -272,7 +281,7 @@ mod tests {
         let m = PtyManager::new();
         let (tx, rx) = mpsc::channel();
         let info = m
-            .spawn_cmd("cmd.exe", &["/k"], 80, 24, |_| {}, move |c| {
+            .spawn_cmd("cmd.exe", &["/k"], 80, 24, |_| true, move |c| {
                 let _ = tx.send(c);
             })
             .unwrap();
@@ -309,7 +318,7 @@ mod tests {
     #[test]
     fn write_does_not_block_other_commands() {
         let m = Arc::new(PtyManager::new());
-        let info = m.spawn_cmd("cmd.exe", &["/k"], 80, 24, |_| {}, |_| {}).unwrap();
+        let info = m.spawn_cmd("cmd.exe", &["/k"], 80, 24, |_| true, |_| {}).unwrap();
         let (entered_tx, entered_rx) = mpsc::channel();
         let (rel_tx, rel_rx) = mpsc::channel();
         {
@@ -339,7 +348,7 @@ mod tests {
         let m = PtyManager::new();
         let big = "a".repeat(MAX_WRITE + 1);
         assert!(m.write(1, &big).is_err());
-        let info = m.spawn_cmd("cmd.exe", &["/k"], 80, 24, |_| {}, |_| {}).unwrap();
+        let info = m.spawn_cmd("cmd.exe", &["/k"], 80, 24, |_| true, |_| {}).unwrap();
         assert!(m.write(info.id, &big).unwrap_err().contains("büyük"));
         m.kill(info.id).unwrap();
     }
@@ -350,7 +359,7 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         for _ in 0..3 {
             let tx = tx.clone();
-            m.spawn_cmd("cmd.exe", &["/k"], 80, 24, |_| {}, move |c| {
+            m.spawn_cmd("cmd.exe", &["/k"], 80, 24, |_| true, move |c| {
                 let _ = tx.send(c);
             })
             .unwrap();
@@ -364,6 +373,21 @@ mod tests {
     }
 
     #[test]
+    fn failed_output_delivery_kills_the_terminal() {
+        let m = PtyManager::new();
+        let (tx, rx) = mpsc::channel();
+        let info = m
+            .spawn_cmd("cmd.exe", &["/k"], 80, 24, |_| false, move |c| {
+                let _ = tx.send(c);
+            })
+            .unwrap();
+        // The first output chunk (ConPTY's ESC[6n) cannot be delivered.
+        rx.recv_timeout(T).expect("orphaned terminal must exit");
+        assert!(m.list().is_empty());
+        assert!(m.kill(info.id).is_err());
+    }
+
+    #[test]
     fn size_is_clamped() {
         let s = size(0, 5000);
         assert_eq!((s.cols, s.rows), (1, 1000));
@@ -374,9 +398,9 @@ mod tests {
         let m = PtyManager::new();
         let mut ids = Vec::new();
         for _ in 0..MAX_PTYS {
-            ids.push(m.spawn_cmd("cmd.exe", &["/k"], 80, 24, |_| {}, |_| {}).unwrap().id);
+            ids.push(m.spawn_cmd("cmd.exe", &["/k"], 80, 24, |_| true, |_| {}).unwrap().id);
         }
-        assert!(m.spawn_cmd("cmd.exe", &["/k"], 80, 24, |_| {}, |_| {}).is_err());
+        assert!(m.spawn_cmd("cmd.exe", &["/k"], 80, 24, |_| true, |_| {}).is_err());
         for id in ids {
             m.kill(id).unwrap();
         }
