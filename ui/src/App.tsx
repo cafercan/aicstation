@@ -7,7 +7,7 @@ import Dashboard from "./pages/Dashboard";
 import History from "./pages/History";
 import SessionDetailPage from "./pages/SessionDetail";
 import TerminalView from "./pages/TerminalView";
-import { statusClass } from "./format";
+import { statusKind } from "./format";
 import {
   allTerminalIds, closeTerminal, confirmClose, killOrphans, openTerminal, sessionsIn, terminalName,
   useTerminals,
@@ -73,7 +73,7 @@ export default function App() {
   const termId = typeof view === "object" && "terminal" in view ? view.terminal : null;
   const sideTerms = terminals.map((t) => {
     const inside = sessionsIn(t, snapshot.sessions)[0];
-    return { id: t.id, label: terminalName(t, snapshot.sessions), status: inside ? statusClass(inside.status) : null };
+    return { id: t.id, label: terminalName(t, snapshot.sessions), status: inside ? statusKind(inside.status, inside.pid) : null };
   });
 
   const selectedId = typeof view === "object" && "session" in view ? view.session : null;

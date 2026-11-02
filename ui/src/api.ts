@@ -31,6 +31,9 @@ export interface SessionCard {
   costUsd: number;
   agentsTotal: number;
   agentsFinished: number;
+  /** Ok / Error results among the main session's last <= 50 tool calls (running ones excluded). */
+  toolOk: number;
+  toolErr: number;
   lastTool: ToolCall | null;
   startedAtMs: number;
   lastActivityMs: number;

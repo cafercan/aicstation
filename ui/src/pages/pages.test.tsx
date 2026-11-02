@@ -34,7 +34,7 @@ function detail(over: Partial<SessionDetail> = {}): SessionDetail {
     card: {
       sessionId: "s1", pid: 1, parentPid: 77, name: "demo", cwd: "C:/x/demo", status: "busy",
       waitingFor: null, model: "Opus 5.5", contextPct: 62, costUsd: 1.2, agentsTotal: 1,
-      agentsFinished: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 0, gitBranch: "main",
+      agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 0, gitBranch: "main",
     },
     tokens: usage, toolCallCount: 3,
     tree: {
@@ -137,7 +137,7 @@ test("kapanmış oturum bir kez çekilir, snapshot olaylarında yeniden çekilme
   render(<SessionDetailPage sessionId="s1" onBack={() => {}} />);
   await screen.findByText("Klasörü aç");
   expect(screen.getByText(/kapandı/)).toBeTruthy();
-  expect(screen.queryByText(/boşta/)).toBeNull();
+  expect(screen.queryByText(/hazır/)).toBeNull();
   await waitFor(() => expect(snapshotCb).not.toBeNull());
   for (let i = 0; i < 3; i++) await act(async () => { snapshotCb!(); });
   await act(async () => { await new Promise((r) => setTimeout(r, 20)); });

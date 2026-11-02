@@ -1,5 +1,5 @@
 import type { SessionCard } from "../api";
-import { fmtCost, folderName, statusLabel } from "../format";
+import { fmtContext, fmtCost, folderName, statusColor, statusKind, statusLabel } from "../format";
 
 interface Props { sessions: SessionCard[]; selectedId: string | null }
 
@@ -10,8 +10,8 @@ export default function StatusBar({ sessions, selectedId }: Props) {
     <footer className="sb">
       <span className="c2">{c.model ?? "?"}</span> │ {folderName(c.cwd) || "?"} │{" "}
       <span className="g">{c.gitBranch ?? "?"}</span> │{" "}
-      ctx {c.contextPct == null ? "?" : `${Math.round(c.contextPct)}%`} │{" "}
-      {c.agentsTotal > 0 ? `${c.agentsTotal} ajan` : "ajan yok"} │ {statusLabel(c.status)} │{" "}
+      ctx {fmtContext(c.contextPct)} │{" "}
+      {c.agentsTotal > 0 ? `${c.agentsTotal} ajan` : "ajan yok"} │ <span style={{ color: statusColor(statusKind(c.status, c.pid)) }}>{statusLabel(c.status, c.pid)}</span> │{" "}
       {fmtCost(c.costUsd)}
     </footer>
   );

@@ -1,3 +1,6 @@
+import { statusColor, statusLabel, type StatusKind } from "../format";
+import ClaudeMark from "./ClaudeMark";
+
 export type View =
   | "dashboard"
   | "history"
@@ -8,7 +11,7 @@ export interface SidebarTerminal {
   id: number;
   label: string;
   /** Status of the Claude session inside, if any. */
-  status: "busy" | "waiting" | "idle" | null;
+  status: StatusKind | null;
 }
 
 interface Props {
@@ -30,7 +33,10 @@ export default function Sidebar({ view, terminals, onSelect, onNew, onClose }: P
         <div key={t.id}
           className={typeof view === "object" && "terminal" in view && view.terminal === t.id ? "item sub on" : "item sub"}
           onClick={() => onSelect({ terminal: t.id })}>
-          <span className={`dot ${t.status ?? "none"}`}>{t.status ? "●" : "○"}</span> {t.label}
+          {t.status
+            ? <ClaudeMark color={statusColor(t.status)} size={12} label={`Claude: ${statusLabel(t.status)}`} />
+            : <span className="dot none">○</span>}{" "}
+          <span className="lbl">{t.label}</span>
           <span className="close" title="Terminali kapat"
             onClick={(e) => { e.stopPropagation(); onClose(t.id); }}>×</span>
         </div>

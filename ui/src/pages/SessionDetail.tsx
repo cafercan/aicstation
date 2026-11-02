@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getSessionDetail, onSnapshot, openFolder, type AgentNode, type SessionDetail, type ToolCall } from "../api";
-import { fmtCost, fmtElapsed, fmtTokens, statusClass, statusLabel } from "../format";
+import { fmtContext, fmtCost, fmtElapsed, fmtTokens, statusColor, statusKind, statusLabel } from "../format";
+import ClaudeMark from "../components/ClaudeMark";
 import { terminalForPid } from "../terminal/store";
 
 interface Props {
@@ -117,7 +118,7 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal }: Pro
   const calls = selNode ? selNode.stats.toolCalls : detail.mainToolCalls;
   const caption = selNode ? nodeLabel(selNode) : "ana oturum";
   const term = card.parentPid == null ? undefined : terminalForPid(card.parentPid);
-  const cls = statusClass(card.status);
+  const kind = statusKind(card.status, card.pid);
   const started = new Date(card.startedAtMs).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
 
   return (
@@ -125,10 +126,9 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal }: Pro
       <div className="hd">
         <h3>
           <span className="back" role="button" aria-label="Geri" onClick={onBack}>←</span>
+          <ClaudeMark color={statusColor(kind)} size={16} />
           {card.name}{" "}
-          {card.pid === 0
-            ? <span className="x">○ kapandı</span>
-            : <span className={cls === "busy" ? "g" : "x"}>● {statusLabel(card.status)}</span>}
+          <span className={`badge ${kind}`}>{statusLabel(card.status, card.pid)}</span>
         </h3>
         <div>
           {term !== undefined && (
@@ -146,7 +146,7 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal }: Pro
       </div>
       <div className="kpis six">
         <div className="kpi"><b>{card.model ?? "?"}</b><span>model</span></div>
-        <div className="kpi"><b>{card.contextPct == null ? "?" : `${Math.round(card.contextPct)}%`}</b><span>bağlam</span></div>
+        <div className="kpi"><b>{fmtContext(card.contextPct)}</b><span>bağlam</span></div>
         <div className="kpi"><b>{fmtTokens(tokens)}</b><span>token</span></div>
         <div className="kpi"><b>{fmtCost(card.costUsd)}</b><span>maliyet</span></div>
         <div className="kpi"><b>{tree.total} / {tree.finished}</b><span>ajan / biten</span></div>
