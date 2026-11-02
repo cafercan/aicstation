@@ -111,12 +111,37 @@ fn cmp_time(a: Time, b: Time) -> std::cmp::Ordering {
     }
 }
 
+/// Latest first; no time last.
+fn cmp_time_desc(a: Time, b: Time) -> std::cmp::Ordering {
+    match (a, b) {
+        (Some(x), Some(y)) => y.cmp(&x),
+        _ => cmp_time(a, b),
+    }
+}
+
+/// Newest on top: running nodes first, then the rest by start time,
+/// most recently started first (the first-started node ends up last).
 fn sort_nodes(v: &mut [AgentNode]) {
-    v.sort_by(|a, b| cmp_time(a.stats.first_at, b.stats.first_at).then_with(|| a.id.cmp(&b.id)));
+    v.sort_by(|a, b| {
+        let running = |n: &AgentNode| n.state != AgentState::Running;
+        running(a)
+            .cmp(&running(b))
+            .then_with(|| cmp_time_desc(a.stats.first_at, b.stats.first_at))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+}
+
+/// Workflow groups: latest activity first.
+fn sort_by_activity(v: &mut [AgentNode]) {
+    v.sort_by(|a, b| cmp_time_desc(a.stats.last_at, b.stats.last_at).then_with(|| a.id.cmp(&b.id)));
 }
 
 fn first_of<'a>(it: impl Iterator<Item = &'a AgentNode>) -> Time {
     it.filter_map(|n| n.stats.first_at).min()
+}
+
+fn last_of<'a>(it: impl Iterator<Item = &'a AgentNode>) -> Time {
+    it.filter_map(|n| n.stats.last_at).max()
 }
 
 fn any_running<'a>(mut it: impl Iterator<Item = &'a AgentNode>) -> AgentState {
@@ -237,6 +262,7 @@ impl AgentCache {
                 sort_nodes(&mut agents);
                 let mut stats = SessionStats::default();
                 stats.first_at = first_of(agents.iter());
+                stats.last_at = last_of(agents.iter());
                 AgentNode {
                     id: format!("{wf_id}/{name}"),
                     state: any_running(agents.iter()),
@@ -251,6 +277,7 @@ impl AgentCache {
         sort_nodes(&mut phase_nodes);
         let mut stats = SessionStats::default();
         stats.first_at = first_of(phase_nodes.iter());
+        stats.last_at = last_of(phase_nodes.iter());
         Some(AgentNode {
             id: wf_id.clone(),
             kind: AgentKind::Workflow { id: wf_id },
@@ -307,7 +334,7 @@ impl AgentCache {
         wf_dirs.sort();
         let mut workflows: Vec<AgentNode> =
             wf_dirs.iter().filter_map(|d| self.workflow_node(d, session_live, now)).collect();
-        sort_nodes(&mut workflows);
+        sort_by_activity(&mut workflows);
         roots.extend(workflows);
 
         let (mut total, mut finished) = (0, 0);
@@ -399,9 +426,36 @@ mod tests {
         let wf = tree.roots.last().unwrap();
         assert_eq!(wf.kind, AgentKind::Workflow { id: "wf_x".into() });
         let names: Vec<_> = wf.children.iter().map(|p| p.kind.clone()).collect();
-        assert_eq!(names, vec![AgentKind::Phase { name: "Review".into() }, AgentKind::Phase { name: "Verify".into() }]);
-        assert_eq!(wf.children[0].children[0].id, "w1");
-        assert_eq!(wf.children[1].children[0].id, "w2");
+        // Both running: the later-started phase is on top.
+        assert_eq!(names, vec![AgentKind::Phase { name: "Verify".into() }, AgentKind::Phase { name: "Review".into() }]);
+        assert_eq!(wf.children[0].children[0].id, "w2");
+        assert_eq!(wf.children[1].children[0].id, "w1");
+    }
+
+    #[test]
+    fn running_first_then_newest_started_first() {
+        let t = tempfile::tempdir().unwrap();
+        let d = t.path();
+        let done = |id: &str, ts: &str| vec![call(id, ts), result(id, ts)];
+        // finished agents, started at 07:00 / 07:02 / 07:01
+        agent(d, "old", Some(r#"{"finished":true}"#), &done("t1", "2026-11-02T07:00:00Z"), 300);
+        agent(d, "new", Some(r#"{"finished":true}"#), &done("t2", "2026-11-02T07:02:00Z"), 300);
+        agent(d, "mid", Some(r#"{"finished":true}"#), &done("t3", "2026-11-02T07:01:00Z"), 300);
+        // running, started earliest: still on top
+        agent(d, "run", Some("{}"), &done("t4", "2026-11-02T06:00:00Z"), 5);
+        // children follow the same rule
+        agent(d, "c_old", Some(r#"{"finished":true,"parentAgentId":"old"}"#), &done("t5", "2026-11-02T07:00:10Z"), 300);
+        agent(d, "c_new", Some(r#"{"finished":true,"parentAgentId":"old"}"#), &done("t6", "2026-11-02T07:00:20Z"), 300);
+        // two workflows: wf_a active later than wf_b although it started first
+        let a = d.join("workflows").join("wf_a");
+        agent(&a, "a1", Some(r#"{"finished":true,"workflowPhase":"P"}"#), &[call("t7", "2026-11-02T07:00:00Z"), result("t7", "2026-11-02T08:00:00Z")], 300);
+        let b = d.join("workflows").join("wf_b");
+        agent(&b, "b1", Some(r#"{"finished":true,"workflowPhase":"P"}"#), &done("t8", "2026-11-02T07:30:00Z"), 300);
+        let tree = build_tree(d, true, now());
+        let ids: Vec<_> = tree.roots.iter().map(|n| n.id.as_str()).collect();
+        assert_eq!(ids, vec!["run", "new", "mid", "old", "wf_a", "wf_b"]);
+        let kids: Vec<_> = find(&tree.roots, "old").children.iter().map(|n| n.id.as_str()).collect();
+        assert_eq!(kids, vec!["c_new", "c_old"]);
     }
 
     #[test]
@@ -541,7 +595,7 @@ mod tests {
         let wf = v["roots"].as_array().unwrap().last().unwrap();
         assert_eq!(wf["kind"]["kind"], "workflow");
         assert_eq!(wf["kind"]["id"], "wf_x");
-        assert_eq!(v["roots"][0]["state"], "finished");
+        assert_eq!(v["roots"][0]["state"], "running"); // a2 (running) is on top
         assert!(v["roots"][0].get("agentType").is_some());
         assert_eq!(v["total"], 5);
     }
