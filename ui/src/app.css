@@ -84,7 +84,7 @@ select {
 }
 .foot-toggle:hover { color: var(--strong); }
 .foot-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.foot-toggle .chev { width: 10px; text-align: center; }
+.foot-toggle .chev { width: 14px; text-align: center; font-size: 14px; line-height: 1; color: var(--strong); }
 .side .foot [hidden] { display: none; }
 .side .prefs {
   padding: 10px 6px 2px; border-top: 1px solid var(--border);

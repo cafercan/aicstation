@@ -13,8 +13,8 @@ test("format: token sayısı kompakt ve yerel ayara göre (en çok bir ondalık)
   expect(fmtTokens(182_400_000, "en")).toBe("182.4M");
   expect(fmtTokens(1_234_567_890, "en")).toBe("1.2B");
   expect(fmtTokens(1_000, "en")).toBe("1K");
-  expect(fmtTokens(1234, "tr")).toBe("1,2 B");
-  expect(fmtTokens(182_400_000, "de")).toMatch(/^182,4\s?Mio\.$/);
+  expect(fmtTokens(1234, "tr")).toBe("1,2K");
+  expect(fmtTokens(182_400_000, "de")).toBe("182,4M");
   expect(fmtTokens(NaN, "en")).toBe("0");
 });
 

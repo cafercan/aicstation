@@ -2,19 +2,33 @@ import type { Usage } from "./api";
 import { getLang, locale, t, type Lang } from "./i18n";
 import { themeTokens } from "./theme";
 
-const compactFmt = new Map<string, Intl.NumberFormat>();
+const numFmt = new Map<string, Intl.NumberFormat>();
 
-/** Compact, locale-aware token count: 950, 12.3K, 182.4M, 1.2B (one fraction digit at most). */
+/** Token count with fixed K / M / B suffixes in every language (950, 12.3K, 182.4M, 1.2B);
+ *  only the decimal separator follows the locale. Intl's compact notation is avoided on
+ *  purpose: Turkish "B" means thousand there, which reads as billion. */
 export function fmtTokens(n: number, lang: Lang = getLang()): string {
+  const v = Number.isFinite(n) ? Math.max(0, n) : 0;
   const loc = locale(lang);
-  let f = compactFmt.get(loc);
+  let f = numFmt.get(loc);
   if (!f) {
-    f = new Intl.NumberFormat(loc, { notation: "compact", maximumFractionDigits: 1 });
-    compactFmt.set(loc, f);
+    f = new Intl.NumberFormat(loc, { maximumFractionDigits: 1 });
+    numFmt.set(loc, f);
   }
-  return f.format(Number.isFinite(n) ? n : 0);
+  const units: [number, string][] = [[1e9, "B"], [1e6, "M"], [1e3, "K"]];
+  for (let i = 0; i < units.length; i++) {
+    const [size, suffix] = units[i];
+    if (v >= size) {
+      const scaled = Math.round((v / size) * 10) / 10;
+      // 999.96K rounds to 1000K: show it as 1M instead.
+      if (scaled >= 1000 && i > 0) return f.format(1) + units[i - 1][1];
+      return f.format(scaled) + suffix;
+    }
+  }
+  // 999.6 rounds to 1000: show it as 1K.
+  if (Math.round(v) >= 1000) return f.format(1) + "K";
+  return f.format(Math.round(v));
 }
-
 export function fmtCost(usd: number): string {
   return `$${usd.toFixed(2)}`;
 }

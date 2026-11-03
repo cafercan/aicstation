@@ -299,12 +299,12 @@ test("Geçmiş: tablo token sütunu birincil (ipucunda dört tür), ~$ altında 
   render(<History onOpen={() => {}} />);
   const tr = (await screen.findByText("ad-a")).closest("tr")!;
   expect([...document.querySelectorAll("th")].some((th) => th.textContent === "Token")).toBe(true);
-  const cell = within(tr).getByText(/^1,2\sMn$/).closest("td")!;
+  const cell = within(tr).getByText(/^1,2M$/).closest("td")!;
   expect(cell.querySelector("[title]")!.getAttribute("title"))
     .toBe("girdi 1.000.000 · çıktı 200.000 · önbellek okuma 5 · önbellek yazma 6");
   expect(cell.querySelector(".est")!.textContent).toBe("~$1.50 tah.");
   const tu = screen.getByText("ad-u").closest("tr")!;
-  expect(within(tu).getByText(/^1,2\sMn$/).closest("td")!.querySelector(".est")).toBeNull();
+  expect(within(tu).getByText(/^1,2M$/).closest("td")!.querySelector(".est")).toBeNull();
 });
 
 test("Geçmiş: klasör filtresi satırları süzer", async () => {
@@ -445,7 +445,7 @@ test("ayrıntı: token sayısı başlık KPI'ı (ipucunda dört tür), ~$ ikinci
   invoke.mockResolvedValue(detail({ card: { ...base.card, tokens, costUsd: 456.4 } }));
   const { unmount } = render(<SessionDetailPage sessionId="s1" onBack={() => {}} />);
   const kpi = (await screen.findByText("token")).closest(".kpi")!;
-  expect(kpi.querySelector("b")!.textContent).toBe("182,4 Mn");
+  expect(kpi.querySelector("b")!.textContent).toBe("182,4M");
   expect(kpi.querySelector("b")!.getAttribute("title"))
     .toBe("girdi 12.000.000 · çıktı 300.000 · önbellek okuma 160.000.000 · önbellek yazma 10.100.000");
   expect(kpi.querySelector(".est")!.textContent).toBe("~$456 tah.");

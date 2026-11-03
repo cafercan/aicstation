@@ -222,7 +222,7 @@ test("Kullanım: canlı oturumlar projeler ve model dağılımına da girer", as
   expect([...document.querySelectorAll(".cost-top .lbl")].map((e) => e.textContent)).toEqual(["canli", "İstanbul", "beta"]);
   expect(document.querySelector(".cost-models .legend li")!.textContent).toBe("claude-haiku-569%");
   // a (3M) + b (1M) + today's total (9M, the live session); dollars are secondary.
-  expect(screen.getByText(/^13\sMn$/)).toBeTruthy();
+  expect(screen.getByText(/^13M$/)).toBeTruthy();
   expect(screen.getByText("~$13.00 tah.")).toBeTruthy();
   expect(screen.getByText(/canlı oturumlar dahil/)).toBeTruthy();
 });
@@ -237,12 +237,12 @@ test("Kullanım: 30 gün varsayılan, bugün vurgulu; 7/90 aralığı; tahmini t
   expect(todayBar.getAttribute("data-today")).toBe("true");
   expect((todayBar as SVGElement).style.fill).toBe("var(--yellow)");
   // 30 days: a (3M) + b (1M) + today's live slice (0.5M); c is 40 days old.
-  expect(screen.getByText(/^4,5\sMn$/)).toBeTruthy();
+  expect(screen.getByText(/^4,5M$/)).toBeTruthy();
   expect(screen.getByText("~$4.50 tah.")).toBeTruthy();
   expect(screen.getByText("aralık toplamı")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "90 gün" }));
   expect(bars()).toHaveLength(90);
-  expect(screen.getByText(/^11,5\sMn$/)).toBeTruthy();
+  expect(screen.getByText(/^11,5M$/)).toBeTruthy();
   expect(screen.getByText("~$11.50 tah.")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "7 gün" }));
   expect(bars()).toHaveLength(7);
@@ -280,9 +280,9 @@ test("Kullanım: klavye odağında ipucu tarih, token ve ~$ gösterir, oklarla g
   await screen.findByText("ad-a");
   const svg = document.querySelector(".cost-daily svg")!;
   fireEvent.focus(svg);
-  expect(document.querySelector(".cost-tip")!.textContent).toMatch(/\(bugün\): 500\sB · ~\$0\.50 tah\.$/);
+  expect(document.querySelector(".cost-tip")!.textContent).toMatch(/\(bugün\): 500K · ~\$0\.50 tah\.$/);
   fireEvent.keyDown(svg, { key: "ArrowLeft" });
-  expect(document.querySelector(".cost-tip")!.textContent).toMatch(/: 3\sMn · ~\$3\.00 tah\.$/);
+  expect(document.querySelector(".cost-tip")!.textContent).toMatch(/: 3M · ~\$3\.00 tah\.$/);
   fireEvent.blur(svg);
   expect(document.querySelector(".cost-tip")).toBeNull();
 });

@@ -126,7 +126,7 @@ test('KPI bugünün token sayısı birincil, $ tahmini ikincil; tamamlanmadıysa
   unmount();
   const { unmount: u2 } = render(<KpiRow snapshot={snap} history={{ rows: [], todayCost: 3.4216, todayTokens: 182_400_000, todayComplete: true, indexing: false }} />);
   const tile = screen.getByText("bugünkü token").closest(".kpi")!;
-  expect(tile.querySelector("b")!.textContent).toBe("182,4 Mn");
+  expect(tile.querySelector("b")!.textContent).toBe("182,4M");
   const est = tile.querySelector(".est")!;
   expect(est.textContent).toBe("~$3.42 tah.");
   u2();
@@ -141,7 +141,7 @@ test("kart altbilgisi: token sayısı birincil (ipucunda dört tür), ~$ soluk; 
   const tokens = { input: 1_000_000, output: 200_000, cacheRead: 300, cacheCreation: 40, cacheCreation1h: 0 };
   const { container, rerender } = render(<SessionCardView card={card({ tokens })} now={0} onOpen={() => {}} />);
   const row = container.querySelector(".card .row")!;
-  expect(row.textContent).toContain("1,2 Mn token");
+  expect(row.textContent).toContain("1,2M token");
   expect(row.querySelector(".est")!.textContent).toBe("~$1.20 tah.");
   expect(row.querySelector("[title]")!.getAttribute("title"))
     .toBe("girdi 1.000.000 · çıktı 200.000 · önbellek okuma 300 · önbellek yazma 40");
@@ -366,7 +366,7 @@ test("hakkında: ürün adı, slogan ve bağımsızlık notu seçili dilde", () 
 test("status bar: token sayısı birincil, ~$ soluk; fiyatsız modelde $ yok", () => {
   const c = card({ tokens: { input: 1_000_000, output: 200_000, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 } });
   const { container, rerender } = render(<StatusBar sessions={[c]} selectedId="s1" />);
-  expect(container.textContent).toContain("1,2 Mn token");
+  expect(container.textContent).toContain("1,2M token");
   expect(container.querySelector(".est")!.textContent).toBe("~$1.20 tah.");
   rerender(<StatusBar sessions={[{ ...c, costUsd: 0 }]} selectedId="s1" />);
   expect(container.querySelector(".est")).toBeNull();
