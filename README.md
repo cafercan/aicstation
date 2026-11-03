@@ -7,13 +7,14 @@
 
 [![ci](https://github.com/cafercan/session-station/actions/workflows/ci.yml/badge.svg)](https://github.com/cafercan/session-station/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Platform: Windows 10/11 x64](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-lightgrey.svg)
+![Platform: Windows 10/11 x64 | Linux x64](https://img.shields.io/badge/platform-Windows%2010%2F11%20%7C%20Linux-lightgrey.svg)
 
 [Türkçe özet](#türkçe)
 
-SessionStation is a Windows desktop app that shows every local Claude Code
-session in one window: what each one is doing, its subagents, context usage
-and token usage (with an estimated cost). It also runs real PowerShell terminals right next to them.
+SessionStation is a desktop app for Windows and Linux that shows every local
+Claude Code session in one window: what each one is doing, its subagents,
+context usage and token usage (with an estimated cost). It also runs real
+terminals (PowerShell, bash, zsh, fish, ...) right next to them.
 It is built with Tauri 2, a Rust core and a React/TypeScript UI.
 
 | Dashboard | Terminal | History |
@@ -97,12 +98,18 @@ closed session in its own folder.
 
 ### Embedded terminals
 
-- Real PowerShell through Windows ConPTY ([portable-pty]), rendered by
+- Real terminals through [portable-pty] (ConPTY on Windows), rendered by
   [xterm.js] with its WebGL renderer, so the box-drawing and block characters
   in Claude Code's interface line up. If WebGL is not available, it falls back
   to the default renderer.
-- Ubuntu color scheme in every app theme, Cascadia Mono / Consolas font,
-  10,000 lines of scrollback, Unicode 11 character widths.
+- **Shell:** PowerShell on Windows and your login shell (`$SHELL`) on Linux by
+  default. Settings lists the other shells installed (bash, zsh, fish,
+  PowerShell 7, Nushell; Git Bash on Windows).
+- **Appearance:** 18 color schemes (Ubuntu by default), font, size, cursor,
+  spacing and scrollback, with a live preview in Settings. The color scheme
+  can follow the app theme. Unicode 11 character widths.
+- **Prompt (optional):** a [butaglyph] prompt with one of its presets. It is
+  loaded after your own shell configuration, which is never edited.
 - Split view: two terminals side by side with a draggable divider.
 - Clipboard like Windows Terminal: Ctrl+C copies when text is selected and
   otherwise sends ^C; Ctrl+V and right-click paste; Ctrl+Shift+C/V always
@@ -111,11 +118,17 @@ closed session in its own folder.
   Ctrl+= / Ctrl+-, and reset it with Ctrl+0.
 - **Open in Windows Terminal**: opens a new PowerShell tab in your home folder
   in Windows Terminal. Sessions started there still appear on the dashboard.
-- **Open folder** opens a session's project folder in Explorer.
+  On Linux, **Open system terminal** opens `$TERMINAL` or the first known
+  terminal emulator installed.
+- **Open folder** opens a session's project folder in Explorer (the file
+  manager on Linux).
+
+<p align="center"><img src="docs/images/terminal-settings.png" alt="Settings: shell, butaglyph prompt and terminal appearance with a live preview" width="560"></p>
 
 ### Notifications and tray
 
-- Windows toast notifications when a session starts waiting for approval, when
+- Desktop notifications (Windows toasts; the notification service on Linux)
+  when a session starts waiting for approval, when
   a session finishes after working for at least 10 seconds, and (optional,
   off by default) when a subagent finishes. Each has its own switch in
   Settings. A session gets at most one notification every 15 seconds (one
@@ -131,8 +144,8 @@ closed session in its own folder.
 - Closing the window can minimize it to the tray (on by default), so terminals
   and monitoring keep running.
 - Only one copy runs at a time. Launching it again brings the existing window
-  forward; if that copy does not respond within 3 seconds, a message says so
-  instead.
+  forward; on Windows, if that copy does not respond within 3 seconds, a
+  message says so instead.
 
 ### Keyboard shortcuts
 
@@ -166,8 +179,8 @@ Ctrl+= / Ctrl+- / Ctrl+0 work as described above.
 - 8 UI languages: Türkçe (default), Azərbaycan dili, English, Deutsch,
   Русский, Español, Français, 简体中文. The language changes instantly.
 - 6 themes: Pano Dark (default), Obsidian Dark, Nord Frost, Classic Light,
-  GitHub Light, Sepia. The embedded terminal keeps its Ubuntu color scheme in
-  every theme.
+  GitHub Light, Sepia. The embedded terminal has its own color schemes (see
+  above).
 
 ## Privacy and security
 
@@ -190,14 +203,17 @@ These are guarantees of the code in this repository:
   must be UUIDs, and folders and resume paths are resolved on the Rust side,
   never taken from the UI.
 - **What it writes:**
-  - In its own app data folder (`%APPDATA%\com.cafercan.sessionstation`):
-    the history cache (`history-cache.json`), `settings.json`, and a copy of
-    the app icon used by notifications.
-  - One registry key,
+  - In its own app data folder (`%APPDATA%\com.cafercan.sessionstation`,
+    on Linux `~/.local/share/com.cafercan.sessionstation`): the history
+    cache (`history-cache.json`), `settings.json`, a copy of the app icon
+    used by notifications, the small startup scripts of the embedded shells
+    and the butaglyph presets you pick.
+  - On Windows, one registry key,
     `HKCU\Software\Classes\AppUserModelId\com.cafercan.sessionstation`, which
     Windows needs to show the app's notifications. The uninstaller does not
     remove it.
-  - Your language and theme choices are kept in the WebView's local storage.
+  - Your language, theme and terminal appearance choices are kept in the
+    WebView's local storage.
 
 > **Note:** SessionStation relies on Claude Code's **undocumented** local file
 > formats (session transcripts, `sessions/*.json`, subagent metadata). These
@@ -212,6 +228,10 @@ These are guarantees of the code in this repository:
 - Claude Code, installed and used on the same machine
 - Optional: Windows Terminal, for "Open in Windows Terminal" and "Go to tab"
 
+On Linux (x64): WebKitGTK 4.1, a notification service (any desktop has one)
+and, for the tray icon, libayatana-appindicator. Optional:
+[butaglyph] for the prompt.
+
 ## Installation
 
 Download `SessionStation-v*-windows-x64-setup.exe` from the
@@ -221,6 +241,9 @@ Download `SessionStation-v*-windows-x64-setup.exe` from the
 - The installer is not code-signed yet, so Windows SmartScreen may warn you.
   Choose "More info", then "Run anyway".
 - `LICENSE` and `THIRD_PARTY_NOTICES.md` are installed next to the app.
+
+On Linux there are no prebuilt packages yet: build a `.deb`, `.rpm` or
+AppImage from source (see below).
 
 ## Usage tips
 
@@ -257,6 +280,16 @@ npm run debug-preview    # fast debug build, no installer
 npm run installer        # release build + Inno Setup installer in dist/ (needs Inno Setup 6)
 ```
 
+On Linux, install Rust, Node.js 22 and the WebKitGTK development packages
+(on Debian/Ubuntu: `libwebkit2gtk-4.1-dev libayatana-appindicator3-dev
+librsvg2-dev libxdo-dev libssl-dev`), then:
+
+```sh
+npm ci && npm --prefix ui ci
+npm run tauri dev        # development mode
+npm run bundle:linux     # .deb, .rpm and AppImage in target/release/bundle/
+```
+
 Tests and checks:
 
 ```powershell
@@ -286,21 +319,22 @@ node scripts/gen-notices.mjs --check    # verify it is up to date (CI runs this)
 ```
 
 CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the tests,
-the notices check, `cargo audit`, `npm audit` and gitleaks on Windows.
+the notices check, `cargo audit`, `npm audit` and gitleaks on Windows, and
+the tests and a release build on Linux.
 
 ## Project layout
 
 | Path | Contents |
 |---|---|
 | `core/` | `station-core`: Rust library that locates and parses Claude Code's local files, tracks live sessions, builds the agent tree, and computes context usage and cost |
-| `src-tauri/` | `session-station`: the Tauri app with IPC commands, terminals (PTY), history index, notifications, tray and Windows integration |
+| `src-tauri/` | `session-station`: the Tauri app with IPC commands, terminals (PTY), history index, notifications, tray and platform integration (Windows, Linux) |
 | `ui/` | React + TypeScript front end (Vite), xterm.js terminals, i18n dictionaries, themes |
 | `scripts/` | `gen-notices.mjs`, which generates the third-party notices |
 | `assets/` | Logo source |
 
 ## Roadmap
 
-- Linux support
+- Prebuilt Linux packages
 - More polish across the UI and terminals
 - Native-speaker review of the translations
 
@@ -334,13 +368,14 @@ along with the other open-source projects listed in the third-party notices.
 [xterm.js]: https://xtermjs.org
 [portable-pty]: https://crates.io/crates/portable-pty
 [React]: https://react.dev
+[butaglyph]: https://github.com/Huseynteymurzade28/butaglyph
 
 ---
 
 ## Türkçe
 
 **SessionStation**, Claude Code oturumlarını, alt ajanlarını ve terminallerini
-tek pencerede gösteren bir Windows masaüstü uygulamasıdır. Resmî değildir;
+tek pencerede gösteren bir Windows ve Linux masaüstü uygulamasıdır. Resmî değildir;
 Anthropic ile bağlantılı değildir ve Anthropic tarafından onaylanmamıştır.
 Claude ve Claude Code, Anthropic'in ticari markalarıdır.
 
@@ -353,9 +388,11 @@ Claude ve Claude Code, Anthropic'in ticari markalarıdır.
   modeller; çalışan oturumlar dahil), canlı ve geçmiş oturumlarda içerikte
   arama (50 sonuç, 8 sn, 2 GiB ya da iptalde durur), "Devam et" ile
   `claude --resume`.
-- **Gömülü terminal:** ConPTY üzerinden gerçek PowerShell, WebGL ile çizim,
-  Ubuntu renkleri, bölünmüş görünüm, kopyala/yapıştır, arama, yazı boyutu,
-  "Windows Terminal'de aç".
+- **Gömülü terminal:** gerçek kabuk (Windows'ta PowerShell, Linux'ta `$SHELL`;
+  ayarlardan bash, zsh, fish, pwsh...), WebGL ile çizim, 18 renk şeması,
+  yazı tipi ve imleç ayarları (canlı önizlemeli), isteğe bağlı [butaglyph]
+  prompt'u, bölünmüş görünüm, kopyala/yapıştır, arama, "Windows Terminal'de
+  aç" (Linux'ta "Sistem terminalinde aç").
 - **Bildirimler ve tepsi:** onay bekleyen ve biten oturumlar için Windows
   bildirimi (pencere odaktayken ayrıntıda ya da bölünmüş görünümün iki
   bölmesinde görünen oturum için bildirim yok; bildirime tıklamak uygulama
@@ -374,7 +411,8 @@ biçimler değişebilir.
 `SessionStation_*_x64-setup.exe` dosyasını indirip çalıştırın. Kurulum
 kullanıcı bazlıdır, yönetici yetkisi gerekmez; kurulum dosyası henüz imzalı
 değildir. Gereksinimler: Windows 10/11 x64,
-WebView2, Claude Code.
+WebView2, Claude Code. Linux için henüz hazır paket yok; `npm run
+bundle:linux` ile `.deb`, `.rpm` ya da AppImage derlenebilir.
 
 Kaynaktan derleme, testler ve katkı için yukarıdaki İngilizce bölümlere
 bakın. Lisans: [MIT](LICENSE).
