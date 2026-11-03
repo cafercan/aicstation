@@ -161,7 +161,7 @@ export const ptySpawnResume = (
  */
 export const focusSessionTab = (sessionId: string) => invoke<string | null>("focus_session_tab", { sessionId });
 /** No arguments: the backend uses fixed wt.exe arguments. */
-export const openWindowsTerminal = () => invoke<void>("open_windows_terminal");
+export const openSystemTerminal = () => invoke<void>("open_system_terminal");
 
 export async function onSnapshot(cb: (s: Snapshot) => void): Promise<Unlisten> {
   return listen<Snapshot>("snapshot", (e) => cb(e.payload));

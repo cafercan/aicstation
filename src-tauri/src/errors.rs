@@ -5,6 +5,8 @@
 //!
 //! ui/src/i18n/i18n.test.ts reads this file: every code below must have a
 //! translation in every UI language.
+// The catalogue is shared by every platform; some codes only occur on one.
+#![cfg_attr(not(windows), allow(dead_code))]
 
 pub const SESSION_INVALID: &str = "session_invalid";
 pub const SESSION_LIVE: &str = "session_live";
@@ -39,6 +41,13 @@ pub const WT_HOME_INVALID: &str = "wt_home_invalid";
 pub const WT_HOME_MISSING: &str = "wt_home_missing";
 pub const WT_POWERSHELL_INVALID: &str = "wt_powershell_invalid";
 
+/// Linux: no terminal emulator found ($TERMINAL or a known one).
+pub const TERMINAL_NOT_FOUND: &str = "terminal_not_found";
+/// `terminal_open_failed:<OS message>`.
+pub const TERMINAL_OPEN_FAILED: &str = "terminal_open_failed";
+/// No usable shell for the embedded terminals.
+pub const SHELL_NOT_FOUND: &str = "shell_not_found";
+
 /// Error: no Windows Terminal tab for the session.
 pub const TAB_NOT_FOUND: &str = "tab_not_found";
 /// Note (Ok): window focused, several tabs carry the session's name.
@@ -67,6 +76,7 @@ pub const ALL: &[&str] = &[
     FOLDER_UNKNOWN, FOLDER_NETWORK, FOLDER_INVALID, FOLDER_RELATIVE, FOLDER_MISSING, FOLDER_OPEN_FAILED,
     PTY_UNKNOWN, PTY_LIMIT, PTY_TOO_LARGE, PTY_SPAWN_FAILED, PTY_IO, PTY_RESIZE_FAILED, INTERNAL_LOCK, TASK_FAILED,
     WT_NOT_FOUND, WT_OPEN_FAILED, WT_HOME_INVALID, WT_HOME_MISSING, WT_POWERSHELL_INVALID,
+    TERMINAL_NOT_FOUND, TERMINAL_OPEN_FAILED, SHELL_NOT_FOUND,
     TAB_NOT_FOUND, TAB_AMBIGUOUS, TAB_NO_MATCH, TAB_SELECT_FAILED,
     SETTINGS_INVALID, SETTINGS_SAVE_FAILED, SEARCH_QUERY_INVALID,
 ];

@@ -7,6 +7,7 @@ import Sidebar from "./components/Sidebar";
 import type { SessionCard } from "./api";
 import { getLang, setLang } from "./i18n";
 import { getTheme } from "./theme";
+import { setOsForTests } from "./platform";
 
 function card(over: Partial<SessionCard> = {}): SessionCard {
   return {
@@ -184,6 +185,16 @@ test("status bar oturum adı yerine klasör adını gösterir", () => {
   const sb = screen.getByRole("contentinfo");
   expect(sb.textContent).toContain("pusula");
   expect(sb.textContent).not.toContain("oturum-adi");
+});
+
+test("kenar çubuğu (Linux): sistem terminalinde aç; hata kodu çevrilir", async () => {
+  setOsForTests("linux");
+  const onOpenWt = vi.fn().mockRejectedValueOnce("terminal_not_found");
+  render(<Sidebar view="dashboard" onSelect={() => {}} onNew={() => {}} onClose={() => {}}
+    onOpenWt={onOpenWt} terminals={[]} />);
+  expect(screen.queryByText("↗ Windows Terminal'de aç")).toBeNull();
+  fireEvent.click(screen.getByText("↗ Sistem terminalinde aç"));
+  expect((await screen.findByRole("alert")).textContent).toBe("Terminal uygulaması bulunamadı ($TERMINAL ayarlayın)");
 });
 
 test("kenar çubuğu: Windows Terminal'de aç; hata satır içinde gösterilir", async () => {

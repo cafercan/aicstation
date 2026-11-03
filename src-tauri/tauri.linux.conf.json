@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "targets": ["deb", "rpm", "appimage"],
+    "category": "DeveloperTool",
+    "shortDescription": "Sessions, agents and terminals for Claude Code",
+    "linux": {
+      "deb": { "section": "devel" },
+      "rpm": { "release": "1" }
+    }
+  }
+}

@@ -38,6 +38,7 @@ import {
 } from "./store";
 import { resetUiState } from "../testing/reset";
 import type { SessionCard } from "../api";
+import { setOsForTests } from "../platform";
 import { setLang } from "../i18n";
 
 function card(over: Partial<SessionCard>): SessionCard {
@@ -66,7 +67,7 @@ test("tema spec değerleriyle birebir", () => {
   });
   expect(Object.keys(ubuntuTheme)).toHaveLength(20);
   expect(terminalFont).toEqual({
-    fontFamily: '"Cascadia Mono", "Cascadia Code", Consolas, monospace', fontSize: 13,
+    fontFamily: '"Cascadia Mono", "Cascadia Code", Consolas, "JetBrains Mono", "DejaVu Sans Mono", "Noto Sans Mono", "Liberation Mono", monospace', fontSize: 13,
     fontWeight: 350, fontWeightBold: "bold",
   });
 });
@@ -106,6 +107,8 @@ test("terminal adı: içindeki oturumun adı, yoksa \"PowerShell N\"", async () 
   expect(terminalName(t, [])).toBe("PowerShell 1");
   expect(terminalName(t, [card({ parentPid: 4242, name: "projem" })])).toBe("projem");
   expect(terminalName(t, [card({ parentPid: 1, name: "başka" })])).toBe("PowerShell 1");
+  setOsForTests("linux");
+  expect(terminalName(t, [])).toBe("Terminal 1");
 });
 
 test("terminalForPid: oturumun parentPid değeri bir PTY pid ise o terminal id", async () => {

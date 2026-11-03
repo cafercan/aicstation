@@ -1,11 +1,12 @@
-//! Local Windows toast notifications through WinRT (`ToastNotificationManager`
+//! Local desktop notifications. Windows: toasts through WinRT (`ToastNotificationManager`
 //! in the `windows` crate). tauri-plugin-notification is not in the offline
 //! crate cache, so this is the brief's fallback. Nothing leaves the machine.
 //!
 //! An unpackaged app needs an AppUserModelID to show toasts: the bundle
 //! identifier is registered once under
 //! `HKCU\Software\Classes\AppUserModelId\<id>` (display name + icon) and set
-//! as the process's explicit AUMID. Clicking a toast runs `on_click`.
+//! as the process's explicit AUMID. Linux: the freedesktop notification
+//! service over D-Bus (notify-rust). Clicking a notification runs `on_click`.
 
 /// Longest title / body put in a toast, in characters.
 const MAX_TEXT: usize = 200;
@@ -36,6 +37,33 @@ pub fn xml_text(s: &str) -> String {
         }
     }
     out
+}
+
+/// One notification, independent of the platform that shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Toast {
+    pub title: String,
+    pub body: Option<String>,
+    pub sound: bool,
+}
+
+impl Toast {
+    pub fn new(title: &str, body: Option<&str>, sound: bool) -> Self {
+        Toast { title: title.to_string(), body: body.map(str::to_string), sound }
+    }
+
+    /// Windows toast XML.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    pub fn xml(&self) -> String {
+        toast_xml(&self.title, self.body.as_deref(), self.sound)
+    }
+}
+
+/// Text for a plain-text field (a notification summary): the same
+/// characters as [`xml_text`] keeps, unescaped.
+#[cfg_attr(windows, allow(dead_code))]
+pub fn plain_text(s: &str) -> String {
+    s.chars().filter(|&c| toast_char(c)).take(MAX_TEXT).collect()
 }
 
 /// Toast XML: a title, an optional body, and either the system default
@@ -127,8 +155,8 @@ mod win {
 
         /// Shows a toast; errors are logged, never raised (a notification
         /// must not disturb the snapshot thread).
-        pub fn show(&self, xml: &str, on_click: impl Fn() + Send + 'static) {
-            if let Err(e) = self.try_show(xml, on_click) {
+        pub fn show(&self, toast: &super::Toast, on_click: impl Fn() + Send + 'static) {
+            if let Err(e) = self.try_show(&toast.xml(), on_click) {
                 eprintln!("bildirim gösterilemedi: {e}");
             }
         }
@@ -154,16 +182,86 @@ mod win {
     }
 }
 
-/// Non-Windows stub: toasts are not shown.
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+pub use linux::Toaster;
+
+#[cfg(target_os = "linux")]
+mod linux {
+    use notify_rust::{Hint, Notification, Timeout};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    /// Notifications whose click is still awaited, each on its own thread.
+    /// Beyond this many, new ones are shown without a click action.
+    const MAX_WAITING: usize = 20;
+
+    pub struct Toaster {
+        app_name: String,
+        icon: Option<String>,
+        waiting: Arc<AtomicUsize>,
+    }
+
+    impl Toaster {
+        pub fn new(_app_id: &str, display_name: &str, icon: Option<&std::path::Path>) -> Self {
+            Self {
+                app_name: display_name.to_string(),
+                icon: icon.and_then(|p| p.to_str()).map(str::to_string),
+                waiting: Arc::new(AtomicUsize::new(0)),
+            }
+        }
+
+        /// Shows a notification; errors are logged, never raised. The body
+        /// is escaped (servers may read it as markup), the summary is not.
+        pub fn show(&self, toast: &super::Toast, on_click: impl Fn() + Send + 'static) {
+            let mut n = Notification::new();
+            n.appname(&self.app_name).summary(&super::plain_text(&toast.title)).timeout(Timeout::Default);
+            if let Some(b) = &toast.body {
+                n.body(&super::xml_text(b));
+            }
+            if let Some(i) = &self.icon {
+                n.icon(i);
+            }
+            n.hint(if toast.sound { Hint::SoundName("message-new-instant".into()) } else { Hint::SuppressSound(true) });
+            let wait = self.waiting.fetch_add(1, Ordering::SeqCst) < MAX_WAITING;
+            if wait {
+                n.action("default", "");
+            } else {
+                self.waiting.fetch_sub(1, Ordering::SeqCst);
+            }
+            match n.show() {
+                Ok(handle) if wait => {
+                    let waiting = Arc::clone(&self.waiting);
+                    std::thread::spawn(move || {
+                        handle.wait_for_action(|a| {
+                            if a == "default" {
+                                on_click();
+                            }
+                        });
+                        waiting.fetch_sub(1, Ordering::SeqCst);
+                    });
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    if wait {
+                        self.waiting.fetch_sub(1, Ordering::SeqCst);
+                    }
+                    eprintln!("bildirim gösterilemedi: {e}");
+                }
+            }
+        }
+    }
+}
+
+/// Stub for other platforms: toasts are not shown.
+#[cfg(not(any(windows, target_os = "linux")))]
 pub struct Toaster;
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 impl Toaster {
     pub fn new(_aumid: &str, _display_name: &str, _icon: Option<&std::path::Path>) -> Self {
         Toaster
     }
-    pub fn show(&self, _xml: &str, _on_click: impl Fn() + Send + 'static) {}
+    pub fn show(&self, _toast: &Toast, _on_click: impl Fn() + Send + 'static) {}
 }
 
 #[cfg(test)]

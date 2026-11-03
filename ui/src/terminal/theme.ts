@@ -27,7 +27,7 @@ export const ubuntuTheme: ITheme = {
 /**
  * The one place for the terminal font. Spec says 10pt (Windows Terminal),
  * which is 13px in CSS. Cascadia ships with Windows Terminal (local font, no
- * web font); Consolas is the fallback.
+ * web font); Consolas is the fallback, then common Linux monospace fonts.
  *
  * Weight: Windows Terminal draws Cascadia Mono at weight 400 with DirectWrite
  * ClearType and never forces bold. Chromium rasterizes the WebGL glyph atlas
@@ -37,7 +37,7 @@ export const ubuntuTheme: ITheme = {
  * `fontWeight: "normal"` here to get WT's nominal weight back.
  */
 export const terminalFont = {
-  fontFamily: '"Cascadia Mono", "Cascadia Code", Consolas, monospace',
+  fontFamily: '"Cascadia Mono", "Cascadia Code", Consolas, "JetBrains Mono", "DejaVu Sans Mono", "Noto Sans Mono", "Liberation Mono", monospace',
   fontSize: 13,
   fontWeight: 350,
   fontWeightBold: "bold",

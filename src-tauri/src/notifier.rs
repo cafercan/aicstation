@@ -4,7 +4,7 @@ use crate::alerts::{Alert, AlertKind, AlertToggles, Detector};
 use crate::errors;
 use crate::native_text::{texts, with_name};
 use crate::settings::{Settings, SettingsStore};
-use crate::toast::{toast_xml, Toaster};
+use crate::toast::{Toast, Toaster};
 use crate::tray;
 use station_core::locate::is_session_id;
 use station_core::monitor::Snapshot;
@@ -91,10 +91,10 @@ pub fn after_snapshot(app: &AppHandle, snap: &Snapshot) {
     let toaster = app.state::<Toaster>();
     for a in alerts {
         let (title, body) = alert_text(&a, &settings.lang);
-        let xml = toast_xml(&title, body.as_deref(), settings.notify_sound);
+        let toast = Toast::new(&title, body.as_deref(), settings.notify_sound);
         let handle = app.clone();
         let id = a.session_id.clone();
-        toaster.show(&xml, move || tray::navigate(&handle, Some(id.clone())));
+        toaster.show(&toast, move || tray::navigate(&handle, Some(id.clone())));
     }
     tray::update(app, snap, &settings.lang);
 }
@@ -107,9 +107,9 @@ pub fn hide_to_tray(app: &AppHandle) -> Result<(), String> {
     let store = app.state::<SettingsStore>();
     if store.take_tray_notice() {
         let s = store.get();
-        let xml = toast_xml(texts(&s.lang).tray_notice, None, s.notify_sound);
+        let toast = Toast::new(texts(&s.lang).tray_notice, None, s.notify_sound);
         let handle = app.clone();
-        app.state::<Toaster>().show(&xml, move || tray::show_main(&handle));
+        app.state::<Toaster>().show(&toast, move || tray::show_main(&handle));
     }
     Ok(())
 }
