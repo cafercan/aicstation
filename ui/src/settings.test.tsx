@@ -13,6 +13,9 @@ const DEFAULTS: Settings = {
 const h = vi.hoisted(() => ({
   stored: null as unknown as Settings,
   failSet: false,
+  buta: { installed: true, version: "buta 0.4.0", presets: [
+    { name: "carpet", description: "carpet colors" }, { name: "neon", description: "synthwave" },
+  ] } as { installed: boolean; version: string | null; presets: { name: string; description: string }[] },
   listeners: new Map<string, (e: { payload: unknown }) => void>(),
   closeHandler: null as null | ((e: { preventDefault: () => void }) => void),
   destroy: vi.fn(async () => {}),
@@ -28,6 +31,8 @@ const invoke = vi.hoisted(() => vi.fn(async (cmd: string, args?: Record<string, 
     return h.stored;
   }
   if (cmd === "list_shells") return ["auto", "bash", "fish"];
+  if (cmd === "butaglyph_info") return h.buta;
+  if (cmd === "open_butaglyph_editor") return undefined;
   if (cmd === "get_session_detail") return null;
   if (cmd === "get_history") return { rows: [], todayCost: 0, todayTokens: 0, todayComplete: true, indexing: false };
   return undefined;
@@ -59,6 +64,9 @@ const calls = (cmd: string) => invoke.mock.calls.filter((c) => c[0] === cmd).map
 beforeEach(() => {
   h.stored = { ...DEFAULTS };
   h.failSet = false;
+  h.buta = { installed: true, version: "buta 0.4.0", presets: [
+    { name: "carpet", description: "carpet colors" }, { name: "neon", description: "synthwave" },
+  ] };
   h.listeners.clear();
   h.closeHandler = null;
   invoke.mockClear();
@@ -108,6 +116,31 @@ test("kabuk: artık kurulu olmayan kayıtlı kabuk yine listede görünür", asy
   const select = screen.getByRole("combobox", { name: "Kabuk" }) as HTMLSelectElement;
   await waitFor(() => expect(select.options.length).toBe(4));
   expect(select.value).toBe("zsh");
+});
+
+test("prompt: butaglyph seçilince presetler gelir; preset seçimi kaydedilir", async () => {
+  await loadSettings();
+  render(<SettingsPage />);
+  expect(screen.queryByRole("combobox", { name: "Preset" })).toBeNull();
+  fireEvent.change(screen.getByRole("combobox", { name: "Prompt" }), { target: { value: "butaglyph" } });
+  const preset = await screen.findByRole("combobox", { name: "Preset" }) as HTMLSelectElement;
+  expect([...preset.options].map((o) => o.value)).toEqual(["", "carpet", "neon"]);
+  // Own config: the editor button; a preset: its description instead.
+  fireEvent.click(screen.getByRole("button", { name: "butaglyph düzenleyicisinde düzenle ↗" }));
+  await waitFor(() => expect(calls("open_butaglyph_editor")).toHaveLength(1));
+  fireEvent.change(preset, { target: { value: "neon" } });
+  await waitFor(() => expect(h.stored).toEqual({ ...DEFAULTS, prompt: "butaglyph", promptPreset: "neon" }));
+  expect(screen.getByText("synthwave")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /düzenleyicisinde/ })).toBeNull();
+});
+
+test("prompt: butaglyph kurulu değilse uyarı gösterilir", async () => {
+  h.buta = { installed: false, version: null, presets: [] };
+  h.stored = { ...DEFAULTS, prompt: "butaglyph" };
+  await loadSettings();
+  render(<SettingsPage />);
+  expect(await screen.findByText(/butaglyph kurulu değil/)).toBeTruthy();
+  expect(screen.queryByRole("combobox", { name: "Preset" })).toBeNull();
 });
 
 test("kaydetme reddedilirse anahtar geri alınır ve hata gösterilir", async () => {

@@ -254,4 +254,7 @@ table.hist tbody tr:hover { background: var(--hover); }
 .settings-hint { display: block; margin-top: 2px; font-size: 11px; color: var(--dim); }
 .settings-err { color: var(--danger); font-size: 12px; }
 .settings-select { align-items: center; justify-content: space-between; cursor: default; }
+.settings-warn { color: var(--danger); }
+.settings-btn { margin: 4px 0; padding: 4px 10px; color: var(--text); background: var(--raised); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+.settings-btn:hover { border-color: var(--accent); }
 .settings-select select { min-width: 200px; padding: 3px 6px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; }
