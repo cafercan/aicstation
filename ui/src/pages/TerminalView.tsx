@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import "@xterm/xterm/css/xterm.css";
 import type { Terminal } from "@xterm/xterm";
 import { resizeTerminal, setFontSize, type TerminalEntry } from "../terminal/store";
-import { ubuntuTheme } from "../terminal/theme";
+import { useAppearance } from "../terminal/appearance";
+import { SCHEMES } from "../terminal/schemes";
 import { attachInput } from "../terminal/input";
 import { DEFAULT_FONT_SIZE, fontSizeAfter } from "../terminal/keys";
 import { enableWebgl } from "../terminal/render";
@@ -31,6 +32,7 @@ const RESIZE_MS = 80;
 export default function TerminalView({ entry, visible, pane, active = true, onActivate }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const [searching, setSearching] = useState(false);
+  const look = useAppearance();
 
   useEffect(() => {
     const el = host.current;
@@ -60,13 +62,13 @@ export default function TerminalView({ entry, visible, pane, active = true, onAc
     return registerSearchFocus(() => setSearching(true));
   }, [visible, active]);
 
-  const style: CSSProperties = { display: visible ? "block" : "none", background: ubuntuTheme.background };
+  const style: CSSProperties = { display: visible ? "block" : "none", background: SCHEMES[look.scheme].theme.background };
   if (pane) { style.left = `${pane.left}%`; style.width = `${pane.width}%`; style.right = "auto"; }
   const cls = `term-wrap${pane ? " split" : ""}${pane && active ? " active" : ""}`;
   return (
     <div className={cls} style={style} data-terminal={entry.id}
       onMouseDownCapture={onActivate} onFocusCapture={onActivate}>
-      <div className="term-host" ref={host} />
+      <div className="term-host" ref={host} style={{ padding: look.padding }} />
       {searching && (
         <SearchBar search={entry.search} onClose={() => { setSearching(false); entry.term.focus(); }} />
       )}

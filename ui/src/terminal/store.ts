@@ -9,7 +9,8 @@ import { t, type Key, type Params } from "../i18n";
 import { onTestReset } from "../prefs";
 import { clampFontSize } from "./keys";
 import { isWindows } from "../platform";
-import { renderOptions, ubuntuTheme, terminalFont } from "./theme";
+import { renderOptions } from "./theme";
+import { getAppearance, subscribeAppearance, xtermOptions } from "./appearance";
 
 export interface TerminalEntry {
   id: number;
@@ -106,7 +107,7 @@ export function openResumeTerminal(sessionId: string, name?: string): Promise<Te
 /** Shared lifecycle: xterm + addons, input queued until the spawn resolves, exit handling. */
 async function startTerminal(spawn: Spawn, title?: TerminalTitle): Promise<TerminalEntry> {
   const term = new Terminal({
-    ...terminalFont, ...renderOptions, theme: ubuntuTheme, cursorBlink: true, scrollback: 10000,
+    ...renderOptions, ...xtermOptions(getAppearance()),
     linkHandler: NO_LINKS, windowsPty: { backend: "conpty" },
     // term.unicode (width tables) is a proposed API in xterm 6.
     allowProposedApi: true,
@@ -154,6 +155,16 @@ async function startTerminal(spawn: Spawn, title?: TerminalTitle): Promise<Termi
   if (exited) removeEntry(id);
   return entry;
 }
+
+/** Open terminals take every appearance change at once (and are refit:
+ *  font, spacing and padding change the cell grid). */
+subscribeAppearance(() => {
+  const opts = xtermOptions(getAppearance());
+  for (const t of terminals) {
+    Object.assign(t.term.options, opts);
+    resizeTerminal(t);
+  }
+});
 
 export function resizeTerminal(t: TerminalEntry): void {
   try { t.fit.fit(); } catch { return; }
