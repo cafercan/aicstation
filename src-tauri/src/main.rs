@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod alerts;
+mod butaglyph;
 mod commands;
 mod errors;
 mod integration;
@@ -245,6 +246,7 @@ fn main() {
             let data = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data)?;
             let settings = settings::SettingsStore::open(data.join("settings.json"));
+            butaglyph::set_preset_dir(data.join("prompts"));
             if let Err(e) = integration::install(&data.join("shell-integration")) {
                 eprintln!("kabuk entegrasyonu yazılamadı: {e}");
             }
@@ -327,6 +329,8 @@ fn main() {
             commands::pty_list,
             commands::open_system_terminal,
             commands::list_shells,
+            commands::butaglyph_info,
+            commands::open_butaglyph_editor,
             commands::focus_session_tab,
             commands::get_settings,
             commands::set_settings,

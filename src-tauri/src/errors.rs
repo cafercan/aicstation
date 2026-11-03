@@ -47,6 +47,10 @@ pub const TERMINAL_NOT_FOUND: &str = "terminal_not_found";
 pub const TERMINAL_OPEN_FAILED: &str = "terminal_open_failed";
 /// No usable shell for the embedded terminals.
 pub const SHELL_NOT_FOUND: &str = "shell_not_found";
+/// butaglyph (`buta`) is not installed.
+pub const BUTAGLYPH_NOT_FOUND: &str = "butaglyph_not_found";
+/// `butaglyph_failed:<OS message>`: `buta` could not be started.
+pub const BUTAGLYPH_FAILED: &str = "butaglyph_failed";
 
 /// Error: no Windows Terminal tab for the session.
 pub const TAB_NOT_FOUND: &str = "tab_not_found";
@@ -76,7 +80,7 @@ pub const ALL: &[&str] = &[
     FOLDER_UNKNOWN, FOLDER_NETWORK, FOLDER_INVALID, FOLDER_RELATIVE, FOLDER_MISSING, FOLDER_OPEN_FAILED,
     PTY_UNKNOWN, PTY_LIMIT, PTY_TOO_LARGE, PTY_SPAWN_FAILED, PTY_IO, PTY_RESIZE_FAILED, INTERNAL_LOCK, TASK_FAILED,
     WT_NOT_FOUND, WT_OPEN_FAILED, WT_HOME_INVALID, WT_HOME_MISSING, WT_POWERSHELL_INVALID,
-    TERMINAL_NOT_FOUND, TERMINAL_OPEN_FAILED, SHELL_NOT_FOUND,
+    TERMINAL_NOT_FOUND, TERMINAL_OPEN_FAILED, SHELL_NOT_FOUND, BUTAGLYPH_NOT_FOUND, BUTAGLYPH_FAILED,
     TAB_NOT_FOUND, TAB_AMBIGUOUS, TAB_NO_MATCH, TAB_SELECT_FAILED,
     SETTINGS_INVALID, SETTINGS_SAVE_FAILED, SEARCH_QUERY_INVALID,
 ];

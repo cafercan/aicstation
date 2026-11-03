@@ -146,6 +146,8 @@ export const zh: Dict = {
   "err.terminal_not_found": "未找到终端应用（请设置 $TERMINAL）",
   "err.terminal_open_failed": "无法打开终端",
   "err.shell_not_found": "未找到可用的 shell",
+  "err.butaglyph_not_found": "未安装 butaglyph",
+  "err.butaglyph_failed": "无法启动 butaglyph",
   "err.tab_not_found": "未找到标签页",
   "err.tab_ambiguous": "已将窗口置于前台；有多个标签页同名",
   "err.tab_no_match": "已将窗口置于前台；未找到该会话的标签页",

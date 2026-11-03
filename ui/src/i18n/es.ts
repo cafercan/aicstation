@@ -149,6 +149,8 @@ export const es: Dict = {
   "err.terminal_not_found": "No se encontró ninguna terminal (defina $TERMINAL)",
   "err.terminal_open_failed": "No se pudo abrir la terminal",
   "err.shell_not_found": "No se encontró un shell utilizable",
+  "err.butaglyph_not_found": "butaglyph no está instalado",
+  "err.butaglyph_failed": "No se pudo iniciar butaglyph",
   "err.tab_not_found": "Pestaña no encontrada",
   "err.tab_ambiguous": "Ventana traída al frente; varias pestañas tienen el mismo nombre",
   "err.tab_no_match": "Ventana traída al frente; no se encontró la pestaña de la sesión",
