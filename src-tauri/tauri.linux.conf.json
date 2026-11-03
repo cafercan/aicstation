@@ -11,12 +11,14 @@
     "linux": {
       "deb": {
         "section": "devel",
+        "desktopTemplate": "linux/aicstation.desktop",
         "recommends": [
           "xdg-utils"
         ]
       },
       "rpm": {
-        "release": "1"
+        "release": "1",
+        "desktopTemplate": "linux/aicstation.desktop"
       }
     },
     "longDescription": "Shows every local Claude Code session in one window: status, subagents, context and token usage, with embedded terminals next to them. Unofficial; not affiliated with Anthropic.",

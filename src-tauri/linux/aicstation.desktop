@@ -1,0 +1,11 @@
+[Desktop Entry]
+Categories={{categories}}
+{{#if comment}}
+Comment={{comment}}
+{{/if}}
+Exec={{exec}}
+StartupWMClass=aicstation
+Icon={{icon}}
+Name=AI C-Station
+Terminal=false
+Type=Application
