@@ -1,15 +1,15 @@
 <#
 .SYNOPSIS
-  Generates a fake Claude config dir for SessionStation screenshots and demos.
+  Generates a fake Claude config dir for AI C-Station screenshots and demos.
 
 .DESCRIPTION
-  Creates <Dir> (default %TEMP%\sessionstation-demo) with sessions/, projects/
+  Creates <Dir> (default %TEMP%\aicstation-demo) with sessions/, projects/
   (live + closed transcripts, subagents, a workflow), starts 5 harmless dummy
   processes so the live-session liveness check passes, and creates the demo
   folders under C:\Demo. Everything is made up. -Stop undoes all of it.
 
   Launch the app against it:
-    $env:CLAUDE_CONFIG_DIR = "<Dir>"; & "<repo>\target\debug\session-station.exe"
+    $env:CLAUDE_CONFIG_DIR = "<Dir>"; & "<repo>\target\debug\aicstation.exe"
 
 .PARAMETER Dir
   Demo config dir. Only this dir is ever wiped (and only if this script made it).
@@ -18,12 +18,12 @@
   Kill the recorded dummy processes, delete <Dir> and the C:\Demo folders created.
 #>
 param(
-    [string]$Dir = (Join-Path $env:TEMP 'sessionstation-demo'),
+    [string]$Dir = (Join-Path $env:TEMP 'aicstation-demo'),
     [switch]$Stop
 )
 $ErrorActionPreference = 'Stop'
 $Dir = [System.IO.Path]::GetFullPath($Dir)
-$Marker = Join-Path $Dir '.sessionstation-demo'
+$Marker = Join-Path $Dir '.aicstation-demo'
 $Manifest = Join-Path $Dir 'demo-manifest.json'
 $DemoRoot = 'C:\Demo'
 $Utf8 = New-Object System.Text.UTF8Encoding($false)
@@ -327,7 +327,7 @@ Write-Host ("  5 live sessions (PIDs {0}), $Closed closed sessions, ~`${1:N0} ma
 Write-Host ""
 Write-Host "Launch the app against it:"
 $repo = Split-Path -Parent $PSScriptRoot
-Write-Host ('  $env:CLAUDE_CONFIG_DIR="{0}"; & "{1}\target\debug\session-station.exe"' -f $Dir, $repo)
+Write-Host ('  $env:CLAUDE_CONFIG_DIR="{0}"; & "{1}\target\debug\aicstation.exe"' -f $Dir, $repo)
 Write-Host ""
 $stopCmd = '.\scripts\demo-data.ps1 -Stop'
 if ($PSBoundParameters.ContainsKey('Dir')) { $stopCmd += ' -Dir "' + $Dir + '"' }

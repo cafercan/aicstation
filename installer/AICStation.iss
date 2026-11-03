@@ -1,4 +1,4 @@
-; SessionStation - Inno Setup installer (per-user, no admin rights).
+; AI C-Station - Inno Setup installer (per-user, no admin rights).
 ; Built by scripts/build-installer.ps1, which passes /DAppVersion=<version from tauri.conf.json>.
 ; The AppId must never change: C Launcher finds the installed version through it.
 
@@ -6,10 +6,11 @@
   #error Pass /DAppVersion=x.y.z (scripts/build-installer.ps1 does this)
 #endif
 
-#define AppName "SessionStation"
+#define AppName "AI C-Station"
+#define AppFileName "AICStation"
 #define AppPublisher "cafercan"
-#define AppExeName "session-station.exe"
-#define AppUrl "https://github.com/cafercan/session-station"
+#define AppExeName "aicstation.exe"
+#define AppUrl "https://github.com/cafercan/aicstation"
 #define AppUserModelId "com.cafercan.sessionstation"
 
 [Setup]
@@ -21,7 +22,7 @@ VersionInfoVersion={#AppVersion}
 AppPublisher={#AppPublisher}
 AppPublisherURL={#AppUrl}
 AppSupportURL={#AppUrl}
-DefaultDirName={autopf}\{#AppName}
+DefaultDirName={autopf}\{#AppFileName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
@@ -30,7 +31,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 CloseApplications=yes
 LicenseFile=..\LICENSE
 OutputDir=..\dist
-OutputBaseFilename={#AppName}-v{#AppVersion}-windows-x64-setup
+OutputBaseFilename={#AppFileName}-v{#AppVersion}-windows-x64-setup
 SetupIconFile=..\src-tauri\icons\icon.ico
 UninstallDisplayIcon={app}\{#AppExeName}
 UninstallDisplayName={#AppName}
@@ -57,6 +58,15 @@ Source: "..\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; AppUserModelID: "{#AppUserModelId}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; AppUserModelID: "{#AppUserModelId}"; Tasks: desktopicon
+
+[InstallDelete]
+; Upgrade from SessionStation (same AppId). The old script was per-user
+; (PrivilegesRequired=lowest) with DefaultGroupName=SessionStation, so Inno resolved
+; {group} to {userprograms}\SessionStation and {autodesktop} to {userdesktop}.
+Type: files; Name: "{app}\session-station.exe"
+Type: files; Name: "{userprograms}\SessionStation\SessionStation.lnk"
+Type: files; Name: "{userdesktop}\SessionStation.lnk"
+Type: dirifempty; Name: "{userprograms}\SessionStation"
 
 [Registry]
 ; The app registers its toast identity here at runtime; remove it on uninstall.
@@ -96,7 +106,7 @@ function InitializeSetup(): Boolean;
 begin
   Result := True;
   if not IsWebView2Installed() then
-    if SuppressibleMsgBox('SessionStation needs the Microsoft Edge WebView2 Runtime, which was not found.'#13#10#13#10 +
+    if SuppressibleMsgBox('AI C-Station needs the Microsoft Edge WebView2 Runtime, which was not found.'#13#10#13#10 +
               'Install it for free from https://developer.microsoft.com/microsoft-edge/webview2/'#13#10#13#10 +
               'Continue anyway?', mbConfirmation, MB_YESNO, IDYES) = IDNO then
       Result := False;
