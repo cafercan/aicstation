@@ -113,6 +113,19 @@ test("görünüm değişince açık terminaller anında güncellenir ve yeniden 
   expect(invoke).toHaveBeenCalledWith("pty_resize", { id: 7, cols: 80, rows: 24 });
 });
 
+test("şema uygulama temasını izlerken tema değişince açık terminaller de değişir", async () => {
+  const { applyTheme } = await import("../theme");
+  const t = await openTerminal();
+  const opts = (t.term as unknown as { options: Record<string, unknown> }).options;
+  applyTheme("station-dark");
+  updateAppearance({ followApp: true });
+  expect(opts.theme).toEqual(SCHEMES["tokyo-night"].theme);
+  applyTheme("nord-dark");
+  expect(opts.theme).toEqual(SCHEMES.nord.theme);
+  updateAppearance({ followApp: false });
+  expect(opts.theme).toEqual(SCHEMES.ubuntu.theme);
+});
+
 test("terminal adı: içindeki oturumun adı, yoksa \"PowerShell N\"", async () => {
   const t = await openTerminal();
   expect(terminalName(t, [])).toBe("PowerShell 1");

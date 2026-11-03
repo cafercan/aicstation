@@ -4,8 +4,9 @@ import "@xterm/xterm/css/xterm.css";
 import { butaglyphPreview } from "../api";
 import { useT } from "../i18n";
 import { useSettings } from "../settings";
-import { useAppearance, xtermOptions } from "../terminal/appearance";
+import { activeScheme, useAppearance, xtermOptions } from "../terminal/appearance";
 import { renderOptions } from "../terminal/theme";
+import { useTheme } from "../theme";
 import { SCHEMES } from "../terminal/schemes";
 
 const ROWS = 11;
@@ -40,6 +41,7 @@ export function sampleScreen(prompts: string[]): string {
 export default function TerminalPreview() {
   const t = useT();
   const look = useAppearance();
+  const appTheme = useTheme();
   const settings = useSettings();
   const host = useRef<HTMLDivElement>(null);
   const term = useRef<Terminal | null>(null);
@@ -73,7 +75,7 @@ export default function TerminalPreview() {
     const tm = term.current;
     if (!tm) return;
     try {
-      Object.assign(tm.options, { ...xtermOptions(look), scrollback: 0 });
+      Object.assign(tm.options, { ...xtermOptions(look, appTheme), scrollback: 0 });
       tm.reset();
       // As tall as the sample (two-line prompts make it longer); the width
       // is cut by the box.
@@ -82,11 +84,11 @@ export default function TerminalPreview() {
       if (tm.rows !== rows) tm.resize(COLS, rows);
       tm.write(text);
     } catch { /* not rendered */ }
-  }, [look, prompts]);
+  }, [look, appTheme, prompts]);
 
   return (
     <div className="term-preview" aria-label={t("look.preview")} role="img"
-      style={{ background: SCHEMES[look.scheme].theme.background, padding: look.padding }}>
+      style={{ background: SCHEMES[activeScheme(look, appTheme)].theme.background, padding: look.padding }}>
       <div ref={host} />
     </div>
   );

@@ -4,6 +4,9 @@ import {
   validFontName, xtermOptions,
 } from "./appearance";
 import { SCHEMES } from "./schemes";
+import { MATCH } from "./match";
+import { THEME_IDS } from "../theme";
+import { activeScheme } from "./appearance";
 import { renderOptions, terminalFont } from "./theme";
 
 test("görünüm: varsayılanlar eski sabit görünümle aynı xterm seçeneklerini verir", () => {
@@ -47,4 +50,12 @@ test("görünüm: değişiklik saklanır, yeniden yüklenir ve sıfırlanabilir"
   expect(loadAppearance()).toEqual(DEFAULT_APPEARANCE);
   resetAppearance();
   expect(getAppearance()).toEqual(DEFAULT_APPEARANCE);
+});
+
+test("eşleştirme: her uygulama temasının geçerli bir şeması var; izleme açıkken o kullanılır", () => {
+  for (const id of THEME_IDS) expect(SCHEMES[MATCH[id].scheme], id).toBeTruthy();
+  const a = { ...DEFAULT_APPEARANCE, scheme: "dracula" as const };
+  expect(activeScheme(a, "nord-dark")).toBe("dracula");
+  expect(activeScheme({ ...a, followApp: true }, "nord-dark")).toBe("nord");
+  expect(xtermOptions({ ...a, followApp: true }, "sepia-light").theme).toEqual(SCHEMES["gruvbox-light"].theme);
 });

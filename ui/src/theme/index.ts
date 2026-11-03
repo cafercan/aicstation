@@ -122,6 +122,7 @@ export function loadTheme(): ThemeId {
 const store = createStore<ThemeId>(DEFAULT_THEME);
 export const getTheme = store.get;
 export const useTheme = store.use;
+export const subscribeTheme = store.subscribe;
 
 /** Token values of the current (or given) theme, for inline SVG colors. */
 export function themeTokens(id: ThemeId = getTheme()): Record<Token, string> {

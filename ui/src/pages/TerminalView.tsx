@@ -2,13 +2,14 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import "@xterm/xterm/css/xterm.css";
 import type { Terminal } from "@xterm/xterm";
 import { resizeTerminal, setFontSize, type TerminalEntry } from "../terminal/store";
-import { useAppearance } from "../terminal/appearance";
+import { activeScheme, useAppearance } from "../terminal/appearance";
 import { SCHEMES } from "../terminal/schemes";
 import { attachInput } from "../terminal/input";
 import { DEFAULT_FONT_SIZE, fontSizeAfter } from "../terminal/keys";
 import { enableWebgl } from "../terminal/render";
 import SearchBar from "../terminal/SearchBar";
 import { registerSearchFocus } from "../shortcuts/bus";
+import { useTheme } from "../theme";
 import { throttle } from "../throttle";
 
 interface Props {
@@ -33,6 +34,7 @@ export default function TerminalView({ entry, visible, pane, active = true, onAc
   const host = useRef<HTMLDivElement>(null);
   const [searching, setSearching] = useState(false);
   const look = useAppearance();
+  const appTheme = useTheme();
 
   useEffect(() => {
     const el = host.current;
@@ -62,7 +64,7 @@ export default function TerminalView({ entry, visible, pane, active = true, onAc
     return registerSearchFocus(() => setSearching(true));
   }, [visible, active]);
 
-  const style: CSSProperties = { display: visible ? "block" : "none", background: SCHEMES[look.scheme].theme.background };
+  const style: CSSProperties = { display: visible ? "block" : "none", background: SCHEMES[activeScheme(look, appTheme)].theme.background };
   if (pane) { style.left = `${pane.left}%`; style.width = `${pane.width}%`; style.right = "auto"; }
   const cls = `term-wrap${pane ? " split" : ""}${pane && active ? " active" : ""}`;
   return (

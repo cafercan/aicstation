@@ -3,6 +3,8 @@ import { butaglyphInfo, listShells, openButaglyphEditor, type ButaglyphInfo } fr
 import { errorText, useT, type Key } from "../i18n";
 import { isWindows } from "../platform";
 import TerminalAppearance from "../components/TerminalAppearance";
+import { useTheme } from "../theme";
+import { MATCH } from "../terminal/match";
 import { setChoice, setToggle, useSettings, type Choice, type Toggle } from "../settings";
 
 /** Display names of the shell ids (settings.rs SHELLS). */
@@ -24,6 +26,7 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [shells, setShells] = useState<string[]>(["auto"]);
   const [buta, setButa] = useState<ButaglyphInfo | null>(null);
+  const appTheme = useTheme();
   useEffect(() => {
     let live = true;
     listShells().then((ids) => { if (live && ids.length) setShells(ids); }).catch(() => {});
@@ -100,6 +103,11 @@ export default function SettingsPage() {
                 ))}
               </select>
             </label>
+            {s.promptPreset !== MATCH[appTheme].preset && presets.some((p) => p.name === MATCH[appTheme].preset) && (
+              <button type="button" className="settings-btn" onClick={() => choose("promptPreset", MATCH[appTheme].preset)}>
+                {t("settings.presetMatch", { preset: MATCH[appTheme].preset })}
+              </button>
+            )}
             {s.promptPreset !== "" && (
               <span className="settings-hint">{presets.find((p) => p.name === s.promptPreset)?.description}</span>
             )}
