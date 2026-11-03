@@ -18,6 +18,7 @@
     "allow-pty-kill",
     "allow-pty-list",
     "allow-open-system-terminal",
+    "allow-list-shells",
     "allow-focus-session-tab",
     "allow-get-settings",
     "allow-set-settings",

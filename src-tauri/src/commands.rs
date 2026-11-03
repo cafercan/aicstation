@@ -1101,8 +1101,14 @@ mod tests {
 use crate::pty::{PtyInfo, PtyManager};
 use tauri::ipc::Channel;
 
+/// The shell chosen in the settings (see `shell::for_setting`).
+fn chosen_shell(settings: &SettingsStore) -> Result<crate::shell::Shell, String> {
+    crate::shell::for_setting(&settings.get().shell)
+}
+
 #[tauri::command(async)]
 pub fn pty_spawn(
+    settings: tauri::State<'_, SettingsStore>,
     state: tauri::State<'_, PtyManager>,
     cols: u16,
     rows: u16,
@@ -1110,6 +1116,7 @@ pub fn pty_spawn(
     on_exit: Channel<i32>,
 ) -> Result<PtyInfo, String> {
     state.spawn_shell(
+        &chosen_shell(&settings)?,
         cols,
         rows,
         // A failed send means the webview side is gone (e.g. reload); the
@@ -1127,6 +1134,7 @@ pub fn pty_spawn(
 /// `session_resume_terminal_open:<terminal>` before the generic live check.
 #[tauri::command(async)]
 pub fn pty_spawn_resume(
+    settings: tauri::State<'_, SettingsStore>,
     app: tauri::State<'_, AppState>,
     state: tauri::State<'_, PtyManager>,
     session_id: String,
@@ -1138,6 +1146,7 @@ pub fn pty_spawn_resume(
     state.check_resume_terminal(&session_id)?;
     let (id, cwd) = app.resume_target(&session_id)?;
     state.spawn_resume(
+        &chosen_shell(&settings)?,
         &cwd,
         &id,
         cols,
@@ -1172,6 +1181,12 @@ pub fn pty_kill(state: tauri::State<'_, PtyManager>, id: u32) -> Result<(), Stri
 #[tauri::command(async)]
 pub fn pty_list(state: tauri::State<'_, PtyManager>) -> Vec<PtyInfo> {
     state.list()
+}
+
+/// Shell ids (settings `shell`) installed on this machine, `auto` first.
+#[tauri::command(async)]
+pub fn list_shells() -> Vec<String> {
+    crate::shell::installed()
 }
 
 /// Opens a terminal outside the app in the home folder. Takes nothing from

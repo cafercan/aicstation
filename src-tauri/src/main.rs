@@ -322,6 +322,7 @@ fn main() {
             commands::pty_kill,
             commands::pty_list,
             commands::open_system_terminal,
+            commands::list_shells,
             commands::focus_session_tab,
             commands::get_settings,
             commands::set_settings,
