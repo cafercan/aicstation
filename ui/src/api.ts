@@ -174,6 +174,12 @@ export interface Settings {
   notifySubagent: boolean;
   notifySound: boolean;
   closeToTray: boolean;
+  /** Shell id of the embedded terminals ("auto" = platform default). */
+  shell: string;
+  /** "own" (the shell's rc files decide) or "butaglyph". */
+  prompt: string;
+  /** butaglyph preset name; "" = the user's own butaglyph config. */
+  promptPreset: string;
   /** Owned by the backend; a value sent here is ignored. */
   trayNoticeShown: boolean;
   /** UI language, for the texts the backend shows (toasts, tray). */
