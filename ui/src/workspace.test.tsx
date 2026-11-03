@@ -235,7 +235,7 @@ test("komut paleti Ayarlar'ı da açar", async () => {
 
 test("kısayol katmanı Ayarlar panelinin girişlerine dokunmaz", async () => {
   await boot();
-  fireEvent.click(screen.getByRole("button", { name: /Ayarlar/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^⚙ Ayarlar/ }));
   const box = (await screen.findAllByRole("checkbox"))[0] as HTMLInputElement;
   box.focus();
   const inner = vi.fn();

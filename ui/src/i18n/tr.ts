@@ -14,6 +14,7 @@ export const tr = {
   "nav.claudeStatus": "Claude: {status}",
   "nav.language": "Dil",
   "nav.theme": "Tema",
+  "nav.footerToggle": "Ayarlar ve hakkında",
 
   // Status labels
   "status.busy": "çalışıyor",

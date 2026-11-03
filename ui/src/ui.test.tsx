@@ -372,3 +372,26 @@ test("status bar: token sayısı birincil, ~$ soluk; fiyatsız modelde $ yok", (
   expect(container.querySelector(".est")).toBeNull();
   expect(container.textContent).not.toContain("$");
 });
+
+test("kenar çubuğu alt bloğu: ok düğmesiyle kapanır/açılır, aria-expanded güncellenir, tercih saklanır", () => {
+  const { unmount } = render(sidebar());
+  const toggle = screen.getByRole("button", { name: /Ayarlar ve hakkında/ });
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  expect(toggle.getAttribute("aria-controls")).toBe("side-foot-body");
+  expect(document.getElementById("side-foot-body")!.hidden).toBe(false);
+  expect(screen.getByRole("combobox", { name: "Dil" })).toBeTruthy();
+  expect(screen.getByText("SessionStation")).toBeTruthy();
+  fireEvent.click(toggle);
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(document.getElementById("side-foot-body")!.hidden).toBe(true);
+  expect(screen.queryByRole("combobox", { name: "Dil" })).toBeNull();
+  expect(screen.queryByRole("button", { name: /^⚙/ })).toBeNull();
+  expect(localStorage.getItem("station.footerOpen")).toBe("0");
+  // Remounting keeps it closed (the choice lives in the store and in localStorage).
+  unmount();
+  render(sidebar());
+  expect(screen.getByRole("button", { name: /Ayarlar ve hakkında/ }).getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(screen.getByRole("button", { name: /Ayarlar ve hakkında/ }));
+  expect(screen.getByRole("combobox", { name: "Dil" })).toBeTruthy();
+  expect(localStorage.getItem("station.footerOpen")).toBe("1");
+});

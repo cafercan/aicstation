@@ -15,6 +15,7 @@ export const fr: Dict = {
   "nav.claudeStatus": "Claude : {status}",
   "nav.language": "Langue",
   "nav.theme": "Thème",
+  "nav.footerToggle": "Réglages et à propos",
 
   "status.busy": "au travail",
   "status.shell": "exécute une commande",

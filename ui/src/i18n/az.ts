@@ -15,6 +15,7 @@ export const az: Dict = {
   "nav.claudeStatus": "Claude: {status}",
   "nav.language": "Dil",
   "nav.theme": "Mövzu",
+  "nav.footerToggle": "Ayarlar və haqqında",
 
   "status.busy": "işləyir",
   "status.shell": "əmr icra edir",

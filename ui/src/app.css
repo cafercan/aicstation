@@ -76,8 +76,18 @@ select {
 .side .side-err { margin: 2px 8px 0 14px; color: var(--danger); font-size: 11px; }
 
 /* Sidebar footer: language + theme */
+.side .foot { margin-top: auto; }
+.foot-toggle {
+  display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 6px 4px; font: inherit; font-size: 10.5px;
+  letter-spacing: .04em; color: var(--muted); background: transparent; border: 0; border-top: 1px solid var(--border);
+  cursor: pointer; text-align: left;
+}
+.foot-toggle:hover { color: var(--strong); }
+.foot-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.foot-toggle .chev { width: 10px; text-align: center; }
+.side .foot [hidden] { display: none; }
 .side .prefs {
-  margin-top: auto; padding: 10px 6px 2px; border-top: 1px solid var(--border);
+  padding: 10px 6px 2px; border-top: 1px solid var(--border);
   display: flex; flex-direction: column; gap: 8px; user-select: none;
 }
 .lang-select {

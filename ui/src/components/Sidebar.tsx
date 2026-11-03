@@ -1,6 +1,7 @@
 import { useState, type CSSProperties } from "react";
 import { statusColor, statusLabel, type StatusKind } from "../format";
 import { LANGS, LANG_NAMES, errorText, setLang, useLang, useT, type Lang } from "../i18n";
+import { createStore, readPref, writePref } from "../prefs";
 import { THEME_IDS, THEMES, setTheme, useTheme } from "../theme";
 import SessionMark from "./SessionMark";
 
@@ -28,6 +29,29 @@ interface Props {
   onClose: (id: number) => void;
   /** Opens a PowerShell tab in Windows Terminal; rejects with an error code. */
   onOpenWt: () => Promise<void>;
+}
+
+const FOOTER_KEY = "station.footerOpen";
+/** Whether the bottom block (language, theme, settings, about) is open; remembered per viewer. */
+const footerOpen = createStore<boolean>(readPref(FOOTER_KEY) !== "0");
+const setFooterOpen = (open: boolean) => { footerOpen.set(open); writePref(FOOTER_KEY, open ? "1" : "0"); };
+
+/** Collapsible bottom block: a chevron toggle row above the prefs and the about text. */
+function Footer({ settingsOn, onSettings }: { settingsOn: boolean; onSettings: () => void }) {
+  const t = useT();
+  const open = footerOpen.use();
+  return (
+    <div className="foot">
+      <button type="button" className="foot-toggle" aria-expanded={open} aria-controls="side-foot-body"
+        onClick={() => setFooterOpen(!open)}>
+        <span className="chev" aria-hidden="true">{open ? "▾" : "▸"}</span> {t("nav.footerToggle")}
+      </button>
+      <div id="side-foot-body" hidden={!open}>
+        <Prefs settingsOn={settingsOn} onSettings={onSettings} />
+        <About />
+      </div>
+    </div>
+  );
 }
 
 /** Language select, theme swatches and the settings gear at the bottom of the sidebar. */
@@ -108,8 +132,7 @@ export default function Sidebar({ view, terminals, onSelect, onNew, onClose, onO
       <div className="item sub new" onClick={onNew}>{t("nav.newTerminal")}</div>
       <div className="item sub new" onClick={openWt} title={t("nav.openWtTitle")}>{t("nav.openWt")}</div>
       {wtError && <div className="side-err" role="alert">{wtError}</div>}
-      <Prefs settingsOn={view === "settings"} onSettings={() => onSelect("settings")} />
-      <About />
+      <Footer settingsOn={view === "settings"} onSettings={() => onSelect("settings")} />
     </nav>
   );
 }

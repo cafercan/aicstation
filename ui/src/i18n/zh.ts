@@ -15,6 +15,7 @@ export const zh: Dict = {
   "nav.claudeStatus": "Claude：{status}",
   "nav.language": "语言",
   "nav.theme": "主题",
+  "nav.footerToggle": "设置与关于",
 
   "status.busy": "工作中",
   "status.shell": "正在执行命令",
