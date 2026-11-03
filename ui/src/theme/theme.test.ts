@@ -62,6 +62,10 @@ test("okunabilirlik: metin ≥ 4.5, soluk metin ≥ 3, rozet ve status bar durum
     expect(contrast(k.text, k.bg), `${id} text`).toBeGreaterThanOrEqual(4.5);
     expect(contrast(k.text, k.surfaceA), `${id} text/surface`).toBeGreaterThanOrEqual(4.5);
     expect(contrast(k.muted, k.bg), `${id} muted`).toBeGreaterThanOrEqual(3);
+    // The muted ~$ estimate beside token counts sits on cards, KPI tiles, the table and the status bar.
+    for (const [name, under] of [["surfaceA", k.surfaceA], ["surfaceB", k.surfaceB], ["sbBg", k.sbBg]] as const) {
+      expect(contrast(k.muted, under), `${id} muted/${name}`).toBeGreaterThanOrEqual(3);
+    }
     expect(contrast(k.dim, k.surfaceB), `${id} dim`).toBeGreaterThanOrEqual(3);
     for (const st of ["busy", "idle", "waiting", "closed"] as const) {
       const fg = k[`${st}Text`];

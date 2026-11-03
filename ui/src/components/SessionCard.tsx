@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { SessionCard } from "../api";
 import {
-  agentColor, clampPct, fmtContext, fmtCost, fmtElapsed, statusColor, statusKind, statusLabel, toolSuccess,
+  agentColor, clampPct, fmtBreakdown, fmtContext, fmtElapsed, fmtEstCost, fmtTokens, statusColor, statusKind, statusLabel,
+  toolSuccess, usageSum,
 } from "../format";
 import { errorText, useT } from "../i18n";
 import AgentDonut from "./AgentDonut";
@@ -35,6 +36,7 @@ export default function SessionCardView({ card, now, onOpen, onGoto }: Props) {
     ? `${t("card.lastTool", { tool: card.lastTool.name + (card.lastTool.target ? " " + card.lastTool.target : "") })} · `
     : "";
   const goto = t("card.goto");
+  const est = fmtEstCost(card.costUsd);
   return (
     <div className={`card ${kind}`} role="button" tabIndex={0}
       title={`${last}${t("card.lastActivity", { t: fmtElapsed(now - card.lastActivityMs) })}`}
@@ -79,7 +81,11 @@ export default function SessionCardView({ card, now, onOpen, onGoto }: Props) {
       <div className="ctx"><i style={{ width: `${clampPct(card.contextPct)}%` }} /></div>
       <div className="row">
         <span>{t("card.context", { pct: fmtContext(card.contextPct) })}</span>
-        <span>{`${fmtCost(card.costUsd)} · ${elapsed}`}</span>
+        <span>
+          <span title={fmtBreakdown(card.tokens)}>{t("usage.tokens", { n: fmtTokens(usageSum(card.tokens)) })}</span>
+          {est && <>{" "}<span className="est">{est}</span></>}
+          {` · ${elapsed}`}
+        </span>
       </div>
     </div>
   );

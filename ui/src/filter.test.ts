@@ -22,7 +22,7 @@ test("matchesQuery: her kelime alanlardan birinde geçmeli; boş sorgu her şeyi
 
 const card = (over: Partial<SessionCard>): SessionCard => ({
   sessionId: "s", pid: 1, parentPid: null, name: "demo", cwd: "C:\\x\\demo", status: "busy", waitingFor: null,
-  model: "Opus 5.5", contextPct: null, costUsd: 0, agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0,
+  model: "Opus 5.5", contextPct: null, costUsd: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 }, agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0,
   lastTool: null, startedAtMs: 0, lastActivityMs: 0, gitBranch: null, hostKind: "other", ...over,
 });
 
@@ -45,22 +45,24 @@ test("filterSessions: metin + bağımsız durum çipleri (hiçbiri seçili deği
   expect(ids(filterSessions(cards, "web", new Set(["idle"])))).toEqual([]);
 });
 
-const hrow = (id: string, modifiedMs: number, cost: number | null, over: Partial<HistoryRow> = {}): HistoryRow => ({
+const ZERO = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 };
+const hrow = (id: string, modifiedMs: number, cost: number | null, tokens?: number, over: Partial<HistoryRow> = {}): HistoryRow => ({
   sessionId: id, modifiedMs, size: 0, name: id, cwd: "C--x",
   summary: cost === null ? null : {
     name: id, cwd: `C:\\p\\${id}`, model: id === "b" ? "Sonnet 5.5" : "Opus 5.5", firstAtMs: 0, lastAtMs: 0,
     agentsTotal: 0, costUsd: cost, costByDay: {},
+    tokens: { ...ZERO, input: tokens ?? 0 }, tokensByDay: {},
   },
   ...over,
 });
 
-test("filterHistory: metin, tarih aralığı (yerel, iki uç dahil), tarihe/maliyete göre sıralama", () => {
+test("filterHistory: metin, tarih aralığı (yerel, iki uç dahil), tarihe/token sayısına göre sıralama", () => {
   const d = (day: number, h = 12) => new Date(2026, 10, day, h).getTime();
-  const rows = [hrow("a", d(1), 2), hrow("b", d(3, 0), 5), hrow("c", d(5, 23), null), hrow("d", d(10), 1)];
+  const rows = [hrow("a", d(1), 2, 100), hrow("b", d(3, 0), 5, 50), hrow("c", d(5, 23), null), hrow("d", d(10), 1, 300)];
   const ids = (r: HistoryRow[]) => r.map((x) => x.sessionId);
   const base = { query: "", from: "", to: "", sort: "date" as const };
   expect(ids(filterHistory(rows, base))).toEqual(["d", "c", "b", "a"]);
-  expect(ids(filterHistory(rows, { ...base, sort: "cost" }))).toEqual(["b", "a", "d", "c"]);
+  expect(ids(filterHistory(rows, { ...base, sort: "tokens" }))).toEqual(["d", "a", "b", "c"]);
   expect(ids(filterHistory(rows, { ...base, from: "2026-11-03", to: "2026-11-05" }))).toEqual(["c", "b"]);
   expect(ids(filterHistory(rows, { ...base, from: "2026-11-04" }))).toEqual(["d", "c"]);
   expect(ids(filterHistory(rows, { ...base, to: "2026-11-01" }))).toEqual(["a"]);

@@ -101,12 +101,13 @@ select {
 /* KPI boxes */
 .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
 .kpis.six { grid-template-columns: repeat(6, 1fr); }
+.kpis.five { grid-template-columns: repeat(5, 1fr); }
 .kpi {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 10px 12px; box-shadow: var(--shadow); min-width: 0;
 }
 .kpi b { display: block; font-size: 20px; font-weight: 700; color: var(--strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.kpis.six .kpi b { font-size: 15px; }
+.kpis.six .kpi b, .kpis.five .kpi b { font-size: 15px; }
 .kpi b.warn { color: var(--waiting); }
 .kpi span { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
 

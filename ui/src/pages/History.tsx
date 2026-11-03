@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { cancelSearch, getHistory, searchHistory, type HistoryView, type SearchOutcome } from "../api";
+import { cancelSearch, getHistory, searchHistory, type HistorySummary, type HistoryView, type SearchOutcome } from "../api";
 import CostCharts from "../components/CostCharts";
 import { filterHistory, rowCwd, type HistoryFilter, type HistorySort } from "../filter";
-import { fmtCost, fmtElapsed } from "../format";
+import { fmtBreakdown, fmtElapsed, fmtEstCost, fmtTokens, usageSum } from "../format";
 import { resumeError } from "../gotoTab";
 import { errorText, locale, useT } from "../i18n";
 import { createStore } from "../prefs";
@@ -112,6 +112,16 @@ function ContentSearch({ view, onOpen }: { view: HistoryView; onOpen: (id: strin
   );
 }
 
+function HistoryTokens({ s }: { s: HistorySummary }) {
+  const est = fmtEstCost(s.costUsd);
+  return (
+    <>
+      <span title={fmtBreakdown(s.tokens)}>{fmtTokens(usageSum(s.tokens))}</span>
+      {est && <span className="est">{est}</span>}
+    </>
+  );
+}
+
 export default function History({ onOpen, onResume, onTerminal }: Props) {
   const t = useT();
   const [view, setView] = useState<HistoryView | null>(null);
@@ -157,7 +167,7 @@ export default function History({ onOpen, onResume, onTerminal }: Props) {
           onChange={(e) => set({ to: e.target.value })} /></label>
         <label>{t("hist.sort")} <select value={f.sort} onChange={(e) => set({ sort: e.target.value as HistorySort })}>
           <option value="date">{t("hist.sortDate")}</option>
-          <option value="cost">{t("hist.sortCost")}</option>
+          <option value="tokens">{t("hist.sortTokens")}</option>
         </select></label>
       </div>
       <ContentSearch view={view} onOpen={onOpen} />
@@ -170,7 +180,7 @@ export default function History({ onOpen, onResume, onTerminal }: Props) {
             <tr>
               <th>{t("hist.colDate")}</th><th>{t("hist.colName")}</th><th>{t("hist.colFolder")}</th>
               <th>{t("hist.colModel")}</th><th>{t("hist.colDuration")}</th><th>{t("hist.colAgents")}</th>
-              <th>{t("hist.colCost")}</th><th />
+              <th>{t("hist.colTokens")}</th><th />
             </tr>
           </thead>
           <tbody>
@@ -185,7 +195,7 @@ export default function History({ onOpen, onResume, onTerminal }: Props) {
                   <td>{s ? s.model ?? "?" : "?"}</td>
                   <td>{s ? fmtElapsed(s.lastAtMs - s.firstAtMs) : "?"}</td>
                   <td>{s ? s.agentsTotal : "?"}</td>
-                  <td>{s ? fmtCost(s.costUsd) : "?"}</td>
+                  <td>{s ? <HistoryTokens s={s} /> : "?"}</td>
                   <td>
                     {onResume && (
                       <button className="btn" disabled={pending.has(r.sessionId)} onClick={(e) => {

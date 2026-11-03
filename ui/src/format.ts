@@ -1,14 +1,48 @@
-import { getLang, t, type Lang } from "./i18n";
+import type { Usage } from "./api";
+import { getLang, locale, t, type Lang } from "./i18n";
 import { themeTokens } from "./theme";
 
-export function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
+const compactFmt = new Map<string, Intl.NumberFormat>();
+
+/** Compact, locale-aware token count: 950, 12.3K, 182.4M, 1.2B (one fraction digit at most). */
+export function fmtTokens(n: number, lang: Lang = getLang()): string {
+  const loc = locale(lang);
+  let f = compactFmt.get(loc);
+  if (!f) {
+    f = new Intl.NumberFormat(loc, { notation: "compact", maximumFractionDigits: 1 });
+    compactFmt.set(loc, f);
+  }
+  return f.format(Number.isFinite(n) ? n : 0);
 }
 
 export function fmtCost(usd: number): string {
   return `$${usd.toFixed(2)}`;
+}
+
+/**
+ * Secondary dollar figure "~$456 est." (translated), or null when there is no
+ * estimate: an unknown model has no price, so a zero cost is left out rather
+ * than shown as "$0".
+ */
+export function fmtEstCost(usd: number | null | undefined, lang: Lang = getLang()): string | null {
+  if (usd == null || !Number.isFinite(usd) || !(usd > 0)) return null;
+  const cost = usd >= 100 ? `$${Math.round(usd)}` : fmtCost(usd);
+  return t("usage.est", { cost }, lang);
+}
+
+/** input + output + cache read + cache write (cacheCreation1h is part of cacheCreation). */
+export function usageSum(u: Usage | null | undefined): number {
+  if (!u) return 0;
+  return [u.input, u.output, u.cacheRead, u.cacheCreation].reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
+}
+
+/** Tooltip text with the four token kinds, exact numbers. */
+export function fmtBreakdown(u: Usage | null | undefined, lang: Lang = getLang()): string {
+  const nf = new Intl.NumberFormat(locale(lang));
+  const n = (v: number | undefined) => nf.format(Number.isFinite(v) ? v! : 0);
+  return t("usage.breakdown", {
+    input: n(u?.input), output: n(u?.output), cacheRead: n(u?.cacheRead), cacheWrite: n(u?.cacheCreation),
+  }, lang);
 }
 
 export function fmtElapsed(ms: number, lang: Lang = getLang()): string {

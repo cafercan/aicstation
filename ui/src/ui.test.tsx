@@ -12,7 +12,7 @@ function card(over: Partial<SessionCard> = {}): SessionCard {
   return {
     sessionId: "s1", pid: 1, parentPid: null, name: "demo", cwd: "C:/x/demo",
     status: "busy", waitingFor: null, model: "Opus 5.5", contextPct: 62,
-    costUsd: 1.2, agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null,
+    costUsd: 1.2, tokens: { input: 1_000_000, output: 200_000, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 }, agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null,
     startedAtMs: 0, lastActivityMs: 0, gitBranch: "main", hostKind: "other", ...over,
   };
 }
@@ -118,13 +118,36 @@ test("kart tıklanınca onOpen çağrılır", () => {
   expect(onOpen).toHaveBeenCalledWith("s1");
 });
 
-test('KPI bugünün maliyeti tamamlanmadıysa "hesaplanıyor"', () => {
+test('KPI bugünün token sayısı birincil, $ tahmini ikincil; tamamlanmadıysa "hesaplanıyor"', () => {
   const snap = { sessions: [card()], runningAgents: 2, waitingCount: 1 };
-  const { unmount } = render(<KpiRow snapshot={snap} history={{ rows: [], todayCost: 3.4216, todayComplete: false, indexing: true }} />);
+  const { unmount } = render(<KpiRow snapshot={snap} history={{ rows: [], todayCost: 3.4216, todayTokens: 5, todayComplete: false, indexing: true }} />);
   expect(screen.getByText("hesaplanıyor")).toBeTruthy();
+  expect(screen.queryByText(/\$3/)).toBeNull();
   unmount();
-  render(<KpiRow snapshot={snap} history={{ rows: [], todayCost: 3.4216, todayComplete: true, indexing: false }} />);
-  expect(screen.getByText("$3.42")).toBeTruthy();
+  const { unmount: u2 } = render(<KpiRow snapshot={snap} history={{ rows: [], todayCost: 3.4216, todayTokens: 182_400_000, todayComplete: true, indexing: false }} />);
+  const tile = screen.getByText("bugünkü token").closest(".kpi")!;
+  expect(tile.querySelector("b")!.textContent).toBe("182,4 Mn");
+  const est = tile.querySelector(".est")!;
+  expect(est.textContent).toBe("~$3.42 tah.");
+  u2();
+  // Unknown model: tokens but no cost, so no dollar part at all (no "$0").
+  render(<KpiRow snapshot={snap} history={{ rows: [], todayCost: 0, todayTokens: 950, todayComplete: true, indexing: false }} />);
+  const t3 = screen.getByText("bugünkü token").closest(".kpi")!;
+  expect(t3.querySelector("b")!.textContent).toBe("950");
+  expect(t3.querySelector(".est")).toBeNull();
+});
+
+test("kart altbilgisi: token sayısı birincil (ipucunda dört tür), ~$ soluk; bilinmeyen modelde $ yok", () => {
+  const tokens = { input: 1_000_000, output: 200_000, cacheRead: 300, cacheCreation: 40, cacheCreation1h: 0 };
+  const { container, rerender } = render(<SessionCardView card={card({ tokens })} now={0} onOpen={() => {}} />);
+  const row = container.querySelector(".card .row")!;
+  expect(row.textContent).toContain("1,2 Mn token");
+  expect(row.querySelector(".est")!.textContent).toBe("~$1.20 tah.");
+  expect(row.querySelector("[title]")!.getAttribute("title"))
+    .toBe("girdi 1.000.000 · çıktı 200.000 · önbellek okuma 300 · önbellek yazma 40");
+  rerender(<SessionCardView card={card({ tokens, costUsd: 0 })} now={0} onOpen={() => {}} />);
+  expect(container.querySelector(".card .row .est")).toBeNull();
+  expect(container.querySelector(".card .row")!.textContent).not.toContain("$");
 });
 
 test('status bar seçili oturum yokken "N açık oturum"', () => {
@@ -296,7 +319,8 @@ test("dil değişince kart, KPI ve status bar yeniden çizilir", () => {
   expect(screen.getByText("2 agents finished")).toBeTruthy();
   expect(screen.getByText("running agents")).toBeTruthy();
   expect(screen.getByText("1 open session")).toBeTruthy();
-  expect(screen.getByText("$1.20 · 1 min")).toBeTruthy();
+  expect(document.querySelector(".card .row")!.textContent).toContain("1.2M tokens");
+  expect(document.querySelector(".card .row .est")!.textContent).toBe("~$1.20 est.");
   act(() => setLang("az"));
   expect(screen.getByText("əmr icra edir")).toBeTruthy();
   expect(screen.getByText("1 agent işləyir")).toBeTruthy();
@@ -337,4 +361,14 @@ test("hakkında: ürün adı, slogan ve bağımsızlık notu seçili dilde", () 
   act(() => setLang("tr"));
   expect(screen.getByRole("contentinfo").textContent).toContain("Anthropic");
   expect(screen.getByRole("contentinfo").textContent).toContain("Claude Code için");
+});
+
+test("status bar: token sayısı birincil, ~$ soluk; fiyatsız modelde $ yok", () => {
+  const c = card({ tokens: { input: 1_000_000, output: 200_000, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 } });
+  const { container, rerender } = render(<StatusBar sessions={[c]} selectedId="s1" />);
+  expect(container.textContent).toContain("1,2 Mn token");
+  expect(container.querySelector(".est")!.textContent).toBe("~$1.20 tah.");
+  rerender(<StatusBar sessions={[{ ...c, costUsd: 0 }]} selectedId="s1" />);
+  expect(container.querySelector(".est")).toBeNull();
+  expect(container.textContent).not.toContain("$");
 });

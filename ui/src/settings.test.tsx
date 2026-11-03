@@ -27,7 +27,7 @@ const invoke = vi.hoisted(() => vi.fn(async (cmd: string, args?: Record<string, 
     return h.stored;
   }
   if (cmd === "get_session_detail") return null;
-  if (cmd === "get_history") return { rows: [], todayCost: 0, todayComplete: true, indexing: false };
+  if (cmd === "get_history") return { rows: [], todayCost: 0, todayTokens: 0, todayComplete: true, indexing: false };
   return undefined;
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke, Channel: class {} }));

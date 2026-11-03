@@ -5,7 +5,7 @@ const invoke = vi.hoisted(() => vi.fn(async (cmd: string, _args?: unknown): Prom
   if (cmd === "get_snapshot") return { sessions: [], runningAgents: 0, waitingCount: 0 };
   if (cmd === "pty_list") return [{ id: 2, pid: 20 }];
   if (cmd === "pty_kill") return undefined;
-  return { rows: [], todayCost: 0, todayComplete: true, indexing: false };
+  return { rows: [], todayCost: 0, todayTokens: 0, todayComplete: true, indexing: false };
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke, Channel: class {} }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
