@@ -1202,6 +1202,13 @@ pub fn butaglyph_info() -> crate::butaglyph::Info {
     crate::butaglyph::info()
 }
 
+/// Two sample prompts (ANSI) drawn by buta with `preset` ("" = the user's
+/// own config). The name is validated before anything runs.
+#[tauri::command(async)]
+pub fn butaglyph_preview(preset: String) -> Result<Vec<String>, String> {
+    crate::butaglyph::preview(&preset)
+}
+
 /// Opens butaglyph's own config editor (`buta config`) in the browser.
 #[tauri::command(async)]
 pub fn open_butaglyph_editor() -> Result<(), String> {

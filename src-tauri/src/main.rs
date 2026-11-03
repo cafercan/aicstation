@@ -330,6 +330,7 @@ fn main() {
             commands::open_system_terminal,
             commands::list_shells,
             commands::butaglyph_info,
+            commands::butaglyph_preview,
             commands::open_butaglyph_editor,
             commands::focus_session_tab,
             commands::get_settings,

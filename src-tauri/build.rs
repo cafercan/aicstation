@@ -16,6 +16,7 @@ const COMMANDS: &[&str] = &[
     "open_system_terminal",
     "list_shells",
     "butaglyph_info",
+    "butaglyph_preview",
     "open_butaglyph_editor",
     "focus_session_tab",
     "get_settings",

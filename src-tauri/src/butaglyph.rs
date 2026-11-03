@@ -51,13 +51,19 @@ pub fn find() -> Option<PathBuf> {
     p.is_file().then_some(p)
 }
 
-/// stdout of `buta <args>` when it succeeds, with the cleaned environment.
+/// stdout of `buta <args>` when it succeeds, with the cleaned environment,
+/// colors off.
 fn run(buta: &Path, args: &[&str]) -> Option<String> {
+    run_env(buta, args, &[("NO_COLOR", "1")])
+}
+
+fn run_env(buta: &Path, args: &[&str], env: &[(&str, &str)]) -> Option<String> {
     let out = Command::new(buta)
         .args(args)
         .env_clear()
         .envs(crate::pty::child_env(std::env::vars_os(), &Default::default()))
-        .env("NO_COLOR", "1")
+        .env_remove("NO_COLOR")
+        .envs(env.iter().copied())
         .output()
         .ok()?;
     if !out.status.success() || out.stdout.len() > MAX_OUTPUT {
@@ -121,6 +127,34 @@ pub fn startup(prompt: &str, preset: &str) -> crate::integration::Startup {
     s
 }
 
+/// Sample prompts drawn by the real `buta` with `preset` (empty: the
+/// user's own config) in the home folder: after a successful command, and
+/// after a failed slow one. ANSI text for the UI's preview terminal.
+pub fn preview(preset: &str) -> Result<Vec<String>, String> {
+    if !crate::settings::valid_preset(preset) {
+        return Err(crate::errors::SETTINGS_INVALID.into());
+    }
+    let buta = find().ok_or(crate::errors::BUTAGLYPH_NOT_FOUND)?;
+    let config = if preset.is_empty() {
+        None
+    } else {
+        Some(preset_config(&buta, preset).ok_or(crate::errors::BUTAGLYPH_FAILED)?)
+    };
+    let config = config.as_ref().map(|c| c.to_string_lossy().into_owned());
+    let mut env: Vec<(&str, &str)> = vec![("COLORTERM", "truecolor"), ("TERM", "xterm-256color")];
+    if let Some(c) = &config {
+        env.push(("BUTA_CONFIG", c));
+    }
+    let home = crate::shell::home_dir().map(|h| h.to_string_lossy().into_owned()).unwrap_or_else(|| "/".into());
+    let mut out = Vec::new();
+    for (status, ms) in [("0", "40"), ("1", "3200")] {
+        let args = ["prompt", "--status", status, "--duration-ms", ms, "--cwd", &home];
+        let text = run_env(&buta, &args, &env).ok_or(crate::errors::BUTAGLYPH_FAILED)?;
+        out.push(text.chars().take(4096).collect());
+    }
+    Ok(out)
+}
+
 /// `buta config`: butaglyph's own editor in the browser (on 127.0.0.1),
 /// for the user's own config. Takes nothing from the UI.
 pub fn open_editor() -> Result<(), String> {
@@ -159,6 +193,30 @@ mod tests {
         assert_eq!(startup("own", "neon"), crate::integration::Startup::default());
         assert_eq!(preset_config(Path::new("/yok/buta"), "../x"), None);
         assert_eq!(preset_config(Path::new("/yok/buta"), ""), None);
+    }
+
+    /// With the real buta, when installed: two colored prompts, the second
+    /// one different (failed status).
+    #[test]
+    fn real_buta_preview_draws_two_colored_prompts() {
+        if find().is_none() {
+            eprintln!("buta not installed; skipping");
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        set_preset_dir(tmp.path().join("prompts"));
+        if PRESET_DIR.get() != Some(&tmp.path().join("prompts")) {
+            return; // another test set the folder first
+        }
+        let p = preview("minimal").unwrap();
+        assert_eq!(p.len(), 2);
+        assert!(p.iter().all(|s| s.contains("\x1b[")), "{p:?}");
+        assert_ne!(p[0], p[1]);
+    }
+
+    #[test]
+    fn preview_refuses_an_invalid_preset_before_running_anything() {
+        assert_eq!(preview("../x").unwrap_err(), crate::errors::SETTINGS_INVALID);
     }
 
     #[cfg(unix)]
