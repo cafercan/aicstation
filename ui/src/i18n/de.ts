@@ -149,6 +149,8 @@ export const de: Dict = {
   "err.terminal_not_found": "Keine Terminal-App gefunden ($TERMINAL setzen)",
   "err.terminal_open_failed": "Terminal konnte nicht geöffnet werden",
   "err.shell_not_found": "Keine nutzbare Shell gefunden",
+  "err.butaglyph_not_found": "butaglyph ist nicht installiert",
+  "err.butaglyph_failed": "butaglyph konnte nicht gestartet werden",
   "err.tab_not_found": "Tab nicht gefunden",
   "err.tab_ambiguous": "Fenster in den Vordergrund geholt; mehrere Tabs haben denselben Namen",
   "err.tab_no_match": "Fenster in den Vordergrund geholt; der Tab der Sitzung wurde nicht gefunden",

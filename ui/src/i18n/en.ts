@@ -146,6 +146,8 @@ export const en: Dict = {
   "err.terminal_not_found": "No terminal app found (set $TERMINAL)",
   "err.terminal_open_failed": "Could not open the terminal",
   "err.shell_not_found": "No usable shell found",
+  "err.butaglyph_not_found": "butaglyph is not installed",
+  "err.butaglyph_failed": "Could not start butaglyph",
   "err.tab_not_found": "Tab not found",
   "err.tab_ambiguous": "Window brought forward; several tabs have the same name",
   "err.tab_no_match": "Window brought forward; the session's tab was not found",

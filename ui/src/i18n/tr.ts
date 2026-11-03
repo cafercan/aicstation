@@ -156,6 +156,8 @@ export const tr = {
   "err.terminal_not_found": "Terminal uygulaması bulunamadı ($TERMINAL ayarlayın)",
   "err.terminal_open_failed": "Terminal açılamadı",
   "err.shell_not_found": "Kullanılabilir bir kabuk bulunamadı",
+  "err.butaglyph_not_found": "butaglyph kurulu değil",
+  "err.butaglyph_failed": "butaglyph başlatılamadı",
   "err.tab_not_found": "Sekme bulunamadı",
   "err.tab_ambiguous": "Pencere öne getirildi; aynı adlı birden çok sekme var",
   "err.tab_no_match": "Pencere öne getirildi; oturumun sekmesi bulunamadı",

@@ -15,6 +15,8 @@ const COMMANDS: &[&str] = &[
     "pty_list",
     "open_system_terminal",
     "list_shells",
+    "butaglyph_info",
+    "open_butaglyph_editor",
     "focus_session_tab",
     "get_settings",
     "set_settings",

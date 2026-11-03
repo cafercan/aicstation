@@ -157,6 +157,8 @@ export const ru: Dict = {
   "err.terminal_not_found": "Эмулятор терминала не найден (задайте $TERMINAL)",
   "err.terminal_open_failed": "Не удалось открыть терминал",
   "err.shell_not_found": "Не найдена подходящая оболочка",
+  "err.butaglyph_not_found": "butaglyph не установлен",
+  "err.butaglyph_failed": "Не удалось запустить butaglyph",
   "err.tab_not_found": "Вкладка не найдена",
   "err.tab_ambiguous": "Окно выведено на передний план; несколько вкладок имеют одинаковое имя",
   "err.tab_no_match": "Окно выведено на передний план; вкладка сессии не найдена",

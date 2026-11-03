@@ -146,6 +146,8 @@ export const az: Dict = {
   "err.terminal_not_found": "Terminal tətbiqi tapılmadı ($TERMINAL təyin edin)",
   "err.terminal_open_failed": "Terminal açılmadı",
   "err.shell_not_found": "İstifadə oluna bilən shell tapılmadı",
+  "err.butaglyph_not_found": "butaglyph quraşdırılmayıb",
+  "err.butaglyph_failed": "butaglyph başladıla bilmədi",
   "err.tab_not_found": "Vərəq tapılmadı",
   "err.tab_ambiguous": "Pəncərə önə gətirildi; eyni adlı bir neçə vərəq var",
   "err.tab_no_match": "Pəncərə önə gətirildi; sessiyanın vərəqi tapılmadı",

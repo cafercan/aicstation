@@ -1103,8 +1103,12 @@ use tauri::ipc::Channel;
 
 /// The launch of the shell chosen in the settings, resuming `resume` if set.
 fn chosen_launch(settings: &SettingsStore, resume: Option<&str>) -> Result<crate::integration::Launch, String> {
-    let shell = crate::shell::for_setting(&settings.get().shell)?;
-    let startup = crate::integration::Startup { resume: resume.map(str::to_string), ..Default::default() };
+    let s = settings.get();
+    let shell = crate::shell::for_setting(&s.shell)?;
+    let startup = crate::integration::Startup {
+        resume: resume.map(str::to_string),
+        ..crate::butaglyph::startup(&s.prompt, &s.prompt_preset)
+    };
     crate::integration::launch(&shell, &startup)
 }
 
@@ -1189,6 +1193,19 @@ pub fn pty_list(state: tauri::State<'_, PtyManager>) -> Vec<PtyInfo> {
 #[tauri::command(async)]
 pub fn list_shells() -> Vec<String> {
     crate::shell::installed()
+}
+
+/// Whether butaglyph is installed, its version and its presets (runs
+/// `buta`, so on the blocking pool).
+#[tauri::command(async)]
+pub fn butaglyph_info() -> crate::butaglyph::Info {
+    crate::butaglyph::info()
+}
+
+/// Opens butaglyph's own config editor (`buta config`) in the browser.
+#[tauri::command(async)]
+pub fn open_butaglyph_editor() -> Result<(), String> {
+    crate::butaglyph::open_editor()
 }
 
 /// Opens a terminal outside the app in the home folder. Takes nothing from

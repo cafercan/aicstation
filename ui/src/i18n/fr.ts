@@ -149,6 +149,8 @@ export const fr: Dict = {
   "err.terminal_not_found": "Aucun terminal trouvé (définissez $TERMINAL)",
   "err.terminal_open_failed": "Impossible d'ouvrir le terminal",
   "err.shell_not_found": "Aucun shell utilisable trouvé",
+  "err.butaglyph_not_found": "butaglyph n'est pas installé",
+  "err.butaglyph_failed": "Impossible de lancer butaglyph",
   "err.tab_not_found": "Onglet introuvable",
   "err.tab_ambiguous": "Fenêtre mise au premier plan ; plusieurs onglets portent le même nom",
   "err.tab_no_match": "Fenêtre mise au premier plan ; l'onglet de la session est introuvable",
