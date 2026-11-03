@@ -242,8 +242,17 @@ Download `SessionStation-v*-windows-x64-setup.exe` from the
   Choose "More info", then "Run anyway".
 - `LICENSE` and `THIRD_PARTY_NOTICES.md` are installed next to the app.
 
-On Linux there are no prebuilt packages yet: build a `.deb`, `.rpm` or
-AppImage from source (see below).
+On Linux (x64, glibc 2.34+: Ubuntu 22.04, Debian 12, Fedora 35 or newer),
+download one of these from the same page:
+
+- `SessionStation-v*-linux-amd64.deb` (Debian, Ubuntu):
+  `sudo apt install ./SessionStation-v*-linux-amd64.deb`
+- `SessionStation-v*-linux-x86_64.rpm` (Fedora, openSUSE):
+  `sudo dnf install ./SessionStation-v*-linux-x86_64.rpm`
+- `SessionStation-v*-linux-x86_64.AppImage` (any distro): make it executable
+  (`chmod +x`) and run it.
+
+`SHA256SUMS-linux.txt` lists their checksums.
 
 ## Usage tips
 
@@ -334,7 +343,6 @@ the tests and a release build on Linux.
 
 ## Roadmap
 
-- Prebuilt Linux packages
 - More polish across the UI and terminals
 - Native-speaker review of the translations
 
@@ -411,8 +419,8 @@ biçimler değişebilir.
 `SessionStation_*_x64-setup.exe` dosyasını indirip çalıştırın. Kurulum
 kullanıcı bazlıdır, yönetici yetkisi gerekmez; kurulum dosyası henüz imzalı
 değildir. Gereksinimler: Windows 10/11 x64,
-WebView2, Claude Code. Linux için henüz hazır paket yok; `npm run
-bundle:linux` ile `.deb`, `.rpm` ya da AppImage derlenebilir.
+WebView2, Claude Code. Linux (x64, glibc 2.34+) için aynı sayfada `.deb`,
+`.rpm` ve AppImage paketleri var.
 
 Kaynaktan derleme, testler ve katkı için yukarıdaki İngilizce bölümlere
 bakın. Lisans: [MIT](LICENSE).
