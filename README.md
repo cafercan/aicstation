@@ -1,17 +1,17 @@
-# SessionStation
+# AI C-Station
 
 **Sessions, agents and terminals for Claude Code.**
 
 > **Unofficial; not affiliated with or endorsed by Anthropic. Claude and Claude
 > Code are trademarks of Anthropic.**
 
-[![ci](https://github.com/cafercan/session-station/actions/workflows/ci.yml/badge.svg)](https://github.com/cafercan/session-station/actions/workflows/ci.yml)
+[![ci](https://github.com/cafercan/aicstation/actions/workflows/ci.yml/badge.svg)](https://github.com/cafercan/aicstation/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Platform: Windows 10/11 x64 | Linux x64](https://img.shields.io/badge/platform-Windows%2010%2F11%20%7C%20Linux-lightgrey.svg)
 
 [Türkçe özet](#türkçe)
 
-SessionStation is a desktop app for Windows and Linux that shows every local
+AI C-Station is a desktop app for Windows and Linux that shows every local
 Claude Code session in one window: what each one is doing, its subagents,
 context usage and token usage (with an estimated cost). It also runs real
 terminals (PowerShell, bash, zsh, fish, ...) right next to them.
@@ -47,7 +47,7 @@ If you use Claude Code a lot, you probably have several sessions open at once,
 in different project folders, spread over Windows Terminal tabs, VS Code and
 other windows. It gets hard to tell which one is waiting for your approval,
 which one has finished, how many subagents are running and what the day has
-cost. SessionStation reads Claude Code's local files and puts all of that on
+cost. AI C-Station reads Claude Code's local files and puts all of that on
 one dashboard. It can also take you to the tab a session runs in, or resume a
 closed session in its own folder.
 
@@ -186,7 +186,7 @@ Ctrl+= / Ctrl+- / Ctrl+0 work as described above.
 
 These are guarantees of the code in this repository:
 
-- **Read-only access to Claude Code's files.** SessionStation reads
+- **Read-only access to Claude Code's files.** AI C-Station reads
   `~/.claude` (or `CLAUDE_CONFIG_DIR` if it is set) and never writes there. It
   never opens `sessions/*.key` files.
 - **The app makes no network requests.** It has no telemetry, no analytics, no
@@ -215,10 +215,10 @@ These are guarantees of the code in this repository:
   - Your language, theme and terminal appearance choices are kept in the
     WebView's local storage.
 
-> **Note:** SessionStation relies on Claude Code's **undocumented** local file
+> **Note:** AI C-Station relies on Claude Code's **undocumented** local file
 > formats (session transcripts, `sessions/*.json`, subagent metadata). These
 > can change with any Claude Code update. Unknown fields are skipped, but some
-> information may be missing or wrong until SessionStation is updated.
+> information may be missing or wrong until AI C-Station is updated.
 
 ## Requirements
 
@@ -234,7 +234,7 @@ and, for the tray icon, libayatana-appindicator. Optional:
 
 ## Installation
 
-Download `SessionStation-v*-windows-x64-setup.exe` from the
+Download `AICStation-v*-windows-x64-setup.exe` from the
 [Releases](../../releases) page and run it.
 
 - The install is per user and needs no administrator rights.
@@ -314,8 +314,8 @@ dummy processes, ~25 closed sessions, subagents and a workflow, all made up)
 for screenshots and demos. It also creates folders under `C:\Demo`.
 
 ```powershell
-.\scripts\demo-data.ps1                 # default dir: %TEMP%\sessionstation-demo
-$env:CLAUDE_CONFIG_DIR="$env:TEMP\sessionstation-demo"; & .\target\debug\session-station.exe
+.\scripts\demo-data.ps1                 # default dir: %TEMP%\aicstation-demo
+$env:CLAUDE_CONFIG_DIR="$env:TEMP\aicstation-demo"; & .\target\debug\aicstation.exe
 .\scripts\demo-data.ps1 -Stop           # kill the dummy processes, remove the demo dir and C:\Demo folders
 ```
 
@@ -336,7 +336,7 @@ the tests and a release build on Linux.
 | Path | Contents |
 |---|---|
 | `core/` | `station-core`: Rust library that locates and parses Claude Code's local files, tracks live sessions, builds the agent tree, and computes context usage and cost |
-| `src-tauri/` | `session-station`: the Tauri app with IPC commands, terminals (PTY), history index, notifications, tray and platform integration (Windows, Linux) |
+| `src-tauri/` | `aicstation`: the Tauri app with IPC commands, terminals (PTY), history index, notifications, tray and platform integration (Windows, Linux) |
 | `ui/` | React + TypeScript front end (Vite), xterm.js terminals, i18n dictionaries, themes |
 | `scripts/` | `gen-notices.mjs`, which generates the third-party notices |
 | `assets/` | Logo source |
@@ -369,7 +369,7 @@ Please report vulnerabilities privately as described in
 
 ## Acknowledgements
 
-SessionStation is built on [Tauri], [xterm.js], [portable-pty] and [React],
+AI C-Station is built on [Tauri], [xterm.js], [portable-pty] and [React],
 along with the other open-source projects listed in the third-party notices.
 
 [Tauri]: https://tauri.app
@@ -382,7 +382,7 @@ along with the other open-source projects listed in the third-party notices.
 
 ## Türkçe
 
-**SessionStation**, Claude Code oturumlarını, alt ajanlarını ve terminallerini
+**AI C-Station**, Claude Code oturumlarını, alt ajanlarını ve terminallerini
 tek pencerede gösteren bir Windows ve Linux masaüstü uygulamasıdır. Resmî değildir;
 Anthropic ile bağlantılı değildir ve Anthropic tarafından onaylanmamıştır.
 Claude ve Claude Code, Anthropic'in ticari markalarıdır.
@@ -416,7 +416,7 @@ anahtarına yazar. Claude Code'un belgelenmemiş dosya biçimlerine dayanır; bu
 biçimler değişebilir.
 
 **Kurulum:** [Releases](../../releases) sayfasından
-`SessionStation_*_x64-setup.exe` dosyasını indirip çalıştırın. Kurulum
+`AICStation-v*-windows-x64-setup.exe` dosyasını indirip çalıştırın. Kurulum
 kullanıcı bazlıdır, yönetici yetkisi gerekmez; kurulum dosyası henüz imzalı
 değildir. Gereksinimler: Windows 10/11 x64,
 WebView2, Claude Code. Linux (x64, glibc 2.34+) için aynı sayfada `.deb`,
