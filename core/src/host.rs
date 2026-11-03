@@ -1,4 +1,4 @@
-//! Where a live Claude process runs: in one of SessionStation's own terminals,
+//! Where a live Claude process runs: in one of AI C-Station's own terminals,
 //! in a Windows Terminal tab, or somewhere else (VS Code, an IDE, ...).
 //! Pure logic over a process table so it can be tested without Win32; the
 //! platform layer fills the table from a Toolhelp snapshot.
@@ -201,7 +201,7 @@ mod tests {
 
     #[test]
     fn claude_in_embedded_terminal() {
-        let t = table(&[(10, 9, "claude.exe"), (9, SELF, "powershell.exe"), (SELF, 8, "session-station.exe"), (8, 4, "WindowsTerminal.exe")]);
+        let t = table(&[(10, 9, "claude.exe"), (9, SELF, "powershell.exe"), (SELF, 8, "aicstation.exe"), (8, 4, "WindowsTerminal.exe")]);
         // Our own process wins even when the app itself was started from WT.
         assert_eq!(find_host(10, SELF, &t, no_times), Host::Embedded);
     }

@@ -1,10 +1,10 @@
 [package]
-name = "session-station"
+name = "aicstation"
 version = "1.2.0"
 edition = "2021"
 license = "MIT"
-description = "SessionStation: sessions, agents and terminals for Claude Code"
-default-run = "session-station"
+description = "AI C-Station: sessions, agents and terminals for Claude Code"
+default-run = "aicstation"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

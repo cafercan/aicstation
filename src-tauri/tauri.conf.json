@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "SessionStation",
+  "productName": "AICStation",
   "version": "1.2.0",
   "identifier": "com.cafercan.sessionstation",
   "build": {
@@ -14,7 +14,7 @@
       {
         "label": "main",
         "create": false,
-        "title": "SessionStation",
+        "title": "AI C-Station",
         "width": 1280,
         "height": 800
       }

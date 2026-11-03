@@ -18,6 +18,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "aicstation"
+version = "1.2.0"
+dependencies = [
+ "chrono",
+ "notify",
+ "notify-rust",
+ "portable-pty",
+ "serde",
+ "serde_json",
+ "station-core",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-single-instance",
+ "tempfile",
+ "windows",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "alloc-no-stdlib"
 version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3221,25 +3240,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "170fb83ab34de17dc69aa7c67482b22218ddb85da56546f9bd6b929e32a05930"
 dependencies = [
  "stable_deref_trait",
-]
-
-[[package]]
-name = "session-station"
-version = "1.2.0"
-dependencies = [
- "chrono",
- "notify",
- "notify-rust",
- "portable-pty",
- "serde",
- "serde_json",
- "station-core",
- "tauri",
- "tauri-build",
- "tauri-plugin-single-instance",
- "tempfile",
- "windows",
- "windows-sys 0.61.2",
 ]
 
 [[package]]

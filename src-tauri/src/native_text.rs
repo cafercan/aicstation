@@ -26,89 +26,89 @@ const TR: Texts = Texts {
     waiting: "{name} onay bekliyor",
     finished: "{name} tamamlandı",
     subagent: "{name}: bir alt ajan tamamlandı",
-    tray_notice: "SessionStation tepside çalışmaya devam ediyor",
-    tooltip: "SessionStation — {open} açık oturum, {waiting} onay bekliyor",
+    tray_notice: "AI C-Station tepside çalışmaya devam ediyor",
+    tooltip: "AI C-Station — {open} açık oturum, {waiting} onay bekliyor",
     show_hide: "Göster / Gizle",
     dashboard: "Dashboard",
     quit: "Çık",
-    already_running: "SessionStation zaten çalışıyor gibi görünüyor, ancak yanıt vermedi. Tepsideki simgesine bakın; açılmazsa Görev Yöneticisi'nden kapatıp yeniden başlatın.",
+    already_running: "AI C-Station zaten çalışıyor gibi görünüyor, ancak yanıt vermedi. Tepsideki simgesine bakın; açılmazsa Görev Yöneticisi'nden kapatıp yeniden başlatın.",
 };
 const AZ: Texts = Texts {
     waiting: "{name} təsdiq gözləyir",
     finished: "{name} tamamlandı",
     subagent: "{name}: bir alt agent tamamlandı",
-    tray_notice: "SessionStation sistem tepsisində işləməyə davam edir",
-    tooltip: "SessionStation — {open} açıq sessiya, {waiting} təsdiq gözləyir",
+    tray_notice: "AI C-Station sistem tepsisində işləməyə davam edir",
+    tooltip: "AI C-Station — {open} açıq sessiya, {waiting} təsdiq gözləyir",
     show_hide: "Göstər / Gizlət",
     dashboard: "Panel",
     quit: "Çıxış",
-    already_running: "SessionStation artıq işləyir kimi görünür, lakin cavab vermədi. Sistem tepsisindəki ikonuna baxın; açılmazsa, Tapşırıq Menecerindən bağlayıb yenidən başladın.",
+    already_running: "AI C-Station artıq işləyir kimi görünür, lakin cavab vermədi. Sistem tepsisindəki ikonuna baxın; açılmazsa, Tapşırıq Menecerindən bağlayıb yenidən başladın.",
 };
 const EN: Texts = Texts {
     waiting: "{name} is awaiting approval",
     finished: "{name} finished",
     subagent: "{name}: a subagent finished",
-    tray_notice: "SessionStation keeps running in the tray",
-    tooltip: "SessionStation — open sessions: {open}, awaiting approval: {waiting}",
+    tray_notice: "AI C-Station keeps running in the tray",
+    tooltip: "AI C-Station — open sessions: {open}, awaiting approval: {waiting}",
     show_hide: "Show / Hide",
     dashboard: "Dashboard",
     quit: "Quit",
-    already_running: "SessionStation already seems to be running but did not respond. Check its tray icon; if it does not open, end it in Task Manager and start it again.",
+    already_running: "AI C-Station already seems to be running but did not respond. Check its tray icon; if it does not open, end it in Task Manager and start it again.",
 };
 const DE: Texts = Texts {
     waiting: "{name} wartet auf Freigabe",
     finished: "{name} ist fertig",
     subagent: "{name}: ein Subagent ist fertig",
-    tray_notice: "SessionStation läuft im Infobereich weiter",
-    tooltip: "SessionStation — offene Sitzungen: {open}, warten auf Freigabe: {waiting}",
+    tray_notice: "AI C-Station läuft im Infobereich weiter",
+    tooltip: "AI C-Station — offene Sitzungen: {open}, warten auf Freigabe: {waiting}",
     show_hide: "Anzeigen / Ausblenden",
     dashboard: "Übersicht",
     quit: "Beenden",
-    already_running: "SessionStation scheint bereits zu laufen, hat aber nicht reagiert. Prüfen Sie das Symbol im Infobereich; öffnet es sich nicht, beenden Sie es im Task-Manager und starten Sie es neu.",
+    already_running: "AI C-Station scheint bereits zu laufen, hat aber nicht reagiert. Prüfen Sie das Symbol im Infobereich; öffnet es sich nicht, beenden Sie es im Task-Manager und starten Sie es neu.",
 };
 const RU: Texts = Texts {
     waiting: "{name} ждёт подтверждения",
     finished: "{name}: работа завершена",
     subagent: "{name}: субагент завершил работу",
-    tray_notice: "SessionStation продолжает работать в области уведомлений",
-    tooltip: "SessionStation — открытых сессий: {open}, ждут подтверждения: {waiting}",
+    tray_notice: "AI C-Station продолжает работать в области уведомлений",
+    tooltip: "AI C-Station — открытых сессий: {open}, ждут подтверждения: {waiting}",
     show_hide: "Показать / Скрыть",
     dashboard: "Панель",
     quit: "Выход",
-    already_running: "SessionStation, похоже, уже запущен, но не отвечает. Проверьте значок в области уведомлений; если окно не открывается, завершите процесс в диспетчере задач и запустите снова.",
+    already_running: "AI C-Station, похоже, уже запущен, но не отвечает. Проверьте значок в области уведомлений; если окно не открывается, завершите процесс в диспетчере задач и запустите снова.",
 };
 const ES: Texts = Texts {
     waiting: "{name} está esperando aprobación",
     finished: "{name} ha terminado",
     subagent: "{name}: un subagente ha terminado",
-    tray_notice: "SessionStation sigue en ejecución en la bandeja",
-    tooltip: "SessionStation — sesiones abiertas: {open}, esperando aprobación: {waiting}",
+    tray_notice: "AI C-Station sigue en ejecución en la bandeja",
+    tooltip: "AI C-Station — sesiones abiertas: {open}, esperando aprobación: {waiting}",
     show_hide: "Mostrar / Ocultar",
     dashboard: "Panel",
     quit: "Salir",
-    already_running: "SessionStation parece estar ya en ejecución, pero no respondió. Revise su icono en la bandeja; si no se abre, ciérrelo desde el Administrador de tareas y vuelva a iniciarlo.",
+    already_running: "AI C-Station parece estar ya en ejecución, pero no respondió. Revise su icono en la bandeja; si no se abre, ciérrelo desde el Administrador de tareas y vuelva a iniciarlo.",
 };
 const FR: Texts = Texts {
     waiting: "{name} est en attente d'approbation",
     finished: "{name} a terminé",
     subagent: "{name} : un sous-agent a terminé",
-    tray_notice: "SessionStation continue de fonctionner dans la zone de notification",
-    tooltip: "SessionStation — sessions ouvertes : {open}, en attente d'approbation : {waiting}",
+    tray_notice: "AI C-Station continue de fonctionner dans la zone de notification",
+    tooltip: "AI C-Station — sessions ouvertes : {open}, en attente d'approbation : {waiting}",
     show_hide: "Afficher / Masquer",
     dashboard: "Tableau de bord",
     quit: "Quitter",
-    already_running: "SessionStation semble déjà en cours d'exécution, mais n'a pas répondu. Vérifiez son icône dans la zone de notification ; s'il ne s'ouvre pas, arrêtez-le dans le Gestionnaire des tâches et relancez-le.",
+    already_running: "AI C-Station semble déjà en cours d'exécution, mais n'a pas répondu. Vérifiez son icône dans la zone de notification ; s'il ne s'ouvre pas, arrêtez-le dans le Gestionnaire des tâches et relancez-le.",
 };
 const ZH: Texts = Texts {
     waiting: "{name} 等待批准",
     finished: "{name} 已完成",
     subagent: "{name}：一个子智能体已完成",
-    tray_notice: "SessionStation 仍在系统托盘中运行",
-    tooltip: "SessionStation — 打开的会话：{open}，等待批准：{waiting}",
+    tray_notice: "AI C-Station 仍在系统托盘中运行",
+    tooltip: "AI C-Station — 打开的会话：{open}，等待批准：{waiting}",
     show_hide: "显示 / 隐藏",
     dashboard: "总览",
     quit: "退出",
-    already_running: "SessionStation 似乎已在运行，但没有响应。请查看托盘图标；如果无法打开，请在任务管理器中结束它后重新启动。",
+    already_running: "AI C-Station 似乎已在运行，但没有响应。请查看托盘图标；如果无法打开，请在任务管理器中结束它后重新启动。",
 };
 
 /// Text of the "already running but not responding" message box: in the
@@ -237,15 +237,15 @@ mod tests {
                 }
                 assert!(s.matches('{').count() == ph.len(), "{lang}.{k}: unexpected placeholder");
             }
-            assert!(t.tooltip.starts_with("SessionStation"), "{lang}");
-            assert!(t.tray_notice.contains("SessionStation"), "{lang}");
-            assert!(t.already_running.starts_with("SessionStation"), "{lang}");
+            assert!(t.tooltip.starts_with("AI C-Station"), "{lang}");
+            assert!(t.tray_notice.contains("AI C-Station"), "{lang}");
+            assert!(t.already_running.starts_with("AI C-Station"), "{lang}");
         }
     }
 
     #[test]
     fn already_running_uses_the_stored_language_or_english() {
-        assert!(already_running(Some("tr")).starts_with("SessionStation zaten çalışıyor gibi görünüyor"));
+        assert!(already_running(Some("tr")).starts_with("AI C-Station zaten çalışıyor gibi görünüyor"));
         assert_eq!(already_running(Some("de")), DE.already_running);
         assert_eq!(already_running(None), EN.already_running);
     }
@@ -258,8 +258,8 @@ mod tests {
 
     #[test]
     fn tooltip_text() {
-        assert_eq!(tooltip("tr", 3, 1), "SessionStation — 3 açık oturum, 1 onay bekliyor");
-        assert_eq!(tooltip("en", 0, 0), "SessionStation — open sessions: 0, awaiting approval: 0");
+        assert_eq!(tooltip("tr", 3, 1), "AI C-Station — 3 açık oturum, 1 onay bekliyor");
+        assert_eq!(tooltip("en", 0, 0), "AI C-Station — open sessions: 0, awaiting approval: 0");
         for l in LANGS {
             assert!(tooltip(l, 999, 999).encode_utf16().count() <= MAX_TOOLTIP, "{l}");
         }

@@ -1,4 +1,4 @@
-//! station-core: OS-independent core of SessionStation.
+//! station-core: OS-independent core of AI C-Station.
 pub mod model;
 pub mod transcript;
 pub mod pricing;

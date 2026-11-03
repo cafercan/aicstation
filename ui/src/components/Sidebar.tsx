@@ -90,7 +90,7 @@ function About() {
   const note = t("about.disclaimer");
   return (
     <footer className="about" title={note}>
-      <div className="about-name">SessionStation</div>
+      <div className="about-name">AI C-Station</div>
       <div className="about-tag">{t("about.tagline")}</div>
       <div className="about-note">{note}</div>
     </footer>

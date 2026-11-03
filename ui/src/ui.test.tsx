@@ -364,7 +364,7 @@ test("hakkında: ürün adı, slogan ve bağımsızlık notu seçili dilde", () 
   setLang("en");
   render(sidebar());
   const about = screen.getByRole("contentinfo");
-  expect(about.textContent).toContain("SessionStation");
+  expect(about.textContent).toContain("AI C-Station");
   expect(about.textContent).toContain("Sessions, agents and terminals for Claude Code");
   const note = "Unofficial; not affiliated with or endorsed by Anthropic. Claude and Claude Code are trademarks of Anthropic.";
   expect(about.textContent).toContain(note);
@@ -391,7 +391,7 @@ test("kenar çubuğu alt bloğu: ok düğmesiyle kapanır/açılır, aria-expand
   expect(toggle.getAttribute("aria-controls")).toBe("side-foot-body");
   expect(document.getElementById("side-foot-body")!.hidden).toBe(false);
   expect(screen.getByRole("combobox", { name: "Dil" })).toBeTruthy();
-  expect(screen.getByText("SessionStation")).toBeTruthy();
+  expect(screen.getByText("AI C-Station")).toBeTruthy();
   fireEvent.click(toggle);
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   expect(document.getElementById("side-foot-body")!.hidden).toBe(true);

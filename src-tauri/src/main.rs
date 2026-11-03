@@ -232,7 +232,7 @@ fn main() {
         platform::single::Instance::Second { responded: true } => return,
         platform::single::Instance::Second { responded: false } => {
             let lang = settings_path_guess().and_then(|p| settings::stored_lang(&p));
-            platform::single::message_box("SessionStation", native_text::already_running(lang.as_deref()));
+            platform::single::message_box("AI C-Station", native_text::already_running(lang.as_deref()));
             return;
         }
     };
@@ -256,7 +256,7 @@ fn main() {
             app.manage(tray::TrayState::default());
             app.manage(toast::Toaster::new(
                 &app.config().identifier,
-                app.config().product_name.as_deref().unwrap_or("SessionStation"),
+                "AI C-Station", // display name; productName stays AICStation for bundle file names
                 toast_icon(&data).as_deref(),
             ));
             let dir = claude_dir();
@@ -341,7 +341,7 @@ fn main() {
             commands::cancel_search
         ])
         .build(tauri::generate_context!())
-        .expect("SessionStation başlatılamadı")
+        .expect("AI C-Station başlatılamadı")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 app.state::<pty::PtyManager>().kill_all();

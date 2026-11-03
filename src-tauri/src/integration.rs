@@ -23,7 +23,7 @@ pub const ENV_BUTA: &str = "SESSION_STATION_BUTA";
 pub const ENV_RESUME: &str = "SESSION_STATION_RESUME";
 const ENV_USER_ZDOTDIR: &str = "SESSION_STATION_USER_ZDOTDIR";
 
-const BASHRC: &str = r#"# SessionStation: runs instead of ~/.bashrc, then sources it.
+const BASHRC: &str = r#"# AI C-Station: runs instead of ~/.bashrc, then sources it.
 [ -f ~/.bashrc ] && . ~/.bashrc
 if [ -n "${SESSION_STATION_BUTA-}" ]; then
     eval "$("$SESSION_STATION_BUTA" init bash)"
@@ -52,7 +52,7 @@ fi
 
 /// zsh reads `.zshenv` then `.zshrc` from `$ZDOTDIR`. The user's real
 /// ZDOTDIR is active while their files run, ours in between.
-const ZSHENV: &str = r#"# SessionStation: sources the user's .zshenv, then hands .zshrc back to us.
+const ZSHENV: &str = r#"# AI C-Station: sources the user's .zshenv, then hands .zshrc back to us.
 __ss_zdotdir=$ZDOTDIR
 if [ -n "${SESSION_STATION_USER_ZDOTDIR+x}" ]; then
     ZDOTDIR=$SESSION_STATION_USER_ZDOTDIR
@@ -69,7 +69,7 @@ ZDOTDIR=$__ss_zdotdir
 unset __ss_zdotdir
 "#;
 
-const ZSHRC: &str = r#"# SessionStation: sources the user's .zshrc, then the prompt and resume.
+const ZSHRC: &str = r#"# AI C-Station: sources the user's .zshrc, then the prompt and resume.
 if [ -n "${SESSION_STATION_USER_ZDOTDIR+x}" ]; then
     ZDOTDIR=$SESSION_STATION_USER_ZDOTDIR
 else
