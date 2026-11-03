@@ -18,6 +18,7 @@ pub struct Texts {
     pub dashboard: &'static str,
     pub quit: &'static str,
     /// Message box of a second launch whose running instance did not answer.
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub already_running: &'static str,
 }
 
@@ -113,6 +114,7 @@ const ZH: Texts = Texts {
 /// Text of the "already running but not responding" message box: in the
 /// stored language when settings.json names one, otherwise English (the
 /// Turkish default is for a configured app, not for a first-run message).
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn already_running(stored_lang: Option<&str>) -> &'static str {
     texts(stored_lang.unwrap_or("en")).already_running
 }

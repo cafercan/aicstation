@@ -17,7 +17,7 @@
     "allow-pty-resize",
     "allow-pty-kill",
     "allow-pty-list",
-    "allow-open-windows-terminal",
+    "allow-open-system-terminal",
     "allow-focus-session-tab",
     "allow-get-settings",
     "allow-set-settings",

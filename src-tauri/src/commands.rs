@@ -387,11 +387,7 @@ impl AppState {
             self.get_snapshot().sessions.iter().map(|c| c.cwd.clone()).collect();
         known.extend(lock(&self.history_rows).iter().filter_map(|r| r.cwd.clone()));
         let dir = validate_open_folder(path, &known)?;
-        std::process::Command::new(crate::platform::explorer_exe())
-            .arg(dir)
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| errors::with(errors::FOLDER_OPEN_FAILED, e))
+        crate::platform::open_folder(&dir).map_err(|e| errors::with(errors::FOLDER_OPEN_FAILED, e))
     }
 }
 
@@ -403,11 +399,13 @@ impl AppState {
 /// no component of the path may be a symlink or junction (either could point
 /// at `\\host\share`). The returned path ends with `\` so explorer always
 /// treats it as a folder.
+#[cfg(windows)]
 pub fn validate_open_folder(path: &str, known_cwds: &[String]) -> Result<PathBuf, String> {
     validate_open_folder_on(path, known_cwds, crate::platform::drive_kind)
 }
 
 /// [`validate_open_folder`] with the drive-kind lookup passed in (tests).
+#[cfg(windows)]
 pub fn validate_open_folder_on(
     path: &str,
     known_cwds: &[String],
@@ -448,18 +446,40 @@ pub fn validate_open_folder_on(
     Ok(PathBuf::from(s))
 }
 
-/// `X:\` of an absolute, non-UNC Windows path, or None. (On a non-Windows
-/// host, tests only, an absolute POSIX path has the root `/`.)
+/// `X:\` of an absolute, non-UNC Windows path, or None.
+#[cfg(windows)]
 fn drive_root(path: &str) -> Option<String> {
     let b = path.as_bytes();
     if b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'\\' {
         return Some(format!("{}\\", &path[..2]));
     }
-    #[cfg(not(windows))]
-    if path.starts_with('/') {
-        return Some("/".into());
-    }
     None
+}
+
+/// Unix: accepts only a path equal to a known session cwd that is an
+/// absolute, existing directory (symlinks are followed; `xdg-open` on a
+/// file would launch it, so the target must be a directory). `//host/x`
+/// style paths and control characters are refused. The path is returned as
+/// given: it starts with `/`, so no opener can read it as an option.
+#[cfg(unix)]
+pub fn validate_open_folder(path: &str, known_cwds: &[String]) -> Result<PathBuf, String> {
+    if path.is_empty() || !known_cwds.iter().any(|c| c == path) {
+        return Err(errors::FOLDER_UNKNOWN.into());
+    }
+    if path.starts_with(r"\\") || path.starts_with("//") {
+        return Err(errors::FOLDER_NETWORK.into());
+    }
+    if path.chars().any(char::is_control) {
+        return Err(errors::FOLDER_INVALID.into());
+    }
+    let p = Path::new(path);
+    if !p.is_absolute() {
+        return Err(errors::FOLDER_RELATIVE.into());
+    }
+    if !p.is_dir() {
+        return Err(errors::FOLDER_MISSING.into());
+    }
+    Ok(p.to_path_buf())
 }
 
 #[tauri::command(async)]
@@ -548,6 +568,7 @@ mod tests {
         assert!(validate_open_folder(&real, std::slice::from_ref(&real)).is_ok());
     }
 
+    #[cfg(windows)]
     #[test]
     fn open_folder_hardening_rejections() {
         let dir = tempfile::tempdir().unwrap();
@@ -567,6 +588,7 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
     #[test]
     fn open_folder_only_on_local_fixed_or_removable_drives() {
         use crate::platform::DriveKind;
@@ -619,12 +641,38 @@ mod tests {
         assert!(validate_open_folder(&ok, std::slice::from_ref(&ok)).is_ok());
     }
 
+    #[cfg(windows)]
     #[test]
     fn open_folder_accepts_exact_known_absolute_dir_with_trailing_backslash() {
         let dir = tempfile::tempdir().unwrap();
         let real = dir.path().to_string_lossy().into_owned();
         let out = validate_open_folder(&real, std::slice::from_ref(&real)).unwrap();
         assert!(out.to_string_lossy().ends_with('\\'));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_folder_unix_rules() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().to_string_lossy().into_owned();
+        // Each is listed as "known", so only the rules themselves can reject.
+        for (bad, code) in [
+            (r"\\sunucu\paylasim".to_string(), errors::FOLDER_NETWORK),
+            ("//sunucu/paylasim".to_string(), errors::FOLDER_NETWORK),
+            ("-Ac".to_string(), errors::FOLDER_RELATIVE),
+            ("bagil/yol".to_string(), errors::FOLDER_RELATIVE),
+            (format!("{real}/sat\nir"), errors::FOLDER_INVALID),
+            (format!("{real}/yok"), errors::FOLDER_MISSING),
+        ] {
+            assert_eq!(validate_open_folder(&bad, std::slice::from_ref(&bad)).unwrap_err(), code, "should reject {bad}");
+        }
+        // A symlinked folder is fine; the result is the path as given.
+        let link = dir.path().join("baglanti");
+        std::fs::create_dir(dir.path().join("hedef")).unwrap();
+        std::os::unix::fs::symlink(dir.path().join("hedef"), &link).unwrap();
+        let l = link.to_string_lossy().into_owned();
+        assert_eq!(validate_open_folder(&l, std::slice::from_ref(&l)).unwrap(), link);
+        assert_eq!(validate_open_folder(&real, std::slice::from_ref(&real)).unwrap(), dir.path());
     }
 
     #[test]
@@ -918,9 +966,12 @@ mod tests {
         let ptys = PtyManager::new();
         let (tx, rx) = std::sync::mpsc::channel::<Option<Vec<u8>>>();
         let tx2 = tx.clone();
-        let args = vec!["/c".to_string(), format!("cd & echo {id}")];
+        #[cfg(windows)]
+        let args = crate::pty::stub::run(&format!("cd & echo {id}"));
+        #[cfg(unix)]
+        let args = crate::pty::stub::run(&format!("pwd; echo {id}"));
         let info = ptys
-            .spawn_in(std::ffi::OsStr::new("cmd.exe"), &args, &dir, 500, 24, move |b| tx.send(Some(b.to_vec())).is_ok(), move |_| {
+            .spawn_in(std::ffi::OsStr::new(crate::pty::stub::IDLE), &args, &dir, 500, 24, move |b| tx.send(Some(b.to_vec())).is_ok(), move |_| {
                 let _ = tx2.send(None);
             })
             .unwrap();
@@ -1045,7 +1096,7 @@ mod tests {
 
 // ---- terminals (ConPTY) ----------------------------------------------------
 // The UI cannot choose a program or arguments: `pty_spawn` always starts
-// powershell.exe. Unknown ids come back as Err.
+// the platform shell (see `shell.rs`). Unknown ids come back as Err.
 
 use crate::pty::{PtyInfo, PtyManager};
 use tauri::ipc::Channel;
@@ -1123,19 +1174,23 @@ pub fn pty_list(state: tauri::State<'_, PtyManager>) -> Vec<PtyInfo> {
     state.list()
 }
 
-/// Opens a new PowerShell tab in Windows Terminal. Takes nothing from the UI:
-/// program and arguments are fixed (see `wt.rs`).
+/// Opens a terminal outside the app in the home folder. Takes nothing from
+/// the UI: program and arguments are fixed. Windows: a new PowerShell tab in
+/// Windows Terminal (see `wt.rs`); Unix: the user's terminal emulator.
 #[tauri::command(async)]
-pub fn open_windows_terminal() -> Result<(), String> {
-    crate::wt::open()
+pub fn open_system_terminal() -> Result<(), String> {
+    #[cfg(windows)]
+    return crate::wt::open();
+    #[cfg(unix)]
+    return crate::platform::open_external_terminal();
 }
 
 #[cfg(test)]
 mod wt_command_tests {
     #[test]
-    fn open_windows_terminal_takes_no_arguments() {
+    fn open_system_terminal_takes_no_arguments() {
         // Compile-time check: any parameter would change the fn type.
-        let _f: fn() -> Result<(), String> = super::open_windows_terminal;
+        let _f: fn() -> Result<(), String> = super::open_system_terminal;
     }
 }
 

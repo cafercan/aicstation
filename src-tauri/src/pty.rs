@@ -4,10 +4,9 @@
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
-use station_core::locate::is_session_id;
 use std::ffi::{OsStr, OsString};
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -145,29 +144,12 @@ fn poisoned<T>(_: T) -> String {
     crate::errors::INTERNAL_LOCK.to_string()
 }
 
-/// Absolute path of Windows PowerShell under the System32 directory from
-/// `GetSystemDirectoryW` (never PATH, the cwd or `%SystemRoot%`).
-pub fn powershell_exe() -> PathBuf {
-    crate::platform::system_dir().join("WindowsPowerShell").join("v1.0").join("powershell.exe")
-}
+#[cfg(windows)]
+pub use crate::shell::powershell_exe;
 
-/// PowerShell arguments for resuming a session. Only a lowercase UUID is
-/// accepted, so the `-Command` text can never carry anything else.
-pub fn resume_args(session_id: &str) -> Result<Vec<String>, String> {
-    if !is_session_id(session_id) {
-        return Err(crate::errors::SESSION_INVALID.into());
-    }
-    Ok(vec![
-        "-NoLogo".into(),
-        "-NoExit".into(),
-        "-Command".into(),
-        format!("claude --resume {session_id}"),
-    ])
-}
-
-/// Set in every child: cmd.exe then never runs a program (e.g. a planted
-/// `node.exe`) from the current directory, which may be an untrusted folder
-/// of a resumed session.
+/// Set in every child on Windows: cmd.exe then never runs a program (e.g. a
+/// planted `node.exe`) from the current directory, which may be an untrusted
+/// folder of a resumed session. (Unix shells never look in the cwd.)
 pub const NO_CWD_EXE: &str = "NoDefaultCurrentDirectoryInExePath";
 
 /// Variables a running Claude Code session sets for itself and its children.
@@ -194,7 +176,7 @@ const SESSION_MARKER_PREFIXES: &[&str] = &["CLAUDE_CODE_MESSAGING_"];
 ///   when persistent (kept), otherwise they were set by a parent Claude Code
 ///   session (removed).
 /// - Everything else is kept, including NO_COLOR / FORCE_COLOR.
-/// - `NoDefaultCurrentDirectoryInExePath=1` is added (see `NO_CWD_EXE`).
+/// - On Windows `NoDefaultCurrentDirectoryInExePath=1` is added (see `NO_CWD_EXE`).
 pub fn child_env(
     vars: impl IntoIterator<Item = (OsString, OsString)>,
     persistent: &HashSet<String>,
@@ -212,7 +194,9 @@ pub fn child_env(
         }
         true
     };
+    #[allow(unused_mut)]
     let mut out: Vec<(OsString, OsString)> = vars.into_iter().filter(|(k, _)| keep(k)).collect();
+    #[cfg(windows)]
     out.push((NO_CWD_EXE.into(), "1".into()));
     out
 }
@@ -222,7 +206,7 @@ impl PtyManager {
         Self::default()
     }
 
-    /// The plain shell: `powershell.exe -NoLogo` (absolute path) in the home dir.
+    /// The plain shell (see `shell::default_shell`) in the home dir.
     pub fn spawn_shell(
         &self,
         cols: u16,
@@ -230,19 +214,16 @@ impl PtyManager {
         on_output: impl Fn(&[u8]) -> bool + Send + 'static,
         on_exit: impl FnOnce(i32) + Send + 'static,
     ) -> Result<PtyInfo, String> {
-        let mut cmd = CommandBuilder::new(powershell_exe());
-        cmd.arg("-NoLogo");
-        if let Some(home) = std::env::var_os("USERPROFILE")
-            .or_else(|| std::env::var_os("HOME"))
-            .map(std::path::PathBuf::from)
-            .filter(|p| p.is_dir())
-        {
+        let shell = crate::shell::default_shell()?;
+        let mut cmd = CommandBuilder::new(&shell.program);
+        cmd.args(shell.interactive_args());
+        if let Some(home) = crate::shell::home_dir() {
             cmd.cwd(home);
         }
         self.spawn_builder(cmd, cols, rows, on_output, on_exit)
     }
 
-    /// `powershell.exe` in `cwd` running `claude --resume <session_id>`, left
+    /// The shell in `cwd` running `claude --resume <session_id>`, left
     /// open afterwards. The caller passes an already validated id and folder
     /// (see `AppState::resume_target`); nothing else reaches the command line.
     pub fn spawn_resume(
@@ -254,8 +235,9 @@ impl PtyManager {
         on_output: impl Fn(&[u8]) -> bool + Send + 'static,
         on_exit: impl FnOnce(i32) + Send + 'static,
     ) -> Result<PtyInfo, String> {
-        let args = resume_args(session_id)?;
-        self.spawn_resume_in(powershell_exe().as_os_str(), &args, cwd, session_id, cols, rows, on_output, on_exit)
+        let shell = crate::shell::default_shell()?;
+        let args = shell.resume_args(session_id)?;
+        self.spawn_resume_in(shell.program.as_os_str(), &args, cwd, session_id, cols, rows, on_output, on_exit)
     }
 
     /// `spawn_in` guarded by the resumed-session holds (see `Resumed`):
@@ -492,8 +474,35 @@ impl PtyManager {
     }
 }
 
+/// Platform stand-ins for the tests: a program that sits idle reading the
+/// terminal, and one that prints a line and exits.
+#[cfg(test)]
+pub mod stub {
+    #[cfg(windows)]
+    pub const IDLE: &str = "cmd.exe";
+    #[cfg(windows)]
+    pub const IDLE_ARGS: &[&str] = &["/k"];
+    #[cfg(unix)]
+    pub const IDLE: &str = "/bin/sh";
+    #[cfg(unix)]
+    pub const IDLE_ARGS: &[&str] = &[];
+
+    /// Arguments for IDLE that run `script` (cmd.exe / sh syntax) and exit.
+    pub fn run(script: &str) -> Vec<String> {
+        #[cfg(windows)]
+        return vec!["/c".into(), script.into()];
+        #[cfg(unix)]
+        return vec!["-c".into(), script.into()];
+    }
+
+    pub fn idle_args() -> Vec<String> {
+        IDLE_ARGS.iter().map(|s| s.to_string()).collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::stub::{IDLE, IDLE_ARGS};
     use super::*;
     use std::collections::HashSet;
     use std::ffi::OsString;
@@ -514,8 +523,8 @@ mod tests {
         let tx2 = tx.clone();
         let info = m
             .spawn_cmd(
-                "cmd.exe",
-                &["/c", "echo station-ok"],
+                IDLE,
+                &stub::run("echo station-ok").iter().map(String::as_str).collect::<Vec<_>>(),
                 80,
                 24,
                 move |b| tx.send(Ev::Out(b.to_vec())).is_ok(),
@@ -550,7 +559,7 @@ mod tests {
         let m = PtyManager::new();
         let (tx, rx) = mpsc::channel();
         let info = m
-            .spawn_cmd("cmd.exe", &["/k"], 80, 24, |_| true, move |c| {
+            .spawn_cmd(IDLE, IDLE_ARGS, 80, 24, |_| true, move |c| {
                 let _ = tx.send(c);
             })
             .unwrap();
@@ -587,14 +596,16 @@ mod tests {
     #[test]
     fn write_does_not_block_other_commands() {
         let m = Arc::new(PtyManager::new());
-        let info = m.spawn_cmd("cmd.exe", &["/k"], 80, 24, |_| true, |_| {}).unwrap();
+        let info = m.spawn_cmd(IDLE, IDLE_ARGS, 80, 24, |_| true, |_| {}).unwrap();
         let (entered_tx, entered_rx) = mpsc::channel();
         let (rel_tx, rel_rx) = mpsc::channel();
-        {
+        // The real writer is kept alive: on Unix dropping it sends EOF (^D),
+        // which would end the idle shell.
+        let _real = {
             let g = m.inner.lock().unwrap();
-            *g.ptys[&info.id].writer.lock().unwrap() =
-                Box::new(BlockingWriter { entered: entered_tx, release: rel_rx });
-        }
+            let mut w = g.ptys[&info.id].writer.lock().unwrap();
+            std::mem::replace(&mut *w, Box::new(BlockingWriter { entered: entered_tx, release: rel_rx }))
+        };
         let m2 = Arc::clone(&m);
         let h = std::thread::spawn(move || m2.write(info.id, "x"));
         entered_rx.recv_timeout(T).unwrap(); // writer is now stuck
@@ -617,7 +628,7 @@ mod tests {
         let m = PtyManager::new();
         let big = "a".repeat(MAX_WRITE + 1);
         assert!(m.write(1, &big).is_err());
-        let info = m.spawn_cmd("cmd.exe", &["/k"], 80, 24, |_| true, |_| {}).unwrap();
+        let info = m.spawn_cmd(IDLE, IDLE_ARGS, 80, 24, |_| true, |_| {}).unwrap();
         assert_eq!(m.write(info.id, &big).unwrap_err(), format!("pty_too_large:{MAX_WRITE}"));
         m.kill(info.id).unwrap();
     }
@@ -628,7 +639,7 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         for _ in 0..3 {
             let tx = tx.clone();
-            m.spawn_cmd("cmd.exe", &["/k"], 80, 24, |_| true, move |c| {
+            m.spawn_cmd(IDLE, IDLE_ARGS, 80, 24, |_| true, move |c| {
                 let _ = tx.send(c);
             })
             .unwrap();
@@ -646,7 +657,7 @@ mod tests {
         let m = PtyManager::new();
         let (tx, rx) = mpsc::channel();
         let info = m
-            .spawn_cmd("cmd.exe", &["/k"], 80, 24, |_| false, move |c| {
+            .spawn_cmd(IDLE, IDLE_ARGS, 80, 24, |_| false, move |c| {
                 let _ = tx.send(c);
             })
             .unwrap();
@@ -656,25 +667,7 @@ mod tests {
         assert!(m.kill(info.id).is_err());
     }
 
-    #[test]
-    fn resume_args_exact() {
-        assert_eq!(
-            resume_args("f00dcafe-0000-4000-8000-000000000001").unwrap(),
-            vec!["-NoLogo", "-NoExit", "-Command", "claude --resume f00dcafe-0000-4000-8000-000000000001"]
-        );
-        for bad in ["", "x; calc", "F00DCAFE-0000-4000-8000-000000000001", "f00dcafe-0000-4000-8000-000000000001 & calc"] {
-            assert!(resume_args(bad).is_err(), "{bad}");
-        }
-    }
-
-    #[test]
-    fn powershell_comes_from_the_system_directory() {
-        let sys = crate::platform::system_dir();
-        assert!(sys.is_absolute());
-        assert!(sys.ends_with("System32") || sys.to_string_lossy().to_lowercase().ends_with("system32"), "{sys:?}");
-        assert_eq!(powershell_exe(), sys.join("WindowsPowerShell").join("v1.0").join("powershell.exe"));
-    }
-
+    #[cfg(windows)]
     #[test]
     fn explorer_comes_from_the_windows_directory() {
         let exe = crate::platform::explorer_exe();
@@ -684,6 +677,7 @@ mod tests {
         assert!(exe.is_file(), "{exe:?}");
     }
 
+    #[cfg(windows)]
     #[test]
     fn powershell_is_absolute() {
         let p = powershell_exe();
@@ -697,6 +691,14 @@ mod tests {
 
     fn names(v: Vec<(OsString, OsString)>) -> Vec<String> {
         v.into_iter().map(|(k, _)| k.to_string_lossy().into_owned()).collect()
+    }
+
+    /// What child_env appends on this platform.
+    fn tail(mut v: Vec<&str>) -> Vec<&str> {
+        if cfg!(windows) {
+            v.push(NO_CWD_EXE);
+        }
+        v
     }
 
     fn set(n: &[&str]) -> HashSet<String> {
@@ -726,7 +728,7 @@ mod tests {
         let persistent = set(&["CLAUDECODE", "CLAUDE_CODE_SSE_PORT", "CLAUDE_CODE_ENTRYPOINT"]);
         assert_eq!(
             names(child_env(input, &persistent)),
-            vec!["PATH", "CLAUDECODE_X", "CLAUDE_CONFIG_DIR", "NO_COLOR", NO_CWD_EXE]
+            tail(vec!["PATH", "CLAUDECODE_X", "CLAUDE_CONFIG_DIR", "NO_COLOR"])
         );
     }
 
@@ -748,19 +750,19 @@ mod tests {
         ]);
         assert_eq!(
             names(child_env(input.clone(), &persistent)),
-            vec![
+            tail(vec![
                 "CLAUDE_CODE_GIT_BASH_PATH",
                 "Claude_Code_Use_Bedrock",
                 "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
                 "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
-                NO_CWD_EXE,
-            ],
+            ]),
             "CLAUDE_EFFORT and unknown CLAUDE_CODE_* came from the parent session"
         );
         let with_effort = set(&["CLAUDE_EFFORT"]);
-        assert_eq!(names(child_env(input, &with_effort)), vec!["CLAUDE_EFFORT", NO_CWD_EXE]);
+        assert_eq!(names(child_env(input, &with_effort)), tail(vec!["CLAUDE_EFFORT"]));
     }
 
+    #[cfg(windows)]
     #[test]
     fn child_env_forbids_exe_lookup_in_the_current_directory() {
         let out = child_env(kv(&[("nodefaultcurrentdirectoryinexepath", "0"), ("PATH", "x")]), &HashSet::new());
@@ -774,14 +776,18 @@ mod tests {
         // Set in this process (unique name, removed below); the child must not
         // inherit it: an unknown CLAUDE_CODE_* that is not persistent.
         const VAR: &str = "CLAUDE_CODE_STATION_TEST_MARKER_7F3A9C";
+        #[cfg(windows)]
+        const SCRIPT: &str = "echo [%CLAUDE_CODE_STATION_TEST_MARKER_7F3A9C%] [%NoDefaultCurrentDirectoryInExePath%]";
+        #[cfg(unix)]
+        const SCRIPT: &str = "echo \"[${CLAUDE_CODE_STATION_TEST_MARKER_7F3A9C:-unset}]\"";
         std::env::set_var(VAR, "sizdi");
         let m = PtyManager::new();
         let (tx, rx) = mpsc::channel();
         let tx2 = tx.clone();
         let info = m
             .spawn_cmd(
-                "cmd.exe",
-                &["/c", "echo [%CLAUDE_CODE_STATION_TEST_MARKER_7F3A9C%] [%NoDefaultCurrentDirectoryInExePath%]"],
+                IDLE,
+                &stub::run(SCRIPT).iter().map(String::as_str).collect::<Vec<_>>(),
                 80,
                 24,
                 move |b| tx.send(Ev::Out(b.to_vec())).is_ok(),
@@ -793,8 +799,13 @@ mod tests {
         let text = collect_output(&m, info.id, &rx);
         std::env::remove_var(VAR);
         assert!(!text.contains("sizdi"), "marker leaked: {text:?}");
-        assert!(text.contains("[%CLAUDE_CODE_STATION_TEST_MARKER_7F3A9C%]"), "output: {text:?}");
-        assert!(text.contains("[1]"), "NoDefaultCurrentDirectoryInExePath not set: {text:?}");
+        #[cfg(windows)]
+        {
+            assert!(text.contains("[%CLAUDE_CODE_STATION_TEST_MARKER_7F3A9C%]"), "output: {text:?}");
+            assert!(text.contains("[1]"), "NoDefaultCurrentDirectoryInExePath not set: {text:?}");
+        }
+        #[cfg(unix)]
+        assert!(text.contains("[unset]"), "output: {text:?}");
     }
 
     /// Output until exit, answering ConPTY's cursor-position query.
@@ -883,10 +894,10 @@ mod tests {
         const SID: &str = "11111111-2222-4333-8444-555555555555";
         let m = PtyManager::new();
         let dir = std::env::temp_dir();
-        let args = vec!["/k".to_string()];
+        let args = stub::idle_args();
         let (tx, rx) = mpsc::channel();
         let start = |tx: mpsc::Sender<i32>| {
-            m.spawn_resume_in(OsStr::new("cmd.exe"), &args, &dir, SID, 80, 24, |_| true, move |c| {
+            m.spawn_resume_in(OsStr::new(IDLE), &args, &dir, SID, 80, 24, |_| true, move |c| {
                 let _ = tx.send(c);
             })
         };
@@ -898,7 +909,7 @@ mod tests {
         );
         // Another session is not blocked.
         let other = m
-            .spawn_resume_in(OsStr::new("cmd.exe"), &args, &dir, "aaaaaaaa-2222-4333-8444-555555555555", 80, 24, |_| true, |_| {})
+            .spawn_resume_in(OsStr::new(IDLE), &args, &dir, "aaaaaaaa-2222-4333-8444-555555555555", 80, 24, |_| true, |_| {})
             .unwrap();
         m.kill(first.id).unwrap();
         rx.recv_timeout(T).expect("exit");
@@ -906,7 +917,7 @@ mod tests {
         m.kill(again.id).unwrap();
         m.kill(other.id).unwrap();
         // A failed spawn does not leave the id behind.
-        let bad = m.spawn_resume_in(OsStr::new("yok-boyle-bir-program.exe"), &args, &dir, "bbbbbbbb-2222-4333-8444-555555555555", 80, 24, |_| true, |_| {});
+        let bad = m.spawn_resume_in(OsStr::new("/yok/boyle-bir-program.exe"), &args, &dir, "bbbbbbbb-2222-4333-8444-555555555555", 80, 24, |_| true, |_| {});
         assert!(bad.is_err());
         assert_eq!(m.resume_terminal("bbbbbbbb-2222-4333-8444-555555555555"), None);
     }
@@ -916,8 +927,8 @@ mod tests {
         const SID: &str = "cccccccc-2222-4333-8444-555555555555";
         let m = PtyManager::new();
         let dir = std::env::temp_dir();
-        let args = vec!["/k".to_string()];
-        let start = || m.spawn_resume_in(OsStr::new("cmd.exe"), &args, &dir, SID, 80, 24, |_| true, |_| {});
+        let args = stub::idle_args();
+        let start = || m.spawn_resume_in(OsStr::new(IDLE), &args, &dir, SID, 80, 24, |_| true, |_| {});
         let first = start().unwrap();
         m.observe_live_at(&live(&[SID]), Instant::now());
         assert!(start().is_err(), "claude runs in the resume terminal");
@@ -946,9 +957,9 @@ mod tests {
         let m = PtyManager::new();
         let mut ids = Vec::new();
         for _ in 0..MAX_PTYS {
-            ids.push(m.spawn_cmd("cmd.exe", &["/k"], 80, 24, |_| true, |_| {}).unwrap().id);
+            ids.push(m.spawn_cmd(IDLE, IDLE_ARGS, 80, 24, |_| true, |_| {}).unwrap().id);
         }
-        assert!(m.spawn_cmd("cmd.exe", &["/k"], 80, 24, |_| true, |_| {}).is_err());
+        assert!(m.spawn_cmd(IDLE, IDLE_ARGS, 80, 24, |_| true, |_| {}).is_err());
         for id in ids {
             m.kill(id).unwrap();
         }

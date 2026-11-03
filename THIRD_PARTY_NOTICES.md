@@ -12,7 +12,7 @@ license(s) named in the "Used" column.
 
 | License | Packages |
 |---|---|
-| MIT | 224 |
+| MIT | 225 |
 | Apache-2.0 | 4 |
 | BSD-3-Clause | 3 |
 | Zlib | 2 |
@@ -20,7 +20,7 @@ license(s) named in the "Used" column.
 | CC0-1.0 | 1 |
 | MPL-2.0 | 5 |
 
-## Rust crates (244)
+## Rust crates (245)
 
 | Package | Version | Declared license | Used |
 |---|---|---|---|
@@ -219,6 +219,7 @@ license(s) named in the "Used" column.
 | toml_parser | 1.1.5+spec-1.1.0 | MIT OR Apache-2.0 | MIT |
 | toml_writer | 1.1.3+spec-1.1.0 | MIT OR Apache-2.0 | MIT |
 | tracing | 0.1.44 | MIT | MIT |
+| tracing-attributes | 0.1.31 | MIT | MIT |
 | tracing-core | 0.1.36 | MIT | MIT |
 | tray-icon | 0.25.1 | MIT OR Apache-2.0 | MIT |
 | typeid | 1.0.3 | MIT OR Apache-2.0 | MIT |
@@ -475,6 +476,7 @@ Packages:
 - toml_parser 1.1.5+spec-1.1.0 — Copyright Individual contributors; Copyright (c) Individual contributors
 - toml_writer 1.1.3+spec-1.1.0 — Copyright Individual contributors; Copyright (c) Individual contributors
 - tracing 0.1.44 — Copyright (c) 2019 Tokio Contributors
+- tracing-attributes 0.1.31 — Copyright (c) 2019 Tokio Contributors
 - tracing-core 0.1.36 — Copyright (c) 2019 Tokio Contributors
 - tray-icon 0.25.1 — Copyright (c) 2022-2022 Tauri Programme within The Commons Conservancy
 - typeid 1.0.3 — Authors: David Tolnay <dtolnay@gmail.com>

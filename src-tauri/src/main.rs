@@ -7,8 +7,10 @@ mod notifier;
 mod platform;
 mod pty;
 mod settings;
+mod shell;
 mod toast;
 mod tray;
+#[cfg(windows)]
 mod wt;
 
 use commands::AppState;
@@ -207,6 +209,7 @@ fn toast_icon(data: &std::path::Path) -> Option<PathBuf> {
 }
 
 /// Bundle identifier (tauri.conf.json); also names the single-instance objects.
+#[cfg(windows)]
 const APP_ID: &str = "com.cafercan.sessionstation";
 
 /// settings.json before Tauri runs: Tauri's app data dir on Windows is
@@ -231,7 +234,12 @@ fn main() {
             return;
         }
     };
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // A second launch hands over to the running instance (over D-Bus), which
+    // shows its window; the new process then exits.
+    #[cfg(target_os = "linux")]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| tray::show_main(app)));
+    builder
         .setup(move |app| {
             let data = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data)?;
@@ -313,7 +321,7 @@ fn main() {
             commands::pty_resize,
             commands::pty_kill,
             commands::pty_list,
-            commands::open_windows_terminal,
+            commands::open_system_terminal,
             commands::focus_session_tab,
             commands::get_settings,
             commands::set_settings,

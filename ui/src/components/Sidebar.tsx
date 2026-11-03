@@ -3,6 +3,7 @@ import { statusColor, statusLabel, type StatusKind } from "../format";
 import { LANGS, LANG_NAMES, errorText, setLang, useLang, useT, type Lang } from "../i18n";
 import { createStore, readPref, writePref } from "../prefs";
 import { THEME_IDS, THEMES, setTheme, useTheme } from "../theme";
+import { isWindows } from "../platform";
 import SessionMark from "./SessionMark";
 
 export type View =
@@ -27,7 +28,7 @@ interface Props {
   onSelect: (v: View) => void;
   onNew: () => void;
   onClose: (id: number) => void;
-  /** Opens a PowerShell tab in Windows Terminal; rejects with an error code. */
+  /** Opens a terminal outside the app (Windows Terminal on Windows); rejects with an error code. */
   onOpenWt: () => Promise<void>;
 }
 
@@ -102,7 +103,8 @@ export default function Sidebar({ view, terminals, onSelect, onNew, onClose, onO
   const openWt = () => {
     setWtError(null);
     onOpenWt().catch((e: unknown) =>
-      setWtError(typeof e === "string" || e instanceof Error ? errorText(e) : t("err.wt_open_failed")));
+      setWtError(typeof e === "string" || e instanceof Error ? errorText(e)
+        : t(isWindows() ? "err.wt_open_failed" : "err.terminal_open_failed")));
   };
   const isDash = view === "dashboard" || (typeof view === "object" && "session" in view);
   return (
@@ -130,7 +132,9 @@ export default function Sidebar({ view, terminals, onSelect, onNew, onClose, onO
         </div>
       ))}
       <div className="item sub new" onClick={onNew}>{t("nav.newTerminal")}</div>
-      <div className="item sub new" onClick={openWt} title={t("nav.openWtTitle")}>{t("nav.openWt")}</div>
+      <div className="item sub new" onClick={openWt} title={t(isWindows() ? "nav.openWtTitle" : "nav.openTermTitle")}>
+        {t(isWindows() ? "nav.openWt" : "nav.openTerm")}
+      </div>
       {wtError && <div className="side-err" role="alert">{wtError}</div>}
       <Footer settingsOn={view === "settings"} onSettings={() => onSelect("settings")} />
     </nav>

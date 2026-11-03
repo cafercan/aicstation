@@ -1,8 +1,10 @@
 //! Platform selection for the process probe, drive kinds and system paths.
 use station_core::registry::ProcessProbe;
+#[cfg(windows)]
 use std::path::{Path, PathBuf};
 
 /// What kind of drive a local path (`X:\...`) is on.
+#[cfg(windows)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DriveKind {
     /// A fixed or removable disk.
@@ -19,21 +21,11 @@ pub fn drive_kind(root: &Path) -> DriveKind {
     windows::drive_kind(root)
 }
 
-#[cfg(not(windows))]
-pub fn drive_kind(_root: &Path) -> DriveKind {
-    DriveKind::Local
-}
-
 /// The System32 directory from `GetSystemDirectoryW` (never `%SystemRoot%`,
 /// which the parent process controls).
 #[cfg(windows)]
 pub fn system_dir() -> PathBuf {
     windows::system_dir()
-}
-
-#[cfg(not(windows))]
-pub fn system_dir() -> PathBuf {
-    PathBuf::from(r"C:\Windows\System32")
 }
 
 /// The Windows directory from `GetWindowsDirectoryW`.
@@ -42,12 +34,8 @@ pub fn windows_dir() -> PathBuf {
     windows::windows_dir()
 }
 
-#[cfg(not(windows))]
-pub fn windows_dir() -> PathBuf {
-    PathBuf::from(r"C:\Windows")
-}
-
 /// Absolute path of explorer.exe (never resolved through PATH or the cwd).
+#[cfg(windows)]
 pub fn explorer_exe() -> PathBuf {
     windows_dir().join("explorer.exe")
 }
@@ -59,6 +47,20 @@ mod focus;
 pub mod single;
 #[cfg(windows)]
 mod windows;
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(unix)]
+mod unix;
+#[cfg(unix)]
+pub use unix::{open_external_terminal, open_folder};
+#[cfg(unix)]
+pub(crate) use unix::find_program;
+
+/// Opens `dir` (already validated) in Explorer.
+#[cfg(windows)]
+pub fn open_folder(dir: &Path) -> std::io::Result<()> {
+    std::process::Command::new(explorer_exe()).arg(dir).spawn().map(|_| ())
+}
 
 /// Brings the Windows Terminal window hosting `pid` forward and selects the
 /// tab titled `name`. Err when the process is not in a Windows Terminal.
@@ -89,11 +91,16 @@ pub fn probe() -> Box<dyn ProcessProbe + Send + Sync> {
     Box::new(windows::WinProbe::new())
 }
 
-/// Non-Windows stub: knows no process, so no session is ever considered live.
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+pub fn probe() -> Box<dyn ProcessProbe + Send + Sync> {
+    Box::new(linux::LinuxProbe::new())
+}
+
+/// Stub for other platforms: knows no process, so no session is ever live.
+#[cfg(not(any(windows, target_os = "linux")))]
 struct NullProbe;
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 impl ProcessProbe for NullProbe {
     fn start_filetime(&self, _pid: u32) -> Option<u64> {
         None
@@ -103,7 +110,7 @@ impl ProcessProbe for NullProbe {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn probe() -> Box<dyn ProcessProbe + Send + Sync> {
     Box::new(NullProbe)
 }

@@ -8,6 +8,7 @@ import { ptySpawnResume, type PtyInfo, type SessionCard } from "../api";
 import { t, type Key, type Params } from "../i18n";
 import { onTestReset } from "../prefs";
 import { clampFontSize } from "./keys";
+import { isWindows } from "../platform";
 import { renderOptions, ubuntuTheme, terminalFont } from "./theme";
 
 export interface TerminalEntry {
@@ -66,7 +67,7 @@ export function sessionsIn(t: TerminalEntry, sessions: SessionCard[]): SessionCa
 }
 
 export function terminalName(t: TerminalEntry, sessions: SessionCard[]): string {
-  return sessionsIn(t, sessions)[0]?.name || titleText(t.title) || `PowerShell ${t.n}`;
+  return sessionsIn(t, sessions)[0]?.name || titleText(t.title) || `${isWindows() ? "PowerShell" : "Terminal"} ${t.n}`;
 }
 
 function removeEntry(id: number): void {
@@ -85,7 +86,7 @@ let spawning = 0;
 
 type Spawn = (cols: number, rows: number, onOutput: Channel<number[]>, onExit: Channel<number>) => Promise<PtyInfo>;
 
-/** Starts a PowerShell PTY; the xterm instance lives here so it survives tab switches. */
+/** Starts a shell PTY; the xterm instance lives here so it survives tab switches. */
 export function openTerminal(): Promise<TerminalEntry> {
   return startTerminal((cols, rows, onOutput, onExit) =>
     invoke<PtyInfo>("pty_spawn", { cols, rows, onOutput, onExit }));

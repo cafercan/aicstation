@@ -82,6 +82,7 @@ pub fn from_json(v: &Value) -> Settings {
 
 /// The language stored in settings.json at `path`, only when the file has a
 /// valid one (None for a missing, unreadable or invalid file or field).
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn stored_lang(path: &Path) -> Option<String> {
     let ok_size = std::fs::metadata(path).map(|m| m.len() <= MAX_FILE).unwrap_or(false);
     if !ok_size {

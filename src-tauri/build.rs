@@ -13,7 +13,7 @@ const COMMANDS: &[&str] = &[
     "pty_resize",
     "pty_kill",
     "pty_list",
-    "open_windows_terminal",
+    "open_system_terminal",
     "focus_session_tab",
     "get_settings",
     "set_settings",
