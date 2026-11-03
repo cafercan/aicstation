@@ -232,7 +232,8 @@ mod tests {
     #[test]
     fn bash_gets_the_rcfile_and_values_through_the_environment() {
         let l = launch_with(&sh("/bin/bash"), &resume(), Some(Path::new("/d")), None).unwrap();
-        assert_eq!(l.args, vec!["--rcfile", "/d/bashrc"]);
+        let rc = Path::new("/d").join("bashrc").to_string_lossy().into_owned();
+        assert_eq!(l.args, vec!["--rcfile".to_string(), rc]);
         assert_eq!(l.env, vec![(ENV_RESUME.to_string(), SID.to_string())]);
         let l = launch_with(&sh("/bin/bash"), &with_buta(), Some(Path::new("/d")), None).unwrap();
         assert_eq!(
@@ -248,7 +249,8 @@ mod tests {
     fn zsh_swaps_zdotdir_and_remembers_the_users() {
         let l = launch_with(&sh("/bin/zsh"), &resume(), Some(Path::new("/d")), Some("/home/u/.zsh".into())).unwrap();
         assert!(l.args.is_empty());
-        assert!(l.env.contains(&("ZDOTDIR".into(), "/d/zsh".into())));
+        let zdot = Path::new("/d").join("zsh").to_string_lossy().into_owned();
+        assert!(l.env.contains(&("ZDOTDIR".into(), zdot)), "{:?}", l.env);
         assert!(l.env.contains(&(ENV_USER_ZDOTDIR.into(), "/home/u/.zsh".into())));
         let l = launch_with(&sh("/bin/zsh"), &resume(), Some(Path::new("/d")), None).unwrap();
         assert!(!l.env.iter().any(|(k, _)| k == ENV_USER_ZDOTDIR));
