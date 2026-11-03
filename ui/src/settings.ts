@@ -43,6 +43,16 @@ export async function setToggle(key: Toggle, value: boolean): Promise<void> {
   await save({ ...cur, [key]: value });
 }
 
+/** Settings chosen from a list (terminal shell and prompt). */
+export type Choice = "shell" | "prompt" | "promptPreset";
+
+/** Sets one choice; rejects with the backend's error code (state rolled back). */
+export async function setChoice(key: Choice, value: string): Promise<void> {
+  const cur = store.get();
+  if (!cur || cur[key] === value) return;
+  await save({ ...cur, [key]: value });
+}
+
 /** Tells the backend the UI language (no-op before load or when unchanged). */
 export async function pushLang(lang: string): Promise<void> {
   const cur = store.get();
