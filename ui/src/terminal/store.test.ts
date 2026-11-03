@@ -39,6 +39,8 @@ import {
 import { resetUiState } from "../testing/reset";
 import type { SessionCard } from "../api";
 import { setOsForTests } from "../platform";
+import { updateAppearance } from "./appearance";
+import { SCHEMES } from "./schemes";
 import { setLang } from "../i18n";
 
 function card(over: Partial<SessionCard>): SessionCard {
@@ -100,6 +102,15 @@ test("setFontSize: 8–32 aralığında uygular, yeniden sığdırır ve pty_res
   expect(invoke).toHaveBeenCalledWith("pty_resize", { id: 7, cols: 80, rows: 24 });
   expect(setFontSize(t, 2)).toBe(8);
   expect(opts.fontSize).toBe(8);
+});
+
+test("görünüm değişince açık terminaller anında güncellenir ve yeniden sığdırılır", async () => {
+  const t = await openTerminal();
+  invoke.mockClear();
+  updateAppearance({ scheme: "dracula", fontSize: 18, cursorStyle: "bar" });
+  const opts = (t.term as unknown as { options: Record<string, unknown> }).options;
+  expect(opts).toMatchObject({ fontSize: 18, cursorStyle: "bar", theme: SCHEMES.dracula.theme });
+  expect(invoke).toHaveBeenCalledWith("pty_resize", { id: 7, cols: 80, rows: 24 });
 });
 
 test("terminal adı: içindeki oturumun adı, yoksa \"PowerShell N\"", async () => {
