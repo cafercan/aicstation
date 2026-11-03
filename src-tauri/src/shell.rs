@@ -112,6 +112,64 @@ pub(crate) fn unix_shell(env_shell: Option<&std::ffi::OsStr>) -> Result<Shell, S
         .ok_or_else(|| crate::errors::SHELL_NOT_FOUND.into())
 }
 
+/// Program names tried for a shell id on Unix.
+#[cfg(unix)]
+fn unix_names(id: &str) -> &'static [&'static str] {
+    match id {
+        "bash" => &["bash"],
+        "zsh" => &["zsh"],
+        "fish" => &["fish"],
+        "pwsh" => &["pwsh", "pwsh-preview"],
+        "nu" => &["nu"],
+        _ => &[],
+    }
+}
+
+/// The program for a shell id (see `settings::SHELLS`), or None when it is
+/// not installed. `auto` is [`default_shell`].
+#[cfg(unix)]
+pub fn find(id: &str) -> Option<Shell> {
+    if id == "auto" {
+        return default_shell().ok();
+    }
+    let path = std::env::var_os("PATH");
+    unix_names(id)
+        .iter()
+        .find_map(|n| crate::platform::find_program(std::ffi::OsStr::new(n), path.as_deref()))
+        .filter(|p| p.to_str().is_some_and(posix_quotable))
+        .map(Shell::new)
+}
+
+/// Windows: Windows PowerShell from System32, PowerShell 7 and Git Bash
+/// from their standard install folders (never PATH).
+#[cfg(windows)]
+pub fn find(id: &str) -> Option<Shell> {
+    let program_files = || {
+        std::env::var_os("ProgramFiles")
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+            .unwrap_or_else(|| PathBuf::from(r"C:\Program Files"))
+    };
+    let p = match id {
+        "auto" | "powershell" => powershell_exe(),
+        "pwsh" => program_files().join("PowerShell").join("7").join("pwsh.exe"),
+        "bash" => program_files().join("Git").join("bin").join("bash.exe"),
+        _ => return None,
+    };
+    p.is_file().then(|| Shell::new(p))
+}
+
+/// The shell for the stored setting; an id that is no longer installed
+/// falls back to the platform default.
+pub fn for_setting(id: &str) -> Result<Shell, String> {
+    find(id).map_or_else(default_shell, Ok)
+}
+
+/// Shell ids that resolve on this machine, `auto` first.
+pub fn installed() -> Vec<String> {
+    crate::settings::SHELLS.iter().filter(|id| **id == "auto" || find(id).is_some()).map(|s| s.to_string()).collect()
+}
+
 /// The folder a plain terminal starts in.
 pub fn home_dir() -> Option<PathBuf> {
     #[cfg(windows)]
@@ -175,6 +233,19 @@ mod tests {
             assert!(sh.program.is_absolute() && sh.program != Path::new(bad), "{bad}");
         }
         assert!(unix_shell(None).unwrap().program.is_absolute());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ids_resolve_to_installed_programs_or_fall_back() {
+        let sh = find("bash").expect("bash is installed on the test machines");
+        assert!(sh.program.is_absolute() && sh.kind == ShellKind::Posix);
+        assert_eq!(find("powershell"), None, "Windows PowerShell only exists on Windows");
+        assert_eq!(find("nope"), None);
+        assert_eq!(for_setting("nope").unwrap(), default_shell().unwrap());
+        let ids = installed();
+        assert_eq!(ids[0], "auto");
+        assert!(ids.contains(&"bash".to_string()) && !ids.contains(&"powershell".to_string()));
     }
 
     #[cfg(windows)]

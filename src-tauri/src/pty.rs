@@ -206,15 +206,15 @@ impl PtyManager {
         Self::default()
     }
 
-    /// The plain shell (see `shell::default_shell`) in the home dir.
+    /// The plain `shell` in the home dir.
     pub fn spawn_shell(
         &self,
+        shell: &crate::shell::Shell,
         cols: u16,
         rows: u16,
         on_output: impl Fn(&[u8]) -> bool + Send + 'static,
         on_exit: impl FnOnce(i32) + Send + 'static,
     ) -> Result<PtyInfo, String> {
-        let shell = crate::shell::default_shell()?;
         let mut cmd = CommandBuilder::new(&shell.program);
         cmd.args(shell.interactive_args());
         if let Some(home) = crate::shell::home_dir() {
@@ -223,11 +223,12 @@ impl PtyManager {
         self.spawn_builder(cmd, cols, rows, on_output, on_exit)
     }
 
-    /// The shell in `cwd` running `claude --resume <session_id>`, left
+    /// `shell` in `cwd` running `claude --resume <session_id>`, left
     /// open afterwards. The caller passes an already validated id and folder
     /// (see `AppState::resume_target`); nothing else reaches the command line.
     pub fn spawn_resume(
         &self,
+        shell: &crate::shell::Shell,
         cwd: &Path,
         session_id: &str,
         cols: u16,
@@ -235,7 +236,6 @@ impl PtyManager {
         on_output: impl Fn(&[u8]) -> bool + Send + 'static,
         on_exit: impl FnOnce(i32) + Send + 'static,
     ) -> Result<PtyInfo, String> {
-        let shell = crate::shell::default_shell()?;
         let args = shell.resume_args(session_id)?;
         self.spawn_resume_in(shell.program.as_os_str(), &args, cwd, session_id, cols, rows, on_output, on_exit)
     }
