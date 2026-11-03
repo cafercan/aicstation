@@ -53,3 +53,14 @@ test("önizleme: örnek ekranda istemler, renkli çıktı ve 16 renk var", async
   expect(s).toContain("\x1b[107m");
   expect(s.endsWith("P1\r\n>")).toBe(true);
 });
+
+test("görünüm paneli: uygulama temasını izle; bir şema seçmek izlemeyi kapatır", async () => {
+  const { applyTheme } = await import("../theme");
+  applyTheme("nord-dark");
+  render(<TerminalAppearance />);
+  fireEvent.click(screen.getByRole("checkbox", { name: /uygulama temasını izlesin/ }));
+  expect(getAppearance().followApp).toBe(true);
+  expect(screen.getByRole("button", { name: /^Nord/, pressed: true })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /Monokai/ }));
+  expect(getAppearance()).toMatchObject({ followApp: false, scheme: "monokai" });
+});

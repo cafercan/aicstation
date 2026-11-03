@@ -4,6 +4,8 @@ import {
   type Appearance, type CursorStyle, type FontChoice,
 } from "../terminal/appearance";
 import TerminalPreview from "./TerminalPreview";
+import { useTheme } from "../theme";
+import { MATCH } from "../terminal/match";
 import { ANSI_KEYS, SCHEMES, SCHEME_IDS, type SchemeId } from "../terminal/schemes";
 
 const SCROLLBACK = [1000, 5000, 10000, 50000, 100000];
@@ -46,12 +48,17 @@ function Slider({ label, value, min, max, step, unit = "", onChange }: {
 export default function TerminalAppearance() {
   const t = useT();
   const a = useAppearance();
+  const appTheme = useTheme();
+  const followed = MATCH[appTheme].scheme;
   const set = (patch: Partial<Appearance>) => updateAppearance(patch);
   const dark = SCHEME_IDS.filter((id) => SCHEMES[id].dark);
   const light = SCHEME_IDS.filter((id) => !SCHEMES[id].dark);
   const cards = (ids: SchemeId[]) => (
     <div className="scheme-grid">
-      {ids.map((id) => <SchemeCard key={id} id={id} on={a.scheme === id} onPick={(scheme) => set({ scheme })} />)}
+      {ids.map((id) => (
+        <SchemeCard key={id} id={id} on={(a.followApp ? followed : a.scheme) === id}
+          onPick={(scheme) => set({ scheme, followApp: false })} />
+      ))}
     </div>
   );
 
@@ -60,6 +67,13 @@ export default function TerminalAppearance() {
       <legend>{t("look.title")}</legend>
       <TerminalPreview />
 
+      <label className="settings-row">
+        <input type="checkbox" checked={a.followApp} onChange={(e) => set({ followApp: e.target.checked })} />
+        <span>
+          {t("look.followApp")}
+          <span className="settings-hint">{t("look.followAppHint", { scheme: SCHEMES[followed].name })}</span>
+        </span>
+      </label>
       <div className="settings-sub">{t("look.schemeDark")}</div>
       {cards(dark)}
       <div className="settings-sub">{t("look.schemeLight")}</div>

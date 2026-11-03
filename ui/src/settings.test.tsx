@@ -134,6 +134,17 @@ test("prompt: butaglyph seçilince presetler gelir; preset seçimi kaydedilir", 
   expect(screen.queryByRole("button", { name: /düzenleyicisinde/ })).toBeNull();
 });
 
+test("prompt: uygulama temasına uyan preset önerilir ve tek tıkla seçilir", async () => {
+  const { applyTheme } = await import("./theme");
+  act(() => applyTheme("sepia-light"));
+  h.stored = { ...DEFAULTS, prompt: "butaglyph", promptPreset: "neon" };
+  await loadSettings();
+  render(<SettingsPage />);
+  fireEvent.click(await screen.findByRole("button", { name: "Uygulama temasına uyan preseti kullan: carpet" }));
+  await waitFor(() => expect(h.stored.promptPreset).toBe("carpet"));
+  expect(screen.queryByRole("button", { name: /uyan preseti/ })).toBeNull();
+});
+
 test("prompt: butaglyph kurulu değilse uyarı gösterilir", async () => {
   h.buta = { installed: false, version: null, presets: [] };
   h.stored = { ...DEFAULTS, prompt: "butaglyph" };

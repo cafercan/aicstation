@@ -11,6 +11,7 @@ import { clampFontSize } from "./keys";
 import { isWindows } from "../platform";
 import { renderOptions } from "./theme";
 import { getAppearance, subscribeAppearance, xtermOptions } from "./appearance";
+import { subscribeTheme } from "../theme";
 
 export interface TerminalEntry {
   id: number;
@@ -158,13 +159,16 @@ async function startTerminal(spawn: Spawn, title?: TerminalTitle): Promise<Termi
 
 /** Open terminals take every appearance change at once (and are refit:
  *  font, spacing and padding change the cell grid). */
-subscribeAppearance(() => {
+function applyAppearance(): void {
   const opts = xtermOptions(getAppearance());
   for (const t of terminals) {
     Object.assign(t.term.options, opts);
     resizeTerminal(t);
   }
-});
+}
+subscribeAppearance(applyAppearance);
+// The app theme picks the scheme while the appearance follows it.
+subscribeTheme(() => { if (getAppearance().followApp) applyAppearance(); });
 
 export function resizeTerminal(t: TerminalEntry): void {
   try { t.fit.fit(); } catch { return; }

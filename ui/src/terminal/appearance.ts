@@ -12,6 +12,8 @@ import { createStore, readPref, writePref } from "../prefs";
 import { DEFAULT_FONT_SIZE, MAX_FONT_SIZE, MIN_FONT_SIZE } from "./keys";
 import { DEFAULT_SCHEME, SCHEMES, isScheme, type SchemeId } from "./schemes";
 import { renderOptions, terminalFont } from "./theme";
+import { getTheme, type ThemeId } from "../theme";
+import { MATCH } from "./match";
 
 export const CURSOR_STYLES = ["block", "bar", "underline"] as const;
 export type CursorStyle = (typeof CURSOR_STYLES)[number];
@@ -28,6 +30,8 @@ export const FONT_WEIGHTS = [300, 350, 400, 500, 600] as const;
 
 export interface Appearance {
   scheme: SchemeId;
+  /** Use the scheme that goes with the app theme instead of `scheme`. */
+  followApp: boolean;
   font: FontChoice;
   /** Font family name used when `font` is "custom". */
   customFont: string;
@@ -51,6 +55,7 @@ export interface Appearance {
 
 export const DEFAULT_APPEARANCE: Appearance = {
   scheme: DEFAULT_SCHEME,
+  followApp: false,
   font: "default",
   customFont: "",
   fontSize: DEFAULT_FONT_SIZE,
@@ -87,6 +92,7 @@ export function sanitize(v: unknown): Appearance {
   const customFont = typeof o.customFont === "string" && validFontName(o.customFont) ? o.customFont : d.customFont;
   return {
     scheme: isScheme(o.scheme) ? o.scheme : d.scheme,
+    followApp: typeof o.followApp === "boolean" ? o.followApp : d.followApp,
     font: oneOf(o.font, FONTS, d.font),
     customFont,
     fontSize: Math.round(num(o.fontSize, MIN_FONT_SIZE, MAX_FONT_SIZE, d.fontSize)),
@@ -130,10 +136,15 @@ export function fontFamily(a: Appearance): string {
   return name ? `"${name}", ${terminalFont.fontFamily}` : terminalFont.fontFamily;
 }
 
+/** The scheme in use: the app theme's match when following it. */
+export function activeScheme(a: Appearance, theme: ThemeId = getTheme()): SchemeId {
+  return a.followApp ? MATCH[theme]?.scheme ?? a.scheme : a.scheme;
+}
+
 /** The xterm options this appearance sets (the rest stay as created). */
-export function xtermOptions(a: Appearance): ITerminalOptions {
+export function xtermOptions(a: Appearance, theme: ThemeId = getTheme()): ITerminalOptions {
   return {
-    theme: { ...SCHEMES[a.scheme].theme },
+    theme: { ...SCHEMES[activeScheme(a, theme)].theme },
     fontFamily: fontFamily(a),
     fontSize: a.fontSize,
     fontWeight: a.fontWeight,
