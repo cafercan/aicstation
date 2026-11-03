@@ -1,5 +1,5 @@
 //! App settings in `<app data>/settings.json`: notification toggles, close
-//! behavior and the UI language (for the texts Rust shows natively: toasts,
+//! behavior, the terminal shell and prompt, and the UI language (for the texts Rust shows natively: toasts,
 //! tray). Unknown keys are ignored; a missing, mistyped or invalid key takes
 //! its own default while the valid keys are kept; an unreadable file gives
 //! the defaults. Writes are atomic.
@@ -11,6 +11,20 @@ use std::sync::Mutex;
 
 /// Language codes the UI offers (ui/src/i18n LANGS).
 pub const LANGS: [&str; 8] = ["tr", "az", "en", "de", "ru", "es", "fr", "zh"];
+/// Shells the terminal setting can name; `auto` is the platform default.
+/// Only these ids are stored: the program itself is found by `shell.rs`.
+pub const SHELLS: [&str; 7] = ["auto", "bash", "zsh", "fish", "pwsh", "nu", "powershell"];
+/// Prompts of the embedded terminals: the shell's own (rc files decide) or
+/// butaglyph injected by the app.
+pub const PROMPTS: [&str; 2] = ["own", "butaglyph"];
+
+/// A butaglyph preset name (`buta preset`), or empty for the user's own
+/// butaglyph config.
+pub fn valid_preset(p: &str) -> bool {
+    p.len() <= 32 && p.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        && !p.starts_with('-')
+}
+
 /// Largest settings.json read; anything bigger is treated as corrupt.
 const MAX_FILE: u64 = 64 * 1024;
 
@@ -31,6 +45,12 @@ pub struct Settings {
     /// Rust: a value sent by the UI is ignored.
     pub tray_notice_shown: bool,
     pub lang: String,
+    /// One of [`SHELLS`].
+    pub shell: String,
+    /// One of [`PROMPTS`].
+    pub prompt: String,
+    /// See [`valid_preset`].
+    pub prompt_preset: String,
 }
 
 impl Default for Settings {
@@ -43,14 +63,21 @@ impl Default for Settings {
             close_to_tray: true,
             tray_notice_shown: false,
             lang: "tr".into(),
+            shell: "auto".into(),
+            prompt: "own".into(),
+            prompt_preset: String::new(),
         }
     }
 }
 
 impl Settings {
-    /// Ok when every field is acceptable (only `lang` can be wrong).
+    /// Ok when every field is acceptable.
     pub fn validate(&self) -> Result<(), String> {
-        if LANGS.contains(&self.lang.as_str()) {
+        if LANGS.contains(&self.lang.as_str())
+            && SHELLS.contains(&self.shell.as_str())
+            && PROMPTS.contains(&self.prompt.as_str())
+            && valid_preset(&self.prompt_preset)
+        {
             Ok(())
         } else {
             Err(errors::SETTINGS_INVALID.into())
@@ -65,6 +92,9 @@ pub fn from_json(v: &Value) -> Settings {
     let d = Settings::default();
     let Some(o) = v.as_object() else { return d };
     let flag = |key: &str, default: bool| o.get(key).and_then(Value::as_bool).unwrap_or(default);
+    let pick = |key: &str, ok: &dyn Fn(&str) -> bool, default: String| {
+        o.get(key).and_then(Value::as_str).filter(|v| ok(v)).map_or(default, str::to_string)
+    };
     Settings {
         notify_waiting: flag("notifyWaiting", d.notify_waiting),
         notify_finished: flag("notifyFinished", d.notify_finished),
@@ -72,11 +102,10 @@ pub fn from_json(v: &Value) -> Settings {
         notify_sound: flag("notifySound", d.notify_sound),
         close_to_tray: flag("closeToTray", d.close_to_tray),
         tray_notice_shown: flag("trayNoticeShown", d.tray_notice_shown),
-        lang: o
-            .get("lang")
-            .and_then(Value::as_str)
-            .filter(|l| LANGS.contains(l))
-            .map_or(d.lang, str::to_string),
+        lang: pick("lang", &|l| LANGS.contains(&l), d.lang),
+        shell: pick("shell", &|v| SHELLS.contains(&v), d.shell),
+        prompt: pick("prompt", &|v| PROMPTS.contains(&v), d.prompt),
+        prompt_preset: pick("promptPreset", &valid_preset, d.prompt_preset),
     }
 }
 
@@ -187,6 +216,27 @@ mod tests {
         for ok in LANGS {
             assert!(Settings { lang: ok.into(), ..Settings::default() }.validate().is_ok());
         }
+    }
+
+    #[test]
+    fn shell_and_prompt_are_ids_from_fixed_lists() {
+        let d = Settings::default();
+        assert_eq!((d.shell.as_str(), d.prompt.as_str(), d.prompt_preset.as_str()), ("auto", "own", ""));
+        for bad in [
+            Settings { shell: "/bin/sh".into(), ..d.clone() },
+            Settings { shell: "BASH".into(), ..d.clone() },
+            Settings { prompt: "starship".into(), ..d.clone() },
+            Settings { prompt_preset: "../x".into(), ..d.clone() },
+            Settings { prompt_preset: "--install".into(), ..d.clone() },
+            Settings { prompt_preset: "a".repeat(33), ..d.clone() },
+        ] {
+            assert_eq!(bad.validate(), Err(errors::SETTINGS_INVALID.to_string()), "{bad:?}");
+        }
+        let ok = Settings { shell: "fish".into(), prompt: "butaglyph".into(), prompt_preset: "tokyo-night".into(), ..d };
+        assert!(ok.validate().is_ok());
+        let v: Value = serde_json::from_str(r#"{"shell":"fish","prompt":"x","promptPreset":"../evil"}"#).unwrap();
+        let s = from_json(&v);
+        assert_eq!((s.shell.as_str(), s.prompt.as_str(), s.prompt_preset.as_str()), ("fish", "own", ""));
     }
 
     #[test]
