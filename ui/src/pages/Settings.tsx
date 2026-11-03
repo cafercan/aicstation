@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { butaglyphInfo, listShells, openButaglyphEditor, type ButaglyphInfo } from "../api";
 import { errorText, useT, type Key } from "../i18n";
 import { isWindows } from "../platform";
+import TerminalAppearance from "../components/TerminalAppearance";
 import { setChoice, setToggle, useSettings, type Choice, type Toggle } from "../settings";
 
 /** Display names of the shell ids (settings.rs SHELLS). */
@@ -110,6 +111,7 @@ export default function SettingsPage() {
         )}
         <span className="settings-hint">{t("settings.terminalHint")}</span>
       </fieldset>
+      <TerminalAppearance />
       <fieldset>
         <legend>{t("settings.window")}</legend>
         {row("closeToTray", "settings.closeToTray", "settings.closeToTrayHint")}
