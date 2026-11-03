@@ -245,11 +245,11 @@ Download `AICStation-v*-windows-x64-setup.exe` from the
 On Linux (x64, glibc 2.34+: Ubuntu 22.04, Debian 12, Fedora 35 or newer),
 download one of these from the same page:
 
-- `SessionStation-v*-linux-amd64.deb` (Debian, Ubuntu):
-  `sudo apt install ./SessionStation-v*-linux-amd64.deb`
-- `SessionStation-v*-linux-x86_64.rpm` (Fedora, openSUSE):
-  `sudo dnf install ./SessionStation-v*-linux-x86_64.rpm`
-- `SessionStation-v*-linux-x86_64.AppImage` (any distro): make it executable
+- `AICStation-v*-linux-amd64.deb` (Debian, Ubuntu):
+  `sudo apt install ./AICStation-v*-linux-amd64.deb`
+- `AICStation-v*-linux-x86_64.rpm` (Fedora, openSUSE):
+  `sudo dnf install ./AICStation-v*-linux-x86_64.rpm`
+- `AICStation-v*-linux-x86_64.AppImage` (any distro): make it executable
   (`chmod +x`) and run it.
 
 `SHA256SUMS-linux.txt` lists their checksums.
@@ -296,7 +296,7 @@ librsvg2-dev libxdo-dev libssl-dev`), then:
 ```sh
 npm ci && npm --prefix ui ci
 npm run tauri dev        # development mode
-npm run bundle:linux     # .deb, .rpm and AppImage in target/release/bundle/
+npm run bundle:linux     # dist/AICStation-v<version>-linux-*: .deb, .rpm, AppImage
 ```
 
 Tests and checks:
