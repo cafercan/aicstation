@@ -3,7 +3,10 @@ members = ["core", "src-tauri"]
 resolver = "2"
 
 [profile.release]
-lto = true
-codegen-units = 1
+# Thin LTO and parallel codegen: a change rebuilds in a fraction of the time of fat LTO
+# with codegen-units = 1, for a slightly larger exe.
+lto = "thin"
+codegen-units = 16
+incremental = true
 strip = true
 opt-level = "s"
