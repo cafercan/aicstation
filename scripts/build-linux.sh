@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Builds the Linux packages (.deb, .rpm, AppImage), then writes SHA256SUMS.txt.
+# Builds the Linux packages (.deb, .rpm, AppImage), then writes SHA256SUMS-linux.txt.
 # Output, like the Windows installer script (build-installer.ps1):
 #   dist/SessionStation-v<version>-linux-amd64.deb
 #   dist/SessionStation-v<version>-linux-x86_64.rpm
 #   dist/SessionStation-v<version>-linux-x86_64.AppImage
-#   dist/SHA256SUMS.txt
+#   dist/SHA256SUMS-linux.txt
 # Packages built on a newer distro need its glibc; release builds come from
 # the oldest supported Ubuntu (see .github/workflows/release-linux.yml).
 set -euo pipefail
@@ -36,5 +36,5 @@ cp "$rpm" "dist/SessionStation-v${version}-linux-x86_64.rpm"
 cp "$appimage" "dist/SessionStation-v${version}-linux-x86_64.AppImage"
 chmod +x "dist/SessionStation-v${version}-linux-x86_64.AppImage"
 
-(cd dist && sha256sum SessionStation-v"${version}"-linux-* > SHA256SUMS.txt)
-cat dist/SHA256SUMS.txt
+(cd dist && sha256sum SessionStation-v"${version}"-linux-* > SHA256SUMS-linux.txt)
+cat dist/SHA256SUMS-linux.txt
