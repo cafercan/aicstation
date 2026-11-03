@@ -12,7 +12,11 @@ use std::path::{Path, PathBuf};
 pub enum ShellKind {
     /// Windows PowerShell or PowerShell 7 (`pwsh`).
     PowerShell,
-    /// bash, zsh, fish, sh, dash, ksh ... (`-i -c '<cmd>; exec <shell>'`).
+    Bash,
+    Zsh,
+    Fish,
+    /// sh, dash, ksh ... (`-i -c '<cmd>; exec <shell>'`, as bash/zsh/fish
+    /// without integration scripts).
     Posix,
     /// Nushell (`-e <cmd>` keeps it open afterwards).
     Nu,
@@ -26,6 +30,9 @@ impl ShellKind {
             "pwsh" | "powershell" | "pwsh-preview" => ShellKind::PowerShell,
             "nu" => ShellKind::Nu,
             "cmd" => ShellKind::Cmd,
+            "bash" => ShellKind::Bash,
+            "zsh" => ShellKind::Zsh,
+            "fish" => ShellKind::Fish,
             _ => ShellKind::Posix,
         }
     }
@@ -62,7 +69,7 @@ impl Shell {
             ShellKind::PowerShell => vec!["-NoLogo".into(), "-NoExit".into(), "-Command".into(), claude],
             ShellKind::Nu => vec!["-e".into(), claude],
             ShellKind::Cmd => vec!["/k".into(), claude],
-            ShellKind::Posix => {
+            ShellKind::Bash | ShellKind::Zsh | ShellKind::Fish | ShellKind::Posix => {
                 // `-i` so the rc files run first (PATH to `claude`, prompt);
                 // `exec` then replaces the one-shot shell with an interactive
                 // one. The quoted path is safe: `posix_quotable` held when the
@@ -188,8 +195,10 @@ mod tests {
     #[test]
     fn kind_comes_from_the_file_name() {
         for (p, k) in [
-            ("/usr/bin/fish", ShellKind::Posix),
-            ("/bin/zsh", ShellKind::Posix),
+            ("/usr/bin/fish", ShellKind::Fish),
+            ("/bin/zsh", ShellKind::Zsh),
+            ("/bin/bash", ShellKind::Bash),
+            ("/bin/dash", ShellKind::Posix),
             ("/usr/bin/pwsh", ShellKind::PowerShell),
             ("powershell.exe", ShellKind::PowerShell),
             ("cmd.exe", ShellKind::Cmd),
@@ -239,7 +248,7 @@ mod tests {
     #[test]
     fn ids_resolve_to_installed_programs_or_fall_back() {
         let sh = find("bash").expect("bash is installed on the test machines");
-        assert!(sh.program.is_absolute() && sh.kind == ShellKind::Posix);
+        assert!(sh.program.is_absolute() && sh.kind == ShellKind::Bash);
         assert_eq!(find("powershell"), None, "Windows PowerShell only exists on Windows");
         assert_eq!(find("nope"), None);
         assert_eq!(for_setting("nope").unwrap(), default_shell().unwrap());
