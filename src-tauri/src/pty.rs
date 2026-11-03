@@ -206,29 +206,29 @@ impl PtyManager {
         Self::default()
     }
 
-    /// The plain `shell` in the home dir.
+    /// A shell (see `integration::launch`) in the home dir.
     pub fn spawn_shell(
         &self,
-        shell: &crate::shell::Shell,
+        launch: &crate::integration::Launch,
         cols: u16,
         rows: u16,
         on_output: impl Fn(&[u8]) -> bool + Send + 'static,
         on_exit: impl FnOnce(i32) + Send + 'static,
     ) -> Result<PtyInfo, String> {
-        let mut cmd = CommandBuilder::new(&shell.program);
-        cmd.args(shell.interactive_args());
+        let mut cmd = CommandBuilder::new(&launch.program);
+        cmd.args(&launch.args);
         if let Some(home) = crate::shell::home_dir() {
             cmd.cwd(home);
         }
-        self.spawn_builder(cmd, cols, rows, on_output, on_exit)
+        self.spawn_builder(cmd, &launch.env, cols, rows, on_output, on_exit)
     }
 
-    /// `shell` in `cwd` running `claude --resume <session_id>`, left
-    /// open afterwards. The caller passes an already validated id and folder
-    /// (see `AppState::resume_target`); nothing else reaches the command line.
+    /// `launch` (built with `resume: session_id`) in `cwd`: runs
+    /// `claude --resume <session_id>`, left open afterwards. The caller passes
+    /// an already validated id and folder (see `AppState::resume_target`).
     pub fn spawn_resume(
         &self,
-        shell: &crate::shell::Shell,
+        launch: &crate::integration::Launch,
         cwd: &Path,
         session_id: &str,
         cols: u16,
@@ -236,8 +236,7 @@ impl PtyManager {
         on_output: impl Fn(&[u8]) -> bool + Send + 'static,
         on_exit: impl FnOnce(i32) + Send + 'static,
     ) -> Result<PtyInfo, String> {
-        let args = shell.resume_args(session_id)?;
-        self.spawn_resume_in(shell.program.as_os_str(), &args, cwd, session_id, cols, rows, on_output, on_exit)
+        self.spawn_resume_in(launch.program.as_os_str(), &launch.args, &launch.env, cwd, session_id, cols, rows, on_output, on_exit)
     }
 
     /// `spawn_in` guarded by the resumed-session holds (see `Resumed`):
@@ -247,6 +246,7 @@ impl PtyManager {
         &self,
         program: &OsStr,
         args: &[String],
+        env: &[(String, String)],
         cwd: &Path,
         session_id: &str,
         cols: u16,
@@ -270,7 +270,7 @@ impl PtyManager {
             }
         };
         let release_on_exit = release.clone();
-        let res = self.spawn_in(program, args, cwd, cols, rows, on_output, move |code| {
+        let res = self.spawn_env(program, args, env, cwd, cols, rows, on_output, move |code| {
             release_on_exit();
             on_exit(code);
         });
@@ -312,7 +312,8 @@ impl PtyManager {
         }
     }
 
-    /// `program args` in `cwd`; shared by `spawn_resume` and tests (stub program).
+    /// `program args` in `cwd` (tests: stub program).
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     pub fn spawn_in(
         &self,
@@ -324,10 +325,26 @@ impl PtyManager {
         on_output: impl Fn(&[u8]) -> bool + Send + 'static,
         on_exit: impl FnOnce(i32) + Send + 'static,
     ) -> Result<PtyInfo, String> {
+        self.spawn_env(program, args, &[], cwd, cols, rows, on_output, on_exit)
+    }
+
+    /// `spawn_in` with extra environment (set after the cleaned one).
+    #[allow(clippy::too_many_arguments)]
+    fn spawn_env(
+        &self,
+        program: &OsStr,
+        args: &[String],
+        env: &[(String, String)],
+        cwd: &Path,
+        cols: u16,
+        rows: u16,
+        on_output: impl Fn(&[u8]) -> bool + Send + 'static,
+        on_exit: impl FnOnce(i32) + Send + 'static,
+    ) -> Result<PtyInfo, String> {
         let mut cmd = CommandBuilder::new(program);
         cmd.args(args);
         cmd.cwd(cwd);
-        self.spawn_builder(cmd, cols, rows, on_output, on_exit)
+        self.spawn_builder(cmd, env, cols, rows, on_output, on_exit)
     }
 
     /// Internal / test use only; never exposed as a Tauri command.
@@ -343,12 +360,13 @@ impl PtyManager {
     ) -> Result<PtyInfo, String> {
         let mut cmd = CommandBuilder::new(program);
         cmd.args(args);
-        self.spawn_builder(cmd, cols, rows, on_output, on_exit)
+        self.spawn_builder(cmd, &[], cols, rows, on_output, on_exit)
     }
 
     fn spawn_builder(
         &self,
         mut cmd: CommandBuilder,
+        extra_env: &[(String, String)],
         cols: u16,
         rows: u16,
         on_output: impl Fn(&[u8]) -> bool + Send + 'static,
@@ -364,6 +382,9 @@ impl PtyManager {
         };
         cmd.env_clear();
         for (k, v) in child_env(std::env::vars_os(), &crate::platform::persistent_env_names()) {
+            cmd.env(k, v);
+        }
+        for (k, v) in extra_env {
             cmd.env(k, v);
         }
         cmd.env("TERM", "xterm-256color");
@@ -897,7 +918,7 @@ mod tests {
         let args = stub::idle_args();
         let (tx, rx) = mpsc::channel();
         let start = |tx: mpsc::Sender<i32>| {
-            m.spawn_resume_in(OsStr::new(IDLE), &args, &dir, SID, 80, 24, |_| true, move |c| {
+            m.spawn_resume_in(OsStr::new(IDLE), &args, &[], &dir, SID, 80, 24, |_| true, move |c| {
                 let _ = tx.send(c);
             })
         };
@@ -909,7 +930,7 @@ mod tests {
         );
         // Another session is not blocked.
         let other = m
-            .spawn_resume_in(OsStr::new(IDLE), &args, &dir, "aaaaaaaa-2222-4333-8444-555555555555", 80, 24, |_| true, |_| {})
+            .spawn_resume_in(OsStr::new(IDLE), &args, &[], &dir, "aaaaaaaa-2222-4333-8444-555555555555", 80, 24, |_| true, |_| {})
             .unwrap();
         m.kill(first.id).unwrap();
         rx.recv_timeout(T).expect("exit");
@@ -917,7 +938,7 @@ mod tests {
         m.kill(again.id).unwrap();
         m.kill(other.id).unwrap();
         // A failed spawn does not leave the id behind.
-        let bad = m.spawn_resume_in(OsStr::new("/yok/boyle-bir-program.exe"), &args, &dir, "bbbbbbbb-2222-4333-8444-555555555555", 80, 24, |_| true, |_| {});
+        let bad = m.spawn_resume_in(OsStr::new("/yok/boyle-bir-program.exe"), &args, &[], &dir, "bbbbbbbb-2222-4333-8444-555555555555", 80, 24, |_| true, |_| {});
         assert!(bad.is_err());
         assert_eq!(m.resume_terminal("bbbbbbbb-2222-4333-8444-555555555555"), None);
     }
@@ -928,7 +949,7 @@ mod tests {
         let m = PtyManager::new();
         let dir = std::env::temp_dir();
         let args = stub::idle_args();
-        let start = || m.spawn_resume_in(OsStr::new(IDLE), &args, &dir, SID, 80, 24, |_| true, |_| {});
+        let start = || m.spawn_resume_in(OsStr::new(IDLE), &args, &[], &dir, SID, 80, 24, |_| true, |_| {});
         let first = start().unwrap();
         m.observe_live_at(&live(&[SID]), Instant::now());
         assert!(start().is_err(), "claude runs in the resume terminal");

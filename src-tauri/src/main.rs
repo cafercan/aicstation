@@ -2,6 +2,7 @@
 mod alerts;
 mod commands;
 mod errors;
+mod integration;
 mod native_text;
 mod notifier;
 mod platform;
@@ -244,6 +245,9 @@ fn main() {
             let data = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data)?;
             let settings = settings::SettingsStore::open(data.join("settings.json"));
+            if let Err(e) = integration::install(&data.join("shell-integration")) {
+                eprintln!("kabuk entegrasyonu yazılamadı: {e}");
+            }
             let lang = settings.get().lang;
             app.manage(settings);
             app.manage(notifier::Notifier::default());

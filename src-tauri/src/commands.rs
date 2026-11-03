@@ -1101,9 +1101,11 @@ mod tests {
 use crate::pty::{PtyInfo, PtyManager};
 use tauri::ipc::Channel;
 
-/// The shell chosen in the settings (see `shell::for_setting`).
-fn chosen_shell(settings: &SettingsStore) -> Result<crate::shell::Shell, String> {
-    crate::shell::for_setting(&settings.get().shell)
+/// The launch of the shell chosen in the settings, resuming `resume` if set.
+fn chosen_launch(settings: &SettingsStore, resume: Option<&str>) -> Result<crate::integration::Launch, String> {
+    let shell = crate::shell::for_setting(&settings.get().shell)?;
+    let startup = crate::integration::Startup { resume: resume.map(str::to_string), ..Default::default() };
+    crate::integration::launch(&shell, &startup)
 }
 
 #[tauri::command(async)]
@@ -1116,7 +1118,7 @@ pub fn pty_spawn(
     on_exit: Channel<i32>,
 ) -> Result<PtyInfo, String> {
     state.spawn_shell(
-        &chosen_shell(&settings)?,
+        &chosen_launch(&settings, None)?,
         cols,
         rows,
         // A failed send means the webview side is gone (e.g. reload); the
@@ -1146,7 +1148,7 @@ pub fn pty_spawn_resume(
     state.check_resume_terminal(&session_id)?;
     let (id, cwd) = app.resume_target(&session_id)?;
     state.spawn_resume(
-        &chosen_shell(&settings)?,
+        &chosen_launch(&settings, Some(&id))?,
         &cwd,
         &id,
         cols,
