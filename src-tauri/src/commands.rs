@@ -24,6 +24,8 @@ const SNAPSHOT_MAX_AGE: Duration = Duration::from_secs(3);
 pub struct HistoryView {
     pub rows: Vec<HistoryRow>,
     pub today_cost: f64,
+    /// Today's tokens, counted like `today_cost`.
+    pub today_tokens: u64,
     pub today_complete: bool,
     pub indexing: bool,
     /// Cost per day of the live sessions (left out of `rows`), so the cost
@@ -38,6 +40,7 @@ pub struct LiveCost {
     pub cwd: String,
     pub model: Option<String>,
     pub cost_by_day: BTreeMap<chrono::NaiveDate, f64>,
+    pub tokens_by_day: BTreeMap<chrono::NaiveDate, u64>,
 }
 
 /// Last snapshot plus what history needs from the same refresh: the live ids
@@ -48,6 +51,7 @@ struct SnapCache {
     day: chrono::NaiveDate,
     live_cost: f64,
     live_by_day: HashMap<String, BTreeMap<chrono::NaiveDate, f64>>,
+    live_tokens_by_day: HashMap<String, BTreeMap<chrono::NaiveDate, u64>>,
 }
 
 /// What a resume is bound to: the session's first recorded cwd and the name
@@ -117,12 +121,12 @@ impl AppState {
     /// before the snapshot lock is taken, and before the caller emits.
     pub fn refresh(&self) -> Snapshot {
         let day = chrono::Local::now().date_naive();
-        let (snap, live_cost, live_by_day) = {
+        let (snap, live_cost, live_by_day, live_tokens_by_day) = {
             let mut m = lock(&self.monitor);
             let snap = m.refresh(self.probe.as_ref(), SystemTime::now());
-            (snap, m.live_cost_on(day).0, m.live_cost_by_day())
+            (snap, m.live_cost_on(day).0, m.live_cost_by_day(), m.live_tokens_by_day())
         };
-        *lock(&self.snapshot) = Some(SnapCache { at: Instant::now(), snap: snap.clone(), day, live_cost, live_by_day });
+        *lock(&self.snapshot) = Some(SnapCache { at: Instant::now(), snap: snap.clone(), day, live_cost, live_by_day, live_tokens_by_day });
         snap
     }
 
@@ -184,7 +188,7 @@ impl AppState {
     /// monitor; both use the live set of the same refresh, so nothing is counted
     /// twice. `today_complete` covers the closed part only.
     pub fn get_history(&self) -> HistoryView {
-        let (live, day, live_cost, live_rows) = self.fresh_cache(|c| {
+        let (live, day, live_cost, live_rows, live_tokens) = self.fresh_cache(|c| {
             let ids: HashSet<String> = c.snap.sessions.iter().map(|s| s.session_id.clone()).collect();
             let rows: Vec<LiveCost> = c
                 .snap
@@ -197,16 +201,25 @@ impl AppState {
                         cwd: s.cwd.clone(),
                         model: s.model.clone(),
                         cost_by_day: by_day.clone(),
+                        tokens_by_day: c.live_tokens_by_day.get(&s.session_id).cloned().unwrap_or_default(),
                     })
                 })
                 .collect();
-            (ids, c.day, c.live_cost, rows)
+            let live_tokens: u64 = rows.iter().map(|r| r.tokens_by_day.get(&c.day).copied().unwrap_or(0)).sum();
+            (ids, c.day, c.live_cost, rows, live_tokens)
         });
         let rows = lock(&self.history_rows);
         let (closed_cost, today_complete) = cost_on_rows(rows.iter(), day, &live);
+        let closed_tokens: u64 = rows
+            .iter()
+            .filter(|r| !live.contains(&r.session_id))
+            .filter_map(|r| r.summary.as_ref())
+            .map(|s| s.tokens_by_day.get(&day).copied().unwrap_or(0))
+            .sum();
         HistoryView {
             rows: rows.iter().filter(|r| !live.contains(&r.session_id)).cloned().collect(),
             today_cost: closed_cost + live_cost,
+            today_tokens: closed_tokens + live_tokens,
             today_complete,
             indexing: self.is_indexing(),
             live: live_rows,

@@ -29,6 +29,26 @@ pub struct Usage {
     pub cache_creation_1h: u64,
 }
 
+impl Usage {
+    /// All four token kinds: input + output + cache read + cache write.
+    /// (`cache_creation_1h` is part of `cache_creation`, not added again.)
+    pub fn total(&self) -> u64 {
+        self.input
+            .saturating_add(self.output)
+            .saturating_add(self.cache_read)
+            .saturating_add(self.cache_creation)
+    }
+
+    /// Adds `o` into `self` (saturating).
+    pub fn add(&mut self, o: &Usage) {
+        self.input = self.input.saturating_add(o.input);
+        self.output = self.output.saturating_add(o.output);
+        self.cache_read = self.cache_read.saturating_add(o.cache_read);
+        self.cache_creation = self.cache_creation.saturating_add(o.cache_creation);
+        self.cache_creation_1h = self.cache_creation_1h.saturating_add(o.cache_creation_1h);
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ToolState {
     Running,

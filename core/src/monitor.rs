@@ -33,6 +33,8 @@ pub struct SessionCard {
     pub model: Option<String>,
     pub context_pct: Option<f32>,
     pub cost_usd: f64,
+    /// Main session plus its agents (same scope as `cost_usd`).
+    pub tokens: Usage,
     pub agents_total: u32,
     pub agents_finished: u32,
     /// Finished calls among the main session's last <= 50 tool calls.
@@ -136,6 +138,16 @@ fn agent_cost(nodes: &[AgentNode]) -> f64 {
         .sum()
 }
 
+/// Token usage of all agent nodes.
+fn agent_tokens(nodes: &[AgentNode], out: &mut Usage) {
+    for n in nodes {
+        if n.kind == AgentKind::Agent {
+            out.add(&n.stats.tokens);
+        }
+        agent_tokens(&n.children, out);
+    }
+}
+
 fn running_agents(nodes: &[AgentNode]) -> u32 {
     nodes
         .iter()
@@ -178,6 +190,8 @@ fn make_card(
         .or_else(|| stats.title.clone())
         .unwrap_or_else(|| cwd_name(&cwd));
     let (tool_ok, tool_err) = stats.tool_outcomes();
+    let mut tokens = stats.tokens;
+    agent_tokens(&tree.roots, &mut tokens);
     SessionCard {
         session_id: session_id.to_string(),
         pid: live.map_or(0, |l| l.pid),
@@ -189,6 +203,7 @@ fn make_card(
         model: stats.model.clone(),
         context_pct: stats.context_pct(),
         cost_usd: stats.cost_usd + agent_cost(&tree.roots),
+        tokens,
         agents_total: tree.total,
         agents_finished: tree.finished,
         tool_ok,
@@ -279,6 +294,30 @@ impl Monitor {
             .iter()
             .map(|(id, st)| {
                 let mut by_day = st.stats.cost_by_day.clone();
+                add_agents(&st.tree.roots, &mut by_day);
+                (id.clone(), by_day)
+            })
+            .collect()
+    }
+
+    /// Tokens per local day of each session live at the last refresh (main
+    /// transcript plus agents), by session id; the token twin of `live_cost_by_day`.
+    pub fn live_tokens_by_day(&self) -> HashMap<String, BTreeMap<chrono::NaiveDate, u64>> {
+        fn add_agents(nodes: &[AgentNode], out: &mut BTreeMap<chrono::NaiveDate, u64>) {
+            for n in nodes {
+                if n.kind == AgentKind::Agent {
+                    for (d, t) in &n.stats.tokens_by_day {
+                        let e = out.entry(*d).or_insert(0);
+                        *e = e.saturating_add(*t);
+                    }
+                }
+                add_agents(&n.children, out);
+            }
+        }
+        self.states
+            .iter()
+            .map(|(id, st)| {
+                let mut by_day = st.stats.tokens_by_day.clone();
                 add_agents(&st.tree.roots, &mut by_day);
                 (id.clone(), by_day)
             })

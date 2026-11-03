@@ -185,6 +185,7 @@ mod tests {
             model: None,
             context_pct: None,
             cost_usd: 0.0,
+            tokens: Default::default(),
             agents_total: 0,
             agents_finished: 0,
             tool_ok: 0,
