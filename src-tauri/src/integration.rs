@@ -27,6 +27,19 @@ const BASHRC: &str = r#"# SessionStation: runs instead of ~/.bashrc, then source
 [ -f ~/.bashrc ] && . ~/.bashrc
 if [ -n "${SESSION_STATION_BUTA-}" ]; then
     eval "$("$SESSION_STATION_BUTA" init bash)"
+    # buta runs first (it needs $?), but a prompt the user's rc set up
+    # (starship, oh-my-bash...) would draw over it later in PROMPT_COMMAND:
+    # keep buta's PS1 and put it back last.
+    if declare -F __buta_prompt_command >/dev/null; then
+        eval "__ss_buta_pc() $(declare -f __buta_prompt_command | tail -n +2)"
+        __buta_prompt_command() { __ss_buta_pc; local s=$?; __ss_buta_ps1=$PS1; return $s; }
+        __ss_buta_last() { local s=$?; PS1=${__ss_buta_ps1-$PS1}; return $s; }
+        if [[ $(declare -p PROMPT_COMMAND 2>/dev/null) == "declare -a"* ]]; then
+            PROMPT_COMMAND+=(__ss_buta_last)
+        else
+            PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND;}__ss_buta_last"
+        fi
+    fi
 fi
 unset SESSION_STATION_BUTA
 if [ -n "${SESSION_STATION_RESUME-}" ]; then
@@ -66,6 +79,9 @@ unset SESSION_STATION_USER_ZDOTDIR
 [ -f "${ZDOTDIR:-$HOME}/.zshrc" ] && . "${ZDOTDIR:-$HOME}/.zshrc"
 if [ -n "${SESSION_STATION_BUTA-}" ]; then
     eval "$("$SESSION_STATION_BUTA" init zsh)"
+    # Put buta's prompt back after any precmd hook of the user's rc.
+    __ss_buta_last() { PROMPT='${__buta_prompt}'; }
+    precmd_functions+=(__ss_buta_last)
 fi
 unset SESSION_STATION_BUTA
 if [ -n "${SESSION_STATION_RESUME-}" ]; then
