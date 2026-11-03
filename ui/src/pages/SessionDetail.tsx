@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { getSessionDetail, onSnapshot, openFolder, type AgentNode, type SessionDetail, type ToolCall } from "../api";
-import { fmtContext, fmtCost, fmtElapsed, fmtTokens, statusColor, statusKind, statusLabel } from "../format";
+import {
+  fmtBreakdown, fmtContext, fmtElapsed, fmtEstCost, fmtTokens, statusColor, statusKind, statusLabel, usageSum,
+} from "../format";
 import SessionMark from "../components/SessionMark";
 import { terminalForPid } from "../terminal/store";
 import { goToTab, gotoTarget, resumeError } from "../gotoTab";
@@ -138,8 +140,8 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal, live 
   if (detail === null) return <div className="empty"><p>{tx("detail.notFound")}</p>{back}</div>;
 
   const { card, tree } = detail;
-  const t = detail.tokens;
-  const tokens = t.input + t.output + t.cacheRead + t.cacheCreation;
+  // Main session plus agents, the same scope as the card's estimated cost.
+  const est = fmtEstCost(card.costUsd);
   const selNode = sel === MAIN ? null : findNode(tree.roots, sel);
   const calls = selNode ? selNode.stats.toolCalls : detail.mainToolCalls;
   const caption = selNode ? nodeLabel(selNode) : tx("detail.mainCaption");
@@ -199,11 +201,14 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal, live 
         {card.cwd} · {tx("detail.started", { time: started })} ·{" "}
         {tx("detail.lastActivity", { t: fmtElapsed(Date.now() - card.lastActivityMs) })}
       </div>
-      <div className="kpis six">
+      <div className="kpis five">
         <div className="kpi"><b>{card.model ?? "?"}</b><span>{tx("detail.kpiModel")}</span></div>
         <div className="kpi"><b>{fmtContext(card.contextPct)}</b><span>{tx("detail.kpiContext")}</span></div>
-        <div className="kpi"><b>{fmtTokens(tokens)}</b><span>{tx("detail.kpiTokens")}</span></div>
-        <div className="kpi"><b>{fmtCost(card.costUsd)}</b><span>{tx("detail.kpiCost")}</span></div>
+        <div className="kpi">
+          <b title={fmtBreakdown(card.tokens)}>{fmtTokens(usageSum(card.tokens))}</b>
+          {est && <em className="est">{est}</em>}
+          <span>{tx("detail.kpiTokens")}</span>
+        </div>
         <div className="kpi"><b>{tree.total} / {tree.finished}</b><span>{tx("detail.kpiAgents")}</span></div>
         <div className="kpi"><b>{detail.toolCallCount}</b><span>{tx("detail.kpiToolCalls")}</span></div>
       </div>

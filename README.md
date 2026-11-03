@@ -13,7 +13,7 @@
 
 SessionStation is a Windows desktop app that shows every local Claude Code
 session in one window: what each one is doing, its subagents, context usage
-and estimated cost. It also runs real PowerShell terminals right next to them.
+and token usage (with an estimated cost). It also runs real PowerShell terminals right next to them.
 It is built with Tauri 2, a Rust core and a React/TypeScript UI.
 
 | Dashboard | Terminal | History |
@@ -61,8 +61,8 @@ closed session in its own folder.
   success rate over the session's recent tool calls.
 - A context bar shows how much of the model's context window is used. If a
   model's window size is not known, it shows "?" instead of guessing.
-- Estimated cost and elapsed time for each session, with summary figures at
-  the top.
+- Token usage (exact) and elapsed time for each session, with the estimated
+  dollar cost shown smaller next to it, and summary figures at the top.
 - Search by name, folder or model (case- and accent-insensitive, including
   Turkish İ/ı), plus status filter chips.
 
@@ -80,11 +80,12 @@ closed session in its own folder.
 
 - A background indexer builds a summary of past sessions and caches it, so
   later starts are fast.
-- Cost charts: daily cost for the last 7, 30 or 90 days, the most expensive
+- Usage charts: daily tokens for the last 7, 30 or 90 days, the top
   projects, and the split by model. All three include the sessions that are
-  still running, and all amounts are labeled as estimates. The page refreshes
+  still running; the dollar amounts next to the token counts are labeled as
+  estimates. The page refreshes
   them every 30 seconds while it is open.
-- Filter by text and date range, and sort by date or cost.
+- Filter by text and date range, and sort by date or tokens.
 - Content search inside the transcripts of both live and past sessions. It
   streams the files and returns short snippets. It stops at 50 hits, after
   8 seconds or 2 GiB read, or when you cancel it (Clear, or leaving the page);
@@ -232,8 +233,10 @@ Download `SessionStation-v*-windows-x64-setup.exe` from the
 - Press Ctrl+Shift+P to jump to any session or terminal by name.
 - Use **Resume** on the History page to continue a closed session in its own
   folder, inside an embedded terminal.
-- Costs are estimates computed from token counts and the model prices built
-  into the app. Your actual bill or plan usage may differ.
+- Token counts are exact: they come straight from the transcripts. Dollar
+  amounts are only an estimate from a price table built into the app, which
+  can be out of date when prices change or a new model ships (models it does
+  not know show tokens only). Your actual bill or plan usage may differ.
 
 ## Building from source
 
@@ -342,11 +345,11 @@ Anthropic ile bağlantılı değildir ve Anthropic tarafından onaylanmamıştı
 Claude ve Claude Code, Anthropic'in ticari markalarıdır.
 
 - **Canlı pano:** her oturum için durum (çalışıyor, hazır, onay bekliyor,
-  kapandı), alt ajan halkası, bağlam yüzdesi ve tahmini maliyet; arama ve
+  kapandı), alt ajan halkası, bağlam yüzdesi ve token kullanımı (tahmini maliyet ikincil); arama ve
   durum filtresi.
 - **Oturum ayrıntısı:** alt ajan ağacı, son tool çağrıları, "Sekmeye git"
   (gömülü terminal ya da Windows Terminal sekmesi), kapanmış oturumu sürdürme.
-- **Geçmiş:** önbellekli dizin, maliyet grafikleri (7/30/90 gün, projeler,
+- **Geçmiş:** önbellekli dizin, kullanım grafikleri (token, tahmini $; 7/30/90 gün, projeler,
   modeller; çalışan oturumlar dahil), canlı ve geçmiş oturumlarda içerikte
   arama (50 sonuç, 8 sn, 2 GiB ya da iptalde durur), "Devam et" ile
   `claude --resume`.

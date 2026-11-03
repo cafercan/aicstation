@@ -4,7 +4,7 @@
  * fold to "i" so "istanbul", "İSTANBUL" and "ıstanbul" find each other.
  */
 import type { HistoryRow, SessionCard } from "./api";
-import { statusKind, type StatusKind } from "./format";
+import { statusKind, usageSum, type StatusKind } from "./format";
 import { localDateKey } from "./costs";
 
 const SPECIAL: Record<string, string> = { ı: "i", İ: "i", I: "i", ə: "e", Ə: "e", ø: "o", Ø: "o", ł: "l", Ł: "l", đ: "d", Đ: "d" };
@@ -36,7 +36,7 @@ export function filterSessions(cards: SessionCard[], query: string, chips: Reado
     (chips.size === 0 || chips.has(statusKind(c.status, c.pid))) && matchesQuery(query, [c.name, c.cwd, c.model]));
 }
 
-export type HistorySort = "date" | "cost";
+export type HistorySort = "date" | "tokens";
 
 export interface HistoryFilter {
   query: string;
@@ -48,7 +48,7 @@ export interface HistoryFilter {
 
 export const rowCwd = (r: HistoryRow) => r.summary?.cwd ?? r.cwd ?? "";
 
-/** Rows matching the filter, sorted (date: newest first; cost: highest first, unknown last). */
+/** Rows matching the filter, sorted (date: newest first; tokens: most first, unindexed last). */
 export function filterHistory(rows: HistoryRow[], f: HistoryFilter): HistoryRow[] {
   const out = rows.filter((r) => {
     const day = localDateKey(r.modifiedMs);
@@ -56,7 +56,7 @@ export function filterHistory(rows: HistoryRow[], f: HistoryFilter): HistoryRow[
     if (f.to && day > f.to) return false;
     return matchesQuery(f.query, [r.summary?.name ?? r.name, rowCwd(r), r.summary?.model]);
   });
-  const cost = (r: HistoryRow) => r.summary?.costUsd ?? -1;
+  const tokens = (r: HistoryRow) => (r.summary ? usageSum(r.summary.tokens) : -1);
   return out.sort((a, b) =>
-    f.sort === "cost" ? cost(b) - cost(a) || b.modifiedMs - a.modifiedMs : b.modifiedMs - a.modifiedMs);
+    f.sort === "tokens" ? tokens(b) - tokens(a) || b.modifiedMs - a.modifiedMs : b.modifiedMs - a.modifiedMs);
 }

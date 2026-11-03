@@ -1,6 +1,7 @@
 //! Background history indexer: per-transcript summaries with an on-disk cache.
 use crate::agents::{build_tree, AgentKind, AgentNode};
 use crate::locate::Locator;
+use crate::model::Usage;
 use crate::stats::SessionStats;
 use crate::transcript::{ReadEvent, TranscriptReader};
 use chrono::{Local, NaiveDate, NaiveTime};
@@ -26,6 +27,9 @@ pub struct HistorySummary {
     pub agents_total: u32,
     pub cost_usd: f64,
     pub cost_by_day: BTreeMap<NaiveDate, f64>,
+    /// Main transcript plus agents; the exact numbers (cost is an estimate).
+    pub tokens: Usage,
+    pub tokens_by_day: BTreeMap<NaiveDate, u64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -44,8 +48,8 @@ pub struct HistoryRow {
 }
 
 /// On-disk cache schema. A cache of any other version (or the bare array of
-/// version 1, which had no first cwd) is ignored and rebuilt.
-pub const CACHE_VERSION: u32 = 2;
+/// version 1, which had no first cwd) is ignored and rebuilt (version 3 added the token totals).
+pub const CACHE_VERSION: u32 = 3;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -104,16 +108,29 @@ fn last_component(p: &str) -> Option<&str> {
     p.rsplit(['/', '\\']).find(|s| !s.is_empty())
 }
 
-/// Add the cost of every `Agent` node (recursing through workflow/phase groups).
-fn add_agent_costs(nodes: &[AgentNode], cost: &mut f64, by_day: &mut BTreeMap<NaiveDate, f64>) {
+/// Running totals of a summary being built.
+struct Totals {
+    cost: f64,
+    cost_by_day: BTreeMap<NaiveDate, f64>,
+    tokens: Usage,
+    tokens_by_day: BTreeMap<NaiveDate, u64>,
+}
+
+/// Add cost and tokens of every `Agent` node (recursing through workflow/phase groups).
+fn add_agent_totals(nodes: &[AgentNode], t: &mut Totals) {
     for n in nodes {
         if n.kind == AgentKind::Agent {
-            *cost += n.stats.cost_usd;
+            t.cost += n.stats.cost_usd;
             for (d, c) in &n.stats.cost_by_day {
-                *by_day.entry(*d).or_insert(0.0) += c;
+                *t.cost_by_day.entry(*d).or_insert(0.0) += c;
+            }
+            t.tokens.add(&n.stats.tokens);
+            for (d, k) in &n.stats.tokens_by_day {
+                let e = t.tokens_by_day.entry(*d).or_insert(0);
+                *e = e.saturating_add(*k);
             }
         }
-        add_agent_costs(&n.children, cost, by_day);
+        add_agent_totals(&n.children, t);
     }
 }
 
@@ -125,13 +142,17 @@ fn summarize(path: &Path, locator: &mut Locator, id: &str) -> io::Result<History
             stats.apply(&e);
         }
     })?;
-    let mut cost = stats.cost_usd;
-    let mut by_day = stats.cost_by_day.clone();
+    let mut totals = Totals {
+        cost: stats.cost_usd,
+        cost_by_day: stats.cost_by_day.clone(),
+        tokens: stats.tokens,
+        tokens_by_day: stats.tokens_by_day.clone(),
+    };
     let mut agents_total = 0;
     if let Some(dir) = locator.subagents_dir(id) {
         let tree = build_tree(&dir, false, SystemTime::now());
         agents_total = tree.total;
-        add_agent_costs(&tree.roots, &mut cost, &mut by_day);
+        add_agent_totals(&tree.roots, &mut totals);
     }
     let name = stats
         .title
@@ -147,8 +168,10 @@ fn summarize(path: &Path, locator: &mut Locator, id: &str) -> io::Result<History
         first_at_ms: stats.first_at.map_or(0, |t| t.timestamp_millis().max(0) as u64),
         last_at_ms: stats.last_at.map_or(0, |t| t.timestamp_millis().max(0) as u64),
         agents_total,
-        cost_usd: cost,
-        cost_by_day: by_day,
+        cost_usd: totals.cost,
+        cost_by_day: totals.cost_by_day,
+        tokens: totals.tokens,
+        tokens_by_day: totals.tokens_by_day,
     })
 }
 
@@ -429,6 +452,22 @@ mod tests {
         let s = idx.rows(&HashSet::new())[0].summary.clone().unwrap();
         assert_eq!(s.first_cwd.as_deref(), Some(r"C:\demo\proj-x"));
         assert_eq!(s.cwd.as_deref(), Some(r"C:\demo\proj-x\sub"));
+    }
+
+    #[test]
+    fn summary_has_exact_token_totals() {
+        let t = tempfile::tempdir().unwrap();
+        let body = line(now(), "m1", 100) + "
+" + &line(now(), "m2", 50) + "
+";
+        put(t.path(), "d--x", ID_A, &body, 10);
+        let mut idx = load(t.path(), &t.path().join("c.json"));
+        while idx.step(Duration::from_secs(5)) {}
+        let s = idx.rows(&HashSet::new())[0].summary.clone().unwrap();
+        assert_eq!(s.tokens.input, 150);
+        assert_eq!(s.tokens.output, 20);
+        assert_eq!(s.tokens.total(), 170);
+        assert_eq!(s.tokens_by_day.values().sum::<u64>(), 170);
     }
 
     #[test]

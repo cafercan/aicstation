@@ -26,6 +26,8 @@ pub struct SessionStats {
     pub last_usage: Option<Usage>,
     pub cost_usd: f64,
     pub cost_by_day: BTreeMap<NaiveDate, f64>,
+    /// Tokens (all four kinds) per local day; counted for every model, priced or not.
+    pub tokens_by_day: BTreeMap<NaiveDate, u64>,
     pub tool_calls: VecDeque<ToolCall>,
     pub tool_call_count: u64,
     pub first_at: Option<DateTime<Utc>>,
@@ -82,10 +84,12 @@ impl SessionStats {
                         self.tokens.cache_read += u.cache_read;
                         self.tokens.cache_creation += u.cache_creation;
                         self.tokens.cache_creation_1h += u.cache_creation_1h;
+                        let day = at.with_timezone(&Local).date_naive();
+                        let day_tokens = self.tokens_by_day.entry(day).or_insert(0);
+                        *day_tokens = day_tokens.saturating_add(u.total());
                         let m = model.as_deref().or(requested_model.as_deref());
                         if let Some(c) = m.and_then(|m| pricing::cost_usd(m, u)) {
                             self.cost_usd += c;
-                            let day = at.with_timezone(&Local).date_naive();
                             *self.cost_by_day.entry(day).or_insert(0.0) += c;
                         }
                     }
@@ -283,5 +287,19 @@ mod tests {
         s.apply(&asst("b", "claude-opus-5-5", None, u, vec![], next));
         assert_eq!(s.cost_by_day.len(), 2);
         assert!((s.cost_usd - 8.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn tokens_by_day_counts_all_kinds_even_for_unpriced_models() {
+        let mut s = SessionStats::default();
+        s.apply(&asst("a", "mystery-model", None, usage(100, 20, 3000, 400), vec![], at(23, 50)));
+        // Same message id again: deduped, like the totals.
+        s.apply(&asst("a", "mystery-model", None, usage(100, 20, 3000, 400), vec![], at(23, 50)));
+        let next = Local.with_ymd_and_hms(2026, 6, 11, 0, 10, 0).unwrap().to_utc();
+        s.apply(&asst("b", "mystery-model", None, usage(1, 1, 1, 1), vec![], next));
+        assert_eq!(s.cost_usd, 0.0, "unknown model has no cost");
+        assert_eq!(s.tokens_by_day.len(), 2);
+        assert_eq!(s.tokens_by_day.values().sum::<u64>(), 3520 + 4);
+        assert_eq!(s.tokens.total(), 3524);
     }
 }

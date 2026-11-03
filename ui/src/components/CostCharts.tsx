@@ -1,10 +1,10 @@
 import { useState, type KeyboardEvent, type MouseEvent } from "react";
 import type { HistoryView } from "../api";
 import {
-  CHART_TOKENS, RANGES, dailyCosts, modelSplit, rangeDays, topProjects, totals, withLive, type DayBucket,
+  CHART_TOKENS, RANGES, dailyUsage, modelSplit, rangeDays, topProjects, totals, withLive, type DayBucket,
   type RangeDays,
 } from "../costs";
-import { fmtCost } from "../format";
+import { fmtEstCost, fmtTokens } from "../format";
 import { locale, useT } from "../i18n";
 import { createStore } from "../prefs";
 import { cssVar } from "../theme";
@@ -20,10 +20,16 @@ function dateLabel(date: string): string {
   return new Date(y, m - 1, d).toLocaleDateString(locale(), { day: "numeric", month: "short", year: "numeric" });
 }
 
+/** "12.3M tokens" with the estimated dollars after it when there are any: "12.3M · ~$31 est.". */
+function tokensWithEst(tokens: number, cost: number): string {
+  const est = fmtEstCost(cost);
+  return est ? `${fmtTokens(tokens)} · ${est}` : fmtTokens(tokens);
+}
+
 function DailyChart({ buckets }: { buckets: DayBucket[] }) {
   const t = useT();
   const [active, setActive] = useState<number | null>(null);
-  const max = Math.max(...buckets.map((b) => b.cost), 0);
+  const max = Math.max(...buckets.map((b) => b.tokens), 0);
   const n = buckets.length;
   const bw = W / n;
   const gap = n > 40 ? 1 : 2;
@@ -42,25 +48,25 @@ function DailyChart({ buckets }: { buckets: DayBucket[] }) {
   };
   const tip = active !== null ? buckets[active] : null;
   const tipText = tip
-    ? `${dateLabel(tip.date)}${tip.today ? ` (${t("cost.today")})` : ""}: ${fmtCost(tip.cost)}`
+    ? `${dateLabel(tip.date)}${tip.today ? ` (${t("usage.today")})` : ""}: ${tokensWithEst(tip.tokens, tip.cost)}`
     : "";
   return (
     <div className="cost-daily">
-      <div className="cap">{t("cost.daily")}</div>
+      <div className="cap">{t("usage.daily")}</div>
       <div className="cost-plot">
         <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" width="100%" height={H} tabIndex={0}
-          role="img" aria-label={t("cost.dailyLabel", { n, max: fmtCost(max) })}
+          role="img" aria-label={t("usage.dailyLabel", { n, max: fmtTokens(max) })}
           onMouseMove={pick} onMouseLeave={() => setActive(null)} onKeyDown={onKey}
           onFocus={() => setActive((a) => a ?? n - 1)} onBlur={() => setActive(null)}>
           <line x1="0" y1={H - 0.5} x2={W} y2={H - 0.5} style={{ stroke: "var(--border-strong)" }} strokeWidth="1" />
           {buckets.map((b, i) => {
-            const h = max > 0 ? Math.max(b.cost > 0 ? 2 : 0, (b.cost / max) * (H - 6)) : 0;
+            const h = max > 0 ? Math.max(b.tokens > 0 ? 2 : 0, (b.tokens / max) * (H - 6)) : 0;
             const tok = b.today ? CHART_TOKENS.today : CHART_TOKENS.bar;
             return (
               <rect key={b.date} data-date={b.date} data-today={b.today || undefined}
                 x={i * bw + gap / 2} y={H - 1 - h} width={Math.max(1, bw - gap)} height={h}
                 style={{ fill: `var(${cssVar(tok)})`, opacity: active === null || active === i ? 1 : 0.55 }}>
-                <title>{`${dateLabel(b.date)}: ${fmtCost(b.cost)}`}</title>
+                <title>{`${dateLabel(b.date)}: ${tokensWithEst(b.tokens, b.cost)}`}</title>
               </rect>
             );
           })}
@@ -71,8 +77,8 @@ function DailyChart({ buckets }: { buckets: DayBucket[] }) {
       </div>
       <div className="cost-axis">
         <span>{dateLabel(buckets[0].date)}</span>
-        <span>{t("cost.max", { cost: fmtCost(max) })}</span>
-        <span>{t("cost.today")}</span>
+        <span>{t("usage.max", { tokens: fmtTokens(max) })}</span>
+        <span>{t("usage.today")}</span>
       </div>
       <div className="sr-only" role="status" aria-live="polite">{tipText}</div>
     </div>
@@ -81,20 +87,23 @@ function DailyChart({ buckets }: { buckets: DayBucket[] }) {
 
 function TopProjects({ list }: { list: ReturnType<typeof topProjects> }) {
   const t = useT();
-  const max = list[0]?.cost ?? 0;
+  const max = list[0]?.tokens ?? 0;
   return (
     <div className="cost-top">
-      <div className="cap">{t("cost.topProjects")}</div>
-      {list.length === 0 ? <div className="meta">{t("cost.noData")}</div> : (
+      <div className="cap">{t("usage.topProjects")}</div>
+      {list.length === 0 ? <div className="meta">{t("usage.noData")}</div> : (
         <ol className="hbars">
-          {list.map((p) => (
-            <li key={p.cwd} title={p.cwd}>
-              <span className="lbl">{p.name}</span>
-              <span className="bar"><i style={{ width: `${max > 0 ? (p.cost / max) * 100 : 0}%`,
-                background: `var(${cssVar(CHART_TOKENS.bar)})` }} /></span>
-              <b>{fmtCost(p.cost)}</b>
-            </li>
-          ))}
+          {list.map((p) => {
+            const est = fmtEstCost(p.cost);
+            return (
+              <li key={p.cwd} title={p.cwd}>
+                <span className="lbl">{p.name}</span>
+                <span className="bar"><i style={{ width: `${max > 0 ? (p.tokens / max) * 100 : 0}%`,
+                  background: `var(${cssVar(CHART_TOKENS.bar)})` }} /></span>
+                <b>{fmtTokens(p.tokens)}{est && <span className="est">{est}</span>}</b>
+              </li>
+            );
+          })}
         </ol>
       )}
     </div>
@@ -107,26 +116,27 @@ function ModelSplit({ list }: { list: ReturnType<typeof modelSplit> }) {
     const s = CHART_TOKENS.series;
     return `var(${cssVar(other ? s[s.length - 1] : s[Math.min(i, s.length - 1)])})`;
   };
-  const name = (m: (typeof list)[number]) => m.other ? t("cost.otherModels") : m.model ?? t("cost.unknownModel");
+  const name = (m: (typeof list)[number]) => m.other ? t("usage.otherModels") : m.model ?? t("usage.unknownModel");
   let x = 0;
   return (
     <div className="cost-models">
-      <div className="cap">{t("cost.models")}</div>
-      {list.length === 0 ? <div className="meta">{t("cost.noData")}</div> : (
+      <div className="cap">{t("usage.models")}</div>
+      {list.length === 0 ? <div className="meta">{t("usage.noData")}</div> : (
         <>
           <svg viewBox="0 0 100 10" preserveAspectRatio="none" width="100%" height="14" role="img"
             aria-label={list.map((m) => `${name(m)} ${Math.round(m.share * 100)}%`).join(", ")}>
             {list.map((m, i) => {
               const w = m.share * 100;
               const el = <rect key={`${m.model}-${i}`} data-model={m.model ?? ""} x={x} y={0} width={w} height={10}
-                style={{ fill: color(i, m.other) }}><title>{`${name(m)}: ${fmtCost(m.cost)}`}</title></rect>;
+                style={{ fill: color(i, m.other) }}>
+                <title>{`${name(m)}: ${tokensWithEst(m.tokens, m.cost)}`}</title></rect>;
               x += w;
               return el;
             })}
           </svg>
           <ul className="legend">
             {list.map((m, i) => (
-              <li key={`${m.model}-${i}`}>
+              <li key={`${m.model}-${i}`} title={tokensWithEst(m.tokens, m.cost)}>
                 <i style={{ background: color(i, m.other) }} />
                 <span className="lbl" title={name(m)}>{name(m)}</span>
                 <b>{Math.round(m.share * 100)}%</b>
@@ -139,7 +149,7 @@ function ModelSplit({ list }: { list: ReturnType<typeof modelSplit> }) {
   );
 }
 
-/** "Maliyet" section of the Geçmiş page: daily bars, top projects, model split, totals. */
+/** "Kullanım" section of the Geçmiş page: daily token bars, top projects, model split, totals. */
 export default function CostCharts({ view, now }: { view: HistoryView; now: number }) {
   const t = useT();
   const range = rangeStore.use();
@@ -147,24 +157,30 @@ export default function CostCharts({ view, now }: { view: HistoryView; now: numb
   const days = new Set(dates);
   // Live sessions count in all three charts (the today bar's total has them too).
   const rows = withLive(view.rows, view.live);
-  const buckets = dailyCosts(rows, dates, now, view.todayCost);
-  const { total, avg } = totals(buckets);
+  const buckets = dailyUsage(rows, dates, now, { tokens: view.todayTokens, cost: view.todayCost });
+  const { tokens, cost, avgTokens, avgCost } = totals(buckets);
   const computing = view.indexing || !view.todayComplete;
+  const estTotal = fmtEstCost(cost);
+  const estAvg = fmtEstCost(avgCost);
   return (
-    <section className="costs" aria-label={t("cost.title")}>
+    <section className="costs" aria-label={t("usage.title")}>
       <div className="hd">
-        <h3>{t("cost.title")} <span className="est">{t("cost.estimated")} · {t("cost.inclLive")}</span></h3>
-        <div className="seg" role="group" aria-label={t("cost.range")}>
+        <h3>{t("usage.title")} <span className="est">{t("usage.estimated")} · {t("usage.inclLive")}</span></h3>
+        <div className="seg" role="group" aria-label={t("usage.range")}>
           {RANGES.map((r) => (
             <button key={r} type="button" className={r === range ? "on" : undefined} aria-pressed={r === range}
-              onClick={() => rangeStore.set(r)}>{t("cost.days", { n: r })}</button>
+              onClick={() => rangeStore.set(r)}>{t("usage.days", { n: r })}</button>
           ))}
         </div>
       </div>
-      {computing && <div className="meta" role="status">{t("cost.computing")}</div>}
+      {computing && <div className="meta" role="status">{t("usage.computing")}</div>}
       <div className="kpis cost-kpis">
-        <div className="kpi"><b>{fmtCost(total)}</b><span>{t("cost.total")}</span></div>
-        <div className="kpi"><b>{fmtCost(avg)}</b><span>{t("cost.avg")}</span></div>
+        <div className="kpi">
+          <b>{fmtTokens(tokens)}</b>{estTotal && <em className="est">{estTotal}</em>}<span>{t("usage.total")}</span>
+        </div>
+        <div className="kpi">
+          <b>{fmtTokens(avgTokens)}</b>{estAvg && <em className="est">{estAvg}</em>}<span>{t("usage.avg")}</span>
+        </div>
       </div>
       <div className="cost-grid">
         <DailyChart buckets={buckets} />

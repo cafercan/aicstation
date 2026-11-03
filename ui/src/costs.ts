@@ -1,8 +1,9 @@
 /**
- * Pure cost aggregation for the Geçmiş "Maliyet" charts. Input is the history
- * rows' `costByDay` (local dates, YYYY-MM-DD, from the indexer) plus the
- * backend's today total, which also covers live sessions. Every figure is an
- * estimate (list prices over recorded token usage).
+ * Pure usage aggregation for the Geçmiş "Kullanım" charts. Input is the history
+ * rows' `tokensByDay` / `costByDay` (local dates, YYYY-MM-DD, from the indexer)
+ * plus the backend's today totals, which also cover live sessions. Tokens are
+ * exact (read from the transcripts); the dollar figures are estimates (built-in
+ * list prices over the recorded token usage) and are secondary everywhere.
  */
 import type { HistoryRow, LiveCost } from "./api";
 import { folderName } from "./format";
@@ -16,6 +17,9 @@ export const CHART_TOKENS = {
   series: ["accent", "ctxB", "yellow", "busy", "danger", "muted"],
 } as const satisfies { bar: Token; today: Token; series: readonly Token[] };
 
+const sumValues = (o: Record<string, number>) =>
+  Object.values(o).reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
+
 /**
  * History rows plus the live sessions as rows of their own, so every chart
  * (daily bars, top projects, model split) counts live sessions on every day
@@ -24,14 +28,19 @@ export const CHART_TOKENS = {
 export function withLive(rows: HistoryRow[], live: LiveCost[] | undefined): HistoryRow[] {
   if (!live?.length) return rows;
   const known = new Set(rows.map((r) => r.sessionId));
-  const extra = live.filter((l) => !known.has(l.sessionId)).map((l): HistoryRow => ({
-    sessionId: l.sessionId, modifiedMs: 0, size: 0, name: l.sessionId, cwd: l.cwd,
-    summary: {
-      name: l.sessionId, cwd: l.cwd, model: l.model, firstAtMs: 0, lastAtMs: 0, agentsTotal: 0,
-      costUsd: Object.values(l.costByDay).reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0),
-      costByDay: l.costByDay,
-    },
-  }));
+  const extra = live.filter((l) => !known.has(l.sessionId)).map((l): HistoryRow => {
+    const tokensByDay = l.tokensByDay ?? {};
+    return {
+      sessionId: l.sessionId, modifiedMs: 0, size: 0, name: l.sessionId, cwd: l.cwd,
+      summary: {
+        name: l.sessionId, cwd: l.cwd, model: l.model, firstAtMs: 0, lastAtMs: 0, agentsTotal: 0,
+        costUsd: sumValues(l.costByDay),
+        costByDay: l.costByDay,
+        tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 },
+        tokensByDay,
+      },
+    };
+  });
   return [...rows, ...extra];
 }
 
@@ -57,84 +66,110 @@ export function rangeDays(nowMs: number, days: number): string[] {
   return out;
 }
 
-export interface DayBucket { date: string; cost: number; today: boolean }
+export interface DayBucket { date: string; tokens: number; cost: number; today: boolean }
+
+/** Today's totals from the backend (closed + live sessions); either may be missing. */
+export interface TodayTotals { tokens?: number | null; cost?: number | null }
+
+const finite = (n: number | null | undefined): n is number => n != null && Number.isFinite(n);
 
 /**
- * Cost per day of `dates`. Today's bucket is `todayCost` when given (closed +
- * live sessions, from the backend), else the indexed rows' today slice.
+ * Tokens and estimated cost per day of `dates`. Today's bucket takes the
+ * backend totals when given (closed + live sessions), else the indexed rows'
+ * today slice.
  */
-export function dailyCosts(rows: HistoryRow[], dates: string[], nowMs: number, todayCost?: number | null): DayBucket[] {
+export function dailyUsage(rows: HistoryRow[], dates: string[], nowMs: number, todayTotals?: TodayTotals): DayBucket[] {
   const today = localDateKey(nowMs);
-  const by = new Map(dates.map((d) => [d, 0]));
+  const cost = new Map(dates.map((d) => [d, 0]));
+  const tokens = new Map(dates.map((d) => [d, 0]));
   for (const r of rows) {
     for (const [d, c] of Object.entries(r.summary?.costByDay ?? {})) {
-      const cur = by.get(d);
-      if (cur !== undefined && Number.isFinite(c)) by.set(d, cur + c);
+      const cur = cost.get(d);
+      if (cur !== undefined && Number.isFinite(c)) cost.set(d, cur + c);
+    }
+    for (const [d, k] of Object.entries(r.summary?.tokensByDay ?? {})) {
+      const cur = tokens.get(d);
+      if (cur !== undefined && Number.isFinite(k)) tokens.set(d, cur + k);
     }
   }
-  return dates.map((date) => ({
-    date,
-    cost: date === today && todayCost != null && Number.isFinite(todayCost) ? todayCost : by.get(date) ?? 0,
-    today: date === today,
-  }));
+  return dates.map((date) => {
+    const isToday = date === today;
+    return {
+      date,
+      tokens: isToday && finite(todayTotals?.tokens) ? todayTotals.tokens : tokens.get(date) ?? 0,
+      cost: isToday && finite(todayTotals?.cost) ? todayTotals.cost : cost.get(date) ?? 0,
+      today: isToday,
+    };
+  });
 }
 
-export function totals(buckets: DayBucket[]): { total: number; avg: number } {
-  const total = buckets.reduce((a, b) => a + b.cost, 0);
-  return { total, avg: buckets.length ? total / buckets.length : 0 };
+export interface RangeTotals { tokens: number; cost: number; avgTokens: number; avgCost: number }
+
+export function totals(buckets: DayBucket[]): RangeTotals {
+  const tokens = buckets.reduce((a, b) => a + b.tokens, 0);
+  const cost = buckets.reduce((a, b) => a + b.cost, 0);
+  const n = buckets.length;
+  return { tokens, cost, avgTokens: n ? tokens / n : 0, avgCost: n ? cost / n : 0 };
 }
 
-/** A row's cost on the given days. */
-function costIn(r: HistoryRow, days: Set<string>): number {
-  let c = 0;
-  for (const [d, v] of Object.entries(r.summary?.costByDay ?? {})) if (days.has(d) && Number.isFinite(v)) c += v;
-  return c;
+/** A row's tokens and estimated cost on the given days. */
+function usageIn(r: HistoryRow, days: Set<string>): { tokens: number; cost: number } {
+  let tokens = 0;
+  let cost = 0;
+  for (const [d, v] of Object.entries(r.summary?.tokensByDay ?? {})) if (days.has(d) && Number.isFinite(v)) tokens += v;
+  for (const [d, v] of Object.entries(r.summary?.costByDay ?? {})) if (days.has(d) && Number.isFinite(v)) cost += v;
+  return { tokens, cost };
 }
 
-export interface ProjectCost { cwd: string; name: string; cost: number }
+export interface ProjectUsage { cwd: string; name: string; tokens: number; cost: number }
 
-/** The `n` project folders that cost the most on `days` (rows without cost are ignored). */
-export function topProjects(rows: HistoryRow[], days: Set<string>, n = 5): ProjectCost[] {
-  const by = new Map<string, number>();
+/** The `n` project folders with the most tokens on `days` (rows without usage are ignored). */
+export function topProjects(rows: HistoryRow[], days: Set<string>, n = 5): ProjectUsage[] {
+  const by = new Map<string, { tokens: number; cost: number }>();
   for (const r of rows) {
-    const c = costIn(r, days);
-    if (c <= 0) continue;
+    const u = usageIn(r, days);
+    if (u.tokens <= 0) continue;
     const cwd = r.summary?.cwd ?? r.cwd ?? "?";
-    by.set(cwd, (by.get(cwd) ?? 0) + c);
+    const cur = by.get(cwd) ?? { tokens: 0, cost: 0 };
+    by.set(cwd, { tokens: cur.tokens + u.tokens, cost: cur.cost + u.cost });
   }
   return [...by.entries()]
-    .map(([cwd, cost]) => ({ cwd, name: folderName(cwd) || cwd, cost }))
-    .sort((a, b) => b.cost - a.cost || a.cwd.localeCompare(b.cwd))
+    .map(([cwd, u]) => ({ cwd, name: folderName(cwd) || cwd, ...u }))
+    .sort((a, b) => b.tokens - a.tokens || a.cwd.localeCompare(b.cwd))
     .slice(0, n);
 }
 
-export interface ModelCost {
+export interface ModelUsage {
   /** null = unknown model (or the "other" bucket when `other`). */
   model: string | null;
+  tokens: number;
   cost: number;
   share: number;
   other?: boolean;
 }
 
 /**
- * Share of cost per model on `days`. A session's cost is attributed to its
+ * Share of tokens per model on `days`. A session's usage is attributed to its
  * (last) model, so the split is approximate. Beyond `max` models the rest is
  * one "other" bucket.
  */
-export function modelSplit(rows: HistoryRow[], days: Set<string>, max = 5): ModelCost[] {
-  const by = new Map<string | null, number>();
+export function modelSplit(rows: HistoryRow[], days: Set<string>, max = 5): ModelUsage[] {
+  const by = new Map<string | null, { tokens: number; cost: number }>();
   for (const r of rows) {
-    const c = costIn(r, days);
-    if (c <= 0) continue;
+    const u = usageIn(r, days);
+    if (u.tokens <= 0) continue;
     const m = r.summary?.model ?? null;
-    by.set(m, (by.get(m) ?? 0) + c);
+    const cur = by.get(m) ?? { tokens: 0, cost: 0 };
+    by.set(m, { tokens: cur.tokens + u.tokens, cost: cur.cost + u.cost });
   }
-  const total = [...by.values()].reduce((a, b) => a + b, 0);
+  const total = [...by.values()].reduce((a, b) => a + b.tokens, 0);
   if (total <= 0) return [];
-  const list: ModelCost[] = [...by.entries()]
-    .map(([model, cost]) => ({ model, cost, share: cost / total }))
-    .sort((a, b) => b.cost - a.cost || String(a.model).localeCompare(String(b.model)));
+  const list: ModelUsage[] = [...by.entries()]
+    .map(([model, u]) => ({ model, ...u, share: u.tokens / total }))
+    .sort((a, b) => b.tokens - a.tokens || String(a.model).localeCompare(String(b.model)));
   if (list.length <= max) return list;
-  const rest = list.slice(max).reduce((a, b) => a + b.cost, 0);
-  return [...list.slice(0, max), { model: null, cost: rest, share: rest / total, other: true }];
+  const rest = list.slice(max);
+  const tokens = rest.reduce((a, b) => a + b.tokens, 0);
+  const cost = rest.reduce((a, b) => a + b.cost, 0);
+  return [...list.slice(0, max), { model: null, tokens, cost, share: tokens / total, other: true }];
 }

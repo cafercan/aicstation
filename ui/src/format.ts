@@ -1,14 +1,62 @@
-import { getLang, t, type Lang } from "./i18n";
+import type { Usage } from "./api";
+import { getLang, locale, t, type Lang } from "./i18n";
 import { themeTokens } from "./theme";
 
-export function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
-}
+const numFmt = new Map<string, Intl.NumberFormat>();
 
+/** Token count with fixed K / M / B suffixes in every language (950, 12.3K, 182.4M, 1.2B);
+ *  only the decimal separator follows the locale. Intl's compact notation is avoided on
+ *  purpose: Turkish "B" means thousand there, which reads as billion. */
+export function fmtTokens(n: number, lang: Lang = getLang()): string {
+  const v = Number.isFinite(n) ? Math.max(0, n) : 0;
+  const loc = locale(lang);
+  let f = numFmt.get(loc);
+  if (!f) {
+    f = new Intl.NumberFormat(loc, { maximumFractionDigits: 1 });
+    numFmt.set(loc, f);
+  }
+  const units: [number, string][] = [[1e9, "B"], [1e6, "M"], [1e3, "K"]];
+  for (let i = 0; i < units.length; i++) {
+    const [size, suffix] = units[i];
+    if (v >= size) {
+      const scaled = Math.round((v / size) * 10) / 10;
+      // 999.96K rounds to 1000K: show it as 1M instead.
+      if (scaled >= 1000 && i > 0) return f.format(1) + units[i - 1][1];
+      return f.format(scaled) + suffix;
+    }
+  }
+  // 999.6 rounds to 1000: show it as 1K.
+  if (Math.round(v) >= 1000) return f.format(1) + "K";
+  return f.format(Math.round(v));
+}
 export function fmtCost(usd: number): string {
   return `$${usd.toFixed(2)}`;
+}
+
+/**
+ * Secondary dollar figure "~$456 est." (translated), or null when there is no
+ * estimate: an unknown model has no price, so a zero cost is left out rather
+ * than shown as "$0".
+ */
+export function fmtEstCost(usd: number | null | undefined, lang: Lang = getLang()): string | null {
+  if (usd == null || !Number.isFinite(usd) || !(usd > 0)) return null;
+  const cost = usd >= 100 ? `$${Math.round(usd)}` : fmtCost(usd);
+  return t("usage.est", { cost }, lang);
+}
+
+/** input + output + cache read + cache write (cacheCreation1h is part of cacheCreation). */
+export function usageSum(u: Usage | null | undefined): number {
+  if (!u) return 0;
+  return [u.input, u.output, u.cacheRead, u.cacheCreation].reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
+}
+
+/** Tooltip text with the four token kinds, exact numbers. */
+export function fmtBreakdown(u: Usage | null | undefined, lang: Lang = getLang()): string {
+  const nf = new Intl.NumberFormat(locale(lang));
+  const n = (v: number | undefined) => nf.format(Number.isFinite(v) ? v! : 0);
+  return t("usage.breakdown", {
+    input: n(u?.input), output: n(u?.output), cacheRead: n(u?.cacheRead), cacheWrite: n(u?.cacheCreation),
+  }, lang);
 }
 
 export function fmtElapsed(ms: number, lang: Lang = getLang()): string {

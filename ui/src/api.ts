@@ -29,6 +29,8 @@ export interface SessionCard {
   model: string | null;
   contextPct: number | null;
   costUsd: number;
+  /** Main session plus its agents: exact (cost is an estimate). */
+  tokens: Usage;
   agentsTotal: number;
   agentsFinished: number;
   /** Ok / Error results among the main session's last <= 50 tool calls (running ones excluded). */
@@ -59,6 +61,9 @@ export interface HistorySummary {
   agentsTotal: number;
   costUsd: number;
   costByDay: Record<string, number>;
+  /** Exact token totals of the session and its agents. */
+  tokens: Usage;
+  tokensByDay: Record<string, number>;
 }
 
 export interface HistoryRow {
@@ -70,17 +75,21 @@ export interface HistoryRow {
   summary: HistorySummary | null;
 }
 
-/** A live session's cost per local day (live sessions are not in `rows`). */
+/** A live session's cost and tokens per local day (live sessions are not in `rows`). */
 export interface LiveCost {
   sessionId: string;
   cwd: string;
   model: string | null;
   costByDay: Record<string, number>;
+  /** Absent in old fixtures. */
+  tokensByDay?: Record<string, number>;
 }
 
 export interface HistoryView {
   rows: HistoryRow[];
   todayCost: number;
+  /** Today's tokens (closed + live sessions), like `todayCost`. */
+  todayTokens: number;
   todayComplete: boolean;
   indexing: boolean;
   /** Live sessions' cost per day, for the cost charts (absent in old fixtures). */

@@ -6,7 +6,7 @@ const invoke = vi.hoisted(() => vi.fn(async (cmd: string): Promise<unknown> => {
     return {
       sessions: [{
         sessionId: "s-1", pid: 5, parentPid: null, name: "kalibrasyon", cwd: "C:\\p\\adc", status: "busy",
-        waitingFor: null, model: null, contextPct: null, costUsd: 0, agentsTotal: 0, agentsFinished: 0, toolOk: 0,
+        waitingFor: null, model: null, contextPct: null, costUsd: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 }, agentsTotal: 0, agentsFinished: 0, toolOk: 0,
         toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 0, gitBranch: null, hostKind: "other",
       }],
       runningAgents: 0, waitingCount: 0,
@@ -20,7 +20,7 @@ const invoke = vi.hoisted(() => vi.fn(async (cmd: string): Promise<unknown> => {
     };
   }
   if (cmd === "set_focus_context") return null;
-  return { rows: [], todayCost: 0, todayComplete: true, indexing: false };
+  return { rows: [], todayCost: 0, todayTokens: 0, todayComplete: true, indexing: false };
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke, Channel: class {} }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
@@ -235,7 +235,7 @@ test("komut paleti Ayarlar'ı da açar", async () => {
 
 test("kısayol katmanı Ayarlar panelinin girişlerine dokunmaz", async () => {
   await boot();
-  fireEvent.click(screen.getByRole("button", { name: /Ayarlar/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^⚙ Ayarlar/ }));
   const box = (await screen.findAllByRole("checkbox"))[0] as HTMLInputElement;
   box.focus();
   const inner = vi.fn();

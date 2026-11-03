@@ -1,16 +1,41 @@
 import { expect, test } from "vitest";
 import {
-  clampPct, donutSegments, fmtContext, fmtCost, fmtTokens, fmtElapsed, folderName, statusColor, statusKind,
+  clampPct, donutSegments, fmtBreakdown, fmtContext, fmtCost, fmtEstCost, fmtTokens, usageSum, fmtElapsed, folderName, statusColor, statusKind,
   statusLabel, statusTextColor, toolSuccess,
 } from "./format";
 import { setLang } from "./i18n";
 import { applyTheme } from "./theme";
 
-test("format: sayılar ve maliyet", () => {
-  expect(fmtTokens(1234)).toBe("1.2k");
-  expect(fmtTokens(1_500_000)).toBe("1.50M");
-  expect(fmtTokens(12)).toBe("12");
+test("format: token sayısı kompakt ve yerel ayara göre (en çok bir ondalık)", () => {
+  expect(fmtTokens(950, "en")).toBe("950");
+  expect(fmtTokens(0, "en")).toBe("0");
+  expect(fmtTokens(12_345, "en")).toBe("12.3K");
+  expect(fmtTokens(182_400_000, "en")).toBe("182.4M");
+  expect(fmtTokens(1_234_567_890, "en")).toBe("1.2B");
+  expect(fmtTokens(1_000, "en")).toBe("1K");
+  expect(fmtTokens(1234, "tr")).toBe("1,2K");
+  expect(fmtTokens(182_400_000, "de")).toBe("182,4M");
+  expect(fmtTokens(NaN, "en")).toBe("0");
+});
+
+test("format: maliyet ve ikincil ~$ tahmini (fiyatsız modelde yok)", () => {
   expect(fmtCost(3.4216)).toBe("$3.42");
+  expect(fmtEstCost(3.4216, "en")).toBe("~$3.42 est.");
+  expect(fmtEstCost(456.4, "en")).toBe("~$456 est.");
+  expect(fmtEstCost(3.4216, "tr")).toBe("~$3.42 tah.");
+  expect(fmtEstCost(0, "en")).toBeNull();
+  expect(fmtEstCost(NaN, "en")).toBeNull();
+  expect(fmtEstCost(null, "en")).toBeNull();
+  expect(fmtEstCost(undefined, "en")).toBeNull();
+});
+
+test("format: dört token türünün toplamı ve ipucu dökümü", () => {
+  const u = { input: 1000, output: 200, cacheRead: 30000, cacheCreation: 4000, cacheCreation1h: 1000 };
+  // cacheCreation1h is part of cacheCreation: never added twice.
+  expect(usageSum(u)).toBe(35_200);
+  expect(usageSum(null)).toBe(0);
+  expect(fmtBreakdown(u, "en")).toBe("input 1,000 · output 200 · cache read 30,000 · cache write 4,000");
+  expect(fmtBreakdown(undefined, "en")).toBe("input 0 · output 0 · cache read 0 · cache write 0");
 });
 
 test("format: geçen süre", () => {

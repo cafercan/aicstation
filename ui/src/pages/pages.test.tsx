@@ -39,7 +39,7 @@ function detail(over: Partial<SessionDetail> = {}): SessionDetail {
   return {
     card: {
       sessionId: "s1", pid: 1, parentPid: 77, name: "demo", cwd: "C:/x/demo", status: "busy",
-      waitingFor: null, model: "Opus 5.5", contextPct: 62, costUsd: 1.2, agentsTotal: 1,
+      waitingFor: null, model: "Opus 5.5", contextPct: 62, costUsd: 1.2, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 }, agentsTotal: 1,
       agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 0, gitBranch: "main",
       hostKind: "other",
     },
@@ -277,20 +277,39 @@ const row = (id: string, cwd: string, withSummary: boolean): HistoryRow => ({
   summary: withSummary ? {
     name: `ad-${id}`, cwd, model: "Opus 5.5", firstAtMs: 0, lastAtMs: 600_000,
     agentsTotal: 2, costUsd: 1.5, costByDay: {},
+    tokens: { input: 1_000_000, output: 200_000, cacheRead: 5, cacheCreation: 6, cacheCreation1h: 0 }, tokensByDay: {},
   } : null,
 });
 
 test('Geçmiş: summary null satırda model/maliyet/ajan "?"', async () => {
-  invoke.mockResolvedValue({ rows: [row("a", "C:/a", false)], todayCost: 0, todayComplete: false, indexing: false });
+  invoke.mockResolvedValue({ rows: [row("a", "C:/a", false)], todayCost: 0, todayTokens: 0, todayComplete: false, indexing: false });
   render(<History onOpen={() => {}} />);
   const tr = (await screen.findByText("ad-a")).closest("tr")!;
   expect(within(tr).getAllByText("?").length).toBeGreaterThanOrEqual(4);
   expect(within(tr).queryByText("$1.50")).toBeNull();
+  expect(within(tr).queryByText("~$1.50 tah.")).toBeNull();
+});
+
+test("Geçmiş: tablo token sütunu birincil (ipucunda dört tür), ~$ altında soluk; fiyatsızda $ yok", async () => {
+  const unpriced = row("u", "C:/u", true);
+  unpriced.summary!.costUsd = 0;
+  invoke.mockResolvedValue({
+    rows: [row("a", "C:/a", true), unpriced], todayCost: 0, todayTokens: 0, todayComplete: true, indexing: false,
+  });
+  render(<History onOpen={() => {}} />);
+  const tr = (await screen.findByText("ad-a")).closest("tr")!;
+  expect([...document.querySelectorAll("th")].some((th) => th.textContent === "Token")).toBe(true);
+  const cell = within(tr).getByText(/^1,2M$/).closest("td")!;
+  expect(cell.querySelector("[title]")!.getAttribute("title"))
+    .toBe("girdi 1.000.000 · çıktı 200.000 · önbellek okuma 5 · önbellek yazma 6");
+  expect(cell.querySelector(".est")!.textContent).toBe("~$1.50 tah.");
+  const tu = screen.getByText("ad-u").closest("tr")!;
+  expect(within(tu).getByText(/^1,2M$/).closest("td")!.querySelector(".est")).toBeNull();
 });
 
 test("Geçmiş: klasör filtresi satırları süzer", async () => {
   invoke.mockResolvedValue({
-    rows: [row("a", "C:/a", true), row("b", "C:/b", true)], todayCost: 0, todayComplete: true, indexing: false,
+    rows: [row("a", "C:/a", true), row("b", "C:/b", true)], todayCost: 0, todayTokens: 0, todayComplete: true, indexing: false,
   });
   const onOpen = vi.fn();
   render(<History onOpen={onOpen} />);
@@ -305,7 +324,7 @@ test("Geçmiş: klasör filtresi satırları süzer", async () => {
 test("Geçmiş: indexing true iken 2 saniyede bir yenilenir", async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   try {
-    invoke.mockResolvedValue({ rows: [], todayCost: 0, todayComplete: false, indexing: true });
+    invoke.mockResolvedValue({ rows: [], todayCost: 0, todayTokens: 0, todayComplete: false, indexing: true });
     render(<History onOpen={() => {}} />);
     await screen.findByText("Dizinleniyor…");
     const n = invoke.mock.calls.length;
@@ -318,7 +337,7 @@ test("Geçmiş: indexing true iken 2 saniyede bir yenilenir", async () => {
 
 test("Geçmiş: ▶ Devam et satırı açmadan onResume çağırır; hata o satırda gösterilir", async () => {
   invoke.mockResolvedValue({
-    rows: [row("a", "C:/a", true), row("b", "C:/b", false)], todayCost: 0, todayComplete: true, indexing: false,
+    rows: [row("a", "C:/a", true), row("b", "C:/b", false)], todayCost: 0, todayTokens: 0, todayComplete: true, indexing: false,
   });
   const onOpen = vi.fn();
   const onResume = vi.fn().mockRejectedValueOnce("session_unknown").mockResolvedValue(undefined);
@@ -350,7 +369,7 @@ test("▶ Devam et istek sürerken devre dışı (ayrıntı ve geçmiş)", async
 
   const d2 = deferred<void>();
   invoke.mockResolvedValue({
-    rows: [row("a", "C:/a", true), row("b", "C:/b", false)], todayCost: 0, todayComplete: true, indexing: false,
+    rows: [row("a", "C:/a", true), row("b", "C:/b", false)], todayCost: 0, todayTokens: 0, todayComplete: true, indexing: false,
   });
   const onResume2 = vi.fn(() => d2.promise);
   render(<History onOpen={() => {}} onResume={onResume2} />);
@@ -381,11 +400,11 @@ test("ayrıntı sayfası İngilizce: etiketler, ağaç, çalışan çağrı, hat
 
 test("Geçmiş Azerbaycanca: başlıklar ve tarih yerel ayarla", async () => {
   setLang("az");
-  invoke.mockResolvedValue({ rows: [row("a", "C:/a", true)], todayCost: 0, todayComplete: true, indexing: false });
+  invoke.mockResolvedValue({ rows: [row("a", "C:/a", true)], todayCost: 0, todayTokens: 0, todayComplete: true, indexing: false });
   render(<History onOpen={() => {}} onResume={vi.fn()} />);
   const trA = (await screen.findByText("ad-a")).closest("tr")!;
   const heads = [...document.querySelectorAll("th")].map((th) => th.textContent).filter(Boolean);
-  expect(heads).toEqual(["Tarix", "Ad", "Qovluq", "Model", "Müddət", "Agent", "Xərc"]);
+  expect(heads).toEqual(["Tarix", "Ad", "Qovluq", "Model", "Müddət", "Agent", "Token"]);
   expect(within(trA).getByText("10 dəq")).toBeTruthy();
   expect(within(trA).getByText("▶ Davam et")).toBeTruthy();
   expect(within(trA).getByText(new Date(0).toLocaleString("az-Latn-AZ"))).toBeTruthy();
@@ -405,7 +424,7 @@ test("devam ettiren terminal açıksa: ayrıntıda uyarı ve Sekmeye git o termi
 });
 
 test("devam ettiren terminal açıksa: geçmiş satırında Sekmeye git o terminale geçer, satırı açmaz", async () => {
-  invoke.mockResolvedValue({ rows: [row("a", "C:/a", true)], todayCost: 0, todayComplete: true, indexing: false });
+  invoke.mockResolvedValue({ rows: [row("a", "C:/a", true)], todayCost: 0, todayTokens: 0, todayComplete: true, indexing: false });
   const onOpen = vi.fn();
   const onTerminal = vi.fn();
   const onResume = vi.fn().mockRejectedValueOnce("session_resume_terminal_open:9");
@@ -418,4 +437,23 @@ test("devam ettiren terminal açıksa: geçmiş satırında Sekmeye git o termin
   fireEvent.click(within(alert).getByRole("button", { name: "Sekmeye git" }));
   expect(onTerminal).toHaveBeenCalledWith(9);
   expect(onOpen).not.toHaveBeenCalled();
+});
+
+test("ayrıntı: token sayısı başlık KPI'ı (ipucunda dört tür), ~$ ikincil; bilinmeyen modelde $ yok", async () => {
+  const base = detail();
+  const tokens = { input: 12_000_000, output: 300_000, cacheRead: 160_000_000, cacheCreation: 10_100_000, cacheCreation1h: 0 };
+  invoke.mockResolvedValue(detail({ card: { ...base.card, tokens, costUsd: 456.4 } }));
+  const { unmount } = render(<SessionDetailPage sessionId="s1" onBack={() => {}} />);
+  const kpi = (await screen.findByText("token")).closest(".kpi")!;
+  expect(kpi.querySelector("b")!.textContent).toBe("182,4M");
+  expect(kpi.querySelector("b")!.getAttribute("title"))
+    .toBe("girdi 12.000.000 · çıktı 300.000 · önbellek okuma 160.000.000 · önbellek yazma 10.100.000");
+  expect(kpi.querySelector(".est")!.textContent).toBe("~$456 tah.");
+  // The cost is no longer a tile of its own.
+  expect(screen.queryByText("maliyet")).toBeNull();
+  unmount();
+  invoke.mockResolvedValue(detail({ card: { ...base.card, tokens, costUsd: 0 } }));
+  render(<SessionDetailPage sessionId="s1" onBack={() => {}} />);
+  const kpi2 = (await screen.findByText("token")).closest(".kpi")!;
+  expect(kpi2.querySelector(".est")).toBeNull();
 });

@@ -15,7 +15,7 @@ import { resetUiState } from "../testing/reset";
 
 const card = (id: string, over: Partial<SessionCard>): SessionCard => ({
   sessionId: id, pid: 1, parentPid: null, name: id, cwd: `C:\\p\\${id}`, status: "busy", waitingFor: null,
-  model: "Opus 5.5", contextPct: null, costUsd: 0, agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0,
+  model: "Opus 5.5", contextPct: null, costUsd: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 }, agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0,
   lastTool: null, startedAtMs: 0, lastActivityMs: 0, gitBranch: null, hostKind: "other", ...over,
 });
 const snap = (cards: SessionCard[]): Snapshot => ({ sessions: cards, runningAgents: 0, waitingCount: 0 });
@@ -24,11 +24,13 @@ const today = new Date();
 const key = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const daysAgo = (n: number) => new Date(today.getFullYear(), today.getMonth(), today.getDate() - n, 12);
 
+const ZERO = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 };
 const row = (id: string, cost: number, cwd: string, model: string, ago: number): HistoryRow => ({
   sessionId: id, modifiedMs: daysAgo(ago).getTime(), size: 1, name: id, cwd: null,
   summary: {
     name: `ad-${id}`, cwd, model, firstAtMs: 0, lastAtMs: 60_000, agentsTotal: 0, costUsd: cost,
     costByDay: { [key(daysAgo(ago))]: cost },
+    tokens: { ...ZERO, input: cost * 1_000_000 }, tokensByDay: { [key(daysAgo(ago))]: cost * 1_000_000 },
   },
 });
 const hview = (over: Partial<HistoryView> = {}): HistoryView => ({
@@ -37,7 +39,7 @@ const hview = (over: Partial<HistoryView> = {}): HistoryView => ({
     row("b", 1, "C:\\p\\beta", "claude-sonnet-5-5", 10),
     row("c", 7, "C:\\p\\gama", "claude-opus-5-5", 40),
   ],
-  todayCost: 0.5, todayComplete: true, indexing: false, ...over,
+  todayCost: 0.5, todayTokens: 500_000, todayComplete: true, indexing: false, ...over,
 });
 
 function mockBackend(view: HistoryView, search?: (q: string, gen: number) => Promise<SearchOutcome>) {
@@ -94,13 +96,13 @@ test("Ctrl+Shift+F hedefi: sayfanın arama kutusuna odaklanır", () => {
   expect(document.activeElement).toBe(screen.getByLabelText("Ara: ad, klasör, model"));
 });
 
-test("Geçmiş: metin süzgeci ve maliyete göre sıralama", async () => {
+test("Geçmiş: metin süzgeci ve token sayısına göre sıralama", async () => {
   mockBackend(hview());
   render(<History onOpen={() => {}} />);
   await screen.findByText("ad-a");
   const names = () => [...document.querySelectorAll("table.hist tbody tr")].map((tr) => tr.children[1].textContent);
   expect(names()).toEqual(["ad-a", "ad-b", "ad-c"]);
-  fireEvent.change(screen.getByLabelText("Sırala"), { target: { value: "cost" } });
+  fireEvent.change(screen.getByLabelText("Sırala"), { target: { value: "tokens" } });
   expect(names()).toEqual(["ad-c", "ad-a", "ad-b"]);
   fireEvent.change(screen.getByLabelText("Ara: ad, klasör, model"), { target: { value: "ISTANBUL" } });
   expect(names()).toEqual(["ad-a"]);
@@ -212,19 +214,20 @@ test("Geçmiş sayfası açıkken maliyet verisi 30 sn'de bir yenilenir", async 
   }
 });
 
-test("Maliyet: canlı oturumlar projeler ve model dağılımına da girer", async () => {
-  const live = [{ sessionId: "L", cwd: "C:\\p\\canli", model: "claude-haiku-5", costByDay: { [key(today)]: 9 } }];
-  mockBackend(hview({ live, todayCost: 9 }));
+test("Kullanım: canlı oturumlar projeler ve model dağılımına da girer", async () => {
+  const live = [{ sessionId: "L", cwd: "C:\\p\\canli", model: "claude-haiku-5", costByDay: { [key(today)]: 9 }, tokensByDay: { [key(today)]: 9_000_000 } }];
+  mockBackend(hview({ live, todayCost: 9, todayTokens: 9_000_000 }));
   render(<History onOpen={() => {}} />);
   await screen.findByText("ad-a");
   expect([...document.querySelectorAll(".cost-top .lbl")].map((e) => e.textContent)).toEqual(["canli", "İstanbul", "beta"]);
   expect(document.querySelector(".cost-models .legend li")!.textContent).toBe("claude-haiku-569%");
-  // a (3) + b (1) + today's total (9, the live session).
-  expect(screen.getByText("$13.00")).toBeTruthy();
+  // a (3M) + b (1M) + today's total (9M, the live session); dollars are secondary.
+  expect(screen.getByText(/^13M$/)).toBeTruthy();
+  expect(screen.getByText("~$13.00 tah.")).toBeTruthy();
   expect(screen.getByText(/canlı oturumlar dahil/)).toBeTruthy();
 });
 
-test("Maliyet: 30 gün varsayılan, bugün vurgulu; 7/90 aralığı; tahmini toplam ve ortalama", async () => {
+test("Kullanım: 30 gün varsayılan, bugün vurgulu; 7/90 aralığı; tahmini toplam ve ortalama", async () => {
   mockBackend(hview());
   render(<History onOpen={() => {}} />);
   await screen.findByText("ad-a");
@@ -233,18 +236,20 @@ test("Maliyet: 30 gün varsayılan, bugün vurgulu; 7/90 aralığı; tahmini top
   const todayBar = document.querySelector(`.cost-daily rect[data-date="${key(today)}"]`)!;
   expect(todayBar.getAttribute("data-today")).toBe("true");
   expect((todayBar as SVGElement).style.fill).toBe("var(--yellow)");
-  // 30 days: a (3) + b (1) + today's live slice (0.5); c is 40 days old.
-  expect(screen.getByText("$4.50")).toBeTruthy();
-  expect(screen.getByText("aralık toplamı (tahmini)")).toBeTruthy();
+  // 30 days: a (3M) + b (1M) + today's live slice (0.5M); c is 40 days old.
+  expect(screen.getByText(/^4,5M$/)).toBeTruthy();
+  expect(screen.getByText("~$4.50 tah.")).toBeTruthy();
+  expect(screen.getByText("aralık toplamı")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "90 gün" }));
   expect(bars()).toHaveLength(90);
-  expect(screen.getByText("$11.50")).toBeTruthy();
+  expect(screen.getByText(/^11,5M$/)).toBeTruthy();
+  expect(screen.getByText("~$11.50 tah.")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "7 gün" }));
   expect(bars()).toHaveLength(7);
   expect(screen.getByRole("button", { name: "7 gün" }).getAttribute("aria-pressed")).toBe("true");
 });
 
-test("Maliyet: en pahalı projeler tam yol ipucuyla; model dağılımı; boş aralıkta not", async () => {
+test("Kullanım: en pahalı projeler tam yol ipucuyla; model dağılımı; boş aralıkta not", async () => {
   mockBackend(hview());
   render(<History onOpen={() => {}} />);
   await screen.findByText("ad-a");
@@ -258,29 +263,31 @@ test("Maliyet: en pahalı projeler tam yol ipucuyla; model dağılımı; boş ar
   expect([...document.querySelectorAll(".cost-top .lbl")].map((e) => e.textContent)).toEqual(["İstanbul"]);
 });
 
-test("Maliyet: veri yoksa sıfır çubuklar ve 'maliyet yok' notları", async () => {
-  mockBackend(hview({ rows: [], todayCost: 0 }));
+test("Kullanım: veri yoksa sıfır çubuklar ve 'kullanım yok' notları", async () => {
+  mockBackend(hview({ rows: [], todayCost: 0, todayTokens: 0 }));
   render(<History onOpen={() => {}} />);
   await screen.findByText("Kayıt yok.");
   expect(document.querySelectorAll(".cost-daily rect[data-date]")).toHaveLength(30);
-  expect(screen.getAllByText("Bu aralıkta maliyet yok.")).toHaveLength(2);
-  expect(screen.getAllByText("$0.00").length).toBeGreaterThanOrEqual(2);
+  expect(screen.getAllByText("Bu aralıkta kullanım yok.")).toHaveLength(2);
+  // Zero tokens, and no dollar part at all (not "$0").
+  expect(screen.getAllByText("0").length).toBeGreaterThanOrEqual(2);
+  expect(document.querySelector(".costs .kpi .est")).toBeNull();
 });
 
-test("Maliyet: klavye odağında ipucu tarih ve $ gösterir, oklarla gezilir", async () => {
+test("Kullanım: klavye odağında ipucu tarih, token ve ~$ gösterir, oklarla gezilir", async () => {
   mockBackend(hview());
   render(<History onOpen={() => {}} />);
   await screen.findByText("ad-a");
   const svg = document.querySelector(".cost-daily svg")!;
   fireEvent.focus(svg);
-  expect(document.querySelector(".cost-tip")!.textContent).toMatch(/\(bugün\): \$0\.50$/);
+  expect(document.querySelector(".cost-tip")!.textContent).toMatch(/\(bugün\): 500K · ~\$0\.50 tah\.$/);
   fireEvent.keyDown(svg, { key: "ArrowLeft" });
-  expect(document.querySelector(".cost-tip")!.textContent).toMatch(/: \$3\.00$/);
+  expect(document.querySelector(".cost-tip")!.textContent).toMatch(/: 3M · ~\$3\.00 tah\.$/);
   fireEvent.blur(svg);
   expect(document.querySelector(".cost-tip")).toBeNull();
 });
 
-test("Maliyet: dizinleme sürerken 'hesaplanıyor' notu", async () => {
+test("Kullanım: dizinleme sürerken 'hesaplanıyor' notu", async () => {
   mockBackend(hview({ indexing: true, todayComplete: false }));
   render(<History onOpen={() => {}} />);
   expect(await screen.findByText("Geçmiş dizinleniyor; grafikler hesaplanıyor…")).toBeTruthy();
@@ -292,5 +299,5 @@ test("Maliyet İngilizce: aralık düğmeleri çoğul", async () => {
   render(<History onOpen={() => {}} />);
   await screen.findByText("ad-a");
   expect(screen.getByRole("button", { name: "30 days" })).toBeTruthy();
-  expect(screen.getByText("COST BY MODEL")).toBeTruthy();
+  expect(screen.getByText("TOKENS BY MODEL")).toBeTruthy();
 });
