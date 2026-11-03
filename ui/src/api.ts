@@ -167,6 +167,8 @@ export type ButaglyphPreset = { name: string; description: string };
 export type ButaglyphInfo = { installed: boolean; version: string | null; presets: ButaglyphPreset[] };
 /** Whether butaglyph is installed, its version and presets. */
 export const butaglyphInfo = () => invoke<ButaglyphInfo>("butaglyph_info");
+/** Two sample prompts (ANSI) drawn by buta with `preset` ("" = own config). */
+export const butaglyphPreview = (preset: string) => invoke<string[]>("butaglyph_preview", { preset });
 /** butaglyph's own config editor in the browser; rejects with an error code. */
 export const openButaglyphEditor = () => invoke<void>("open_butaglyph_editor");
 export const openSystemTerminal = () => invoke<void>("open_system_terminal");

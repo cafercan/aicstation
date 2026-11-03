@@ -20,6 +20,7 @@
     "allow-open-system-terminal",
     "allow-list-shells",
     "allow-butaglyph-info",
+    "allow-butaglyph-preview",
     "allow-open-butaglyph-editor",
     "allow-focus-session-tab",
     "allow-get-settings",
