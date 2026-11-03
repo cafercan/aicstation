@@ -174,6 +174,7 @@ export const en: Dict = {
   "settings.butaglyphEditor": "Edit in butaglyph's editor ↗",
   "settings.butaglyphMissing": "butaglyph is not installed: github.com/Huseynteymurzade28/butaglyph",
   "look.title": "Terminal appearance",
+  "look.preview": "Preview",
   "look.schemeDark": "Dark color schemes",
   "look.schemeLight": "Light color schemes",
   "look.text": "Text",

@@ -177,6 +177,7 @@ export const es: Dict = {
   "settings.butaglyphEditor": "Editar en el editor de butaglyph ↗",
   "settings.butaglyphMissing": "butaglyph no está instalado: github.com/Huseynteymurzade28/butaglyph",
   "look.title": "Apariencia de la terminal",
+  "look.preview": "Vista previa",
   "look.schemeDark": "Esquemas oscuros",
   "look.schemeLight": "Esquemas claros",
   "look.text": "Texto",
