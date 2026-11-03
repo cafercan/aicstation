@@ -262,6 +262,9 @@ table.hist tbody tr:hover { background: var(--hover); }
 .settings-range { display: inline-flex; align-items: center; gap: 8px; }
 .settings-range input { width: 160px; accent-color: var(--accent); }
 .settings-range output { min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; color: var(--dim); }
+.settings fieldset { min-width: 0; }
+.term-preview { max-width: 100%; position: sticky; top: 0; z-index: 2; margin: 4px 0 8px; border-radius: 6px; overflow: hidden; box-shadow: var(--shadow); }
+.term-preview .xterm { pointer-events: none; }
 .scheme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; }
 .scheme-card { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 2px solid transparent; border-radius: 6px; cursor: pointer; text-align: left; font: 12px/1.2 "Cascadia Mono", Consolas, "DejaVu Sans Mono", monospace; box-shadow: inset 0 0 0 1px rgba(127, 127, 127, .25); }
 .scheme-card.on { border-color: var(--accent); }

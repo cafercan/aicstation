@@ -44,3 +44,12 @@ test("görünüm paneli: varsayılanlara dön", () => {
   fireEvent.click(screen.getByRole("button", { name: "Varsayılanlara dön" }));
   expect(getAppearance()).toEqual(DEFAULT_APPEARANCE);
 });
+
+test("önizleme: örnek ekranda istemler, renkli çıktı ve 16 renk var", async () => {
+  const { sampleScreen } = await import("./TerminalPreview");
+  const s = sampleScreen(["P0>", "P1\n>"]);
+  expect(s.startsWith("P0>ls --color")).toBe(true);
+  expect(s).toContain("\x1b[40m");
+  expect(s).toContain("\x1b[107m");
+  expect(s.endsWith("P1\r\n>")).toBe(true);
+});

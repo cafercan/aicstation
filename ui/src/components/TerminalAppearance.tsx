@@ -3,6 +3,7 @@ import {
   CURSOR_STYLES, FONTS, FONT_WEIGHTS, resetAppearance, updateAppearance, useAppearance, validFontName,
   type Appearance, type CursorStyle, type FontChoice,
 } from "../terminal/appearance";
+import TerminalPreview from "./TerminalPreview";
 import { ANSI_KEYS, SCHEMES, SCHEME_IDS, type SchemeId } from "../terminal/schemes";
 
 const SCROLLBACK = [1000, 5000, 10000, 50000, 100000];
@@ -57,6 +58,7 @@ export default function TerminalAppearance() {
   return (
     <fieldset>
       <legend>{t("look.title")}</legend>
+      <TerminalPreview />
 
       <div className="settings-sub">{t("look.schemeDark")}</div>
       {cards(dark)}

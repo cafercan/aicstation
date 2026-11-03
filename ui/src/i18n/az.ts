@@ -174,6 +174,7 @@ export const az: Dict = {
   "settings.butaglyphEditor": "butaglyph redaktorunda düzəlt ↗",
   "settings.butaglyphMissing": "butaglyph quraşdırılmayıb: github.com/Huseynteymurzade28/butaglyph",
   "look.title": "Terminal görünüşü",
+  "look.preview": "Önizləmə",
   "look.schemeDark": "Tünd rəng sxemləri",
   "look.schemeLight": "Açıq rəng sxemləri",
   "look.text": "Mətn",

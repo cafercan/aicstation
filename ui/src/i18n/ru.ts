@@ -185,6 +185,7 @@ export const ru: Dict = {
   "settings.butaglyphEditor": "Изменить в редакторе butaglyph ↗",
   "settings.butaglyphMissing": "butaglyph не установлен: github.com/Huseynteymurzade28/butaglyph",
   "look.title": "Вид терминала",
+  "look.preview": "Предпросмотр",
   "look.schemeDark": "Тёмные схемы",
   "look.schemeLight": "Светлые схемы",
   "look.text": "Текст",

@@ -184,6 +184,7 @@ export const tr = {
   "settings.butaglyphEditor": "butaglyph düzenleyicisinde düzenle ↗",
   "settings.butaglyphMissing": "butaglyph kurulu değil: github.com/Huseynteymurzade28/butaglyph",
   "look.title": "Terminal görünümü",
+  "look.preview": "Önizleme",
   "look.schemeDark": "Koyu renk şemaları",
   "look.schemeLight": "Açık renk şemaları",
   "look.text": "Yazı",

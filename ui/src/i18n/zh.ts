@@ -174,6 +174,7 @@ export const zh: Dict = {
   "settings.butaglyphEditor": "在 butaglyph 编辑器中编辑 ↗",
   "settings.butaglyphMissing": "未安装 butaglyph：github.com/Huseynteymurzade28/butaglyph",
   "look.title": "终端外观",
+  "look.preview": "预览",
   "look.schemeDark": "深色配色",
   "look.schemeLight": "浅色配色",
   "look.text": "文字",
