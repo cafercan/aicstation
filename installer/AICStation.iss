@@ -25,6 +25,8 @@ AppSupportURL={#AppUrl}
 DefaultDirName={autopf}\{#AppFileName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
+; An upgrade from SessionStation would otherwise keep the old "SessionStation" Start menu folder.
+UsePreviousGroup=no
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
