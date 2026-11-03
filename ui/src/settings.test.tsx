@@ -27,6 +27,7 @@ const invoke = vi.hoisted(() => vi.fn(async (cmd: string, args?: Record<string, 
     h.stored = { ...(args!.settings as Settings), trayNoticeShown: h.stored.trayNoticeShown };
     return h.stored;
   }
+  if (cmd === "list_shells") return ["auto", "bash", "fish"];
   if (cmd === "get_session_detail") return null;
   if (cmd === "get_history") return { rows: [], todayCost: 0, todayTokens: 0, todayComplete: true, indexing: false };
   return undefined;
@@ -87,6 +88,26 @@ test("anahtar değişince tüm ayarlar dil koduyla birlikte kaydedilir", async (
   fireEvent.click(screen.getByRole("checkbox", { name: "Bildirim sesi (sistemin varsayılan sesi)" }));
   await waitFor(() => expect(calls("set_settings")).toEqual([{ settings: { ...DEFAULTS, notifySound: true } }]));
   expect((screen.getByRole("checkbox", { name: "Bildirim sesi (sistemin varsayılan sesi)" }) as HTMLInputElement).checked).toBe(true);
+});
+
+test("kabuk: kurulu kabuklar listelenir, seçim kaydedilir", async () => {
+  await loadSettings();
+  invoke.mockClear();
+  render(<SettingsPage />);
+  const select = screen.getByRole("combobox", { name: "Kabuk" }) as HTMLSelectElement;
+  await waitFor(() => expect(select.options.length).toBe(3));
+  expect([...select.options].map((o) => o.textContent)).toEqual(["Otomatik (Windows PowerShell)", "bash", "fish"]);
+  fireEvent.change(select, { target: { value: "fish" } });
+  await waitFor(() => expect(calls("set_settings")).toEqual([{ settings: { ...DEFAULTS, shell: "fish" } }]));
+});
+
+test("kabuk: artık kurulu olmayan kayıtlı kabuk yine listede görünür", async () => {
+  h.stored = { ...DEFAULTS, shell: "zsh" };
+  await loadSettings();
+  render(<SettingsPage />);
+  const select = screen.getByRole("combobox", { name: "Kabuk" }) as HTMLSelectElement;
+  await waitFor(() => expect(select.options.length).toBe(4));
+  expect(select.value).toBe("zsh");
 });
 
 test("kaydetme reddedilirse anahtar geri alınır ve hata gösterilir", async () => {

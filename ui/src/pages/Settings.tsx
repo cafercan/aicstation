@@ -1,6 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { listShells } from "../api";
 import { errorText, useT, type Key } from "../i18n";
-import { setToggle, useSettings, type Toggle } from "../settings";
+import { isWindows } from "../platform";
+import { setChoice, setToggle, useSettings, type Choice, type Toggle } from "../settings";
+
+/** Display names of the shell ids (settings.rs SHELLS). */
+const SHELL_NAMES: Record<string, string> = {
+  bash: "bash", zsh: "zsh", fish: "fish", pwsh: "PowerShell 7 (pwsh)", nu: "Nushell", powershell: "Windows PowerShell",
+};
 
 const NOTIFY: [Toggle, Key][] = [
   ["notifyWaiting", "settings.notifyWaiting"],
@@ -14,13 +21,29 @@ export default function SettingsPage() {
   const t = useT();
   const s = useSettings();
   const [error, setError] = useState<string | null>(null);
+  const [shells, setShells] = useState<string[]>(["auto"]);
+  useEffect(() => {
+    let live = true;
+    listShells().then((ids) => { if (live && ids.length) setShells(ids); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
   if (!s) return <div className="settings"><p className="empty">{t("settings.loading")}</p></div>;
 
+  const fail = (e: unknown) =>
+    setError(typeof e === "string" || e instanceof Error ? errorText(e) : t("err.settings_save_failed"));
   const toggle = (key: Toggle, value: boolean) => {
     setError(null);
-    setToggle(key, value).catch((e: unknown) =>
-      setError(typeof e === "string" || e instanceof Error ? errorText(e) : t("err.settings_save_failed")));
+    setToggle(key, value).catch(fail);
   };
+  const choose = (key: Choice, value: string) => {
+    setError(null);
+    setChoice(key, value).catch(fail);
+  };
+  // A stored shell that is no longer installed stays selectable (the
+  // backend falls back to the default for it).
+  const shellIds = shells.includes(s.shell) ? shells : [...shells, s.shell];
+  const shellName = (id: string) =>
+    id === "auto" ? t(isWindows() ? "settings.shellAutoWindows" : "settings.shellAuto") : SHELL_NAMES[id] ?? id;
   const row = (key: Toggle, label: Key, hint?: Key) => (
     <label key={key} className="settings-row">
       <input type="checkbox" checked={s[key]} onChange={(e) => toggle(key, e.target.checked)} />
@@ -37,6 +60,16 @@ export default function SettingsPage() {
       <fieldset>
         <legend>{t("settings.notifications")}</legend>
         {NOTIFY.map(([key, label]) => row(key, label))}
+      </fieldset>
+      <fieldset>
+        <legend>{t("settings.terminal")}</legend>
+        <label className="settings-row settings-select">
+          <span>{t("settings.shell")}</span>
+          <select value={s.shell} onChange={(e) => choose("shell", e.target.value)}>
+            {shellIds.map((id) => <option key={id} value={id}>{shellName(id)}</option>)}
+          </select>
+        </label>
+        <span className="settings-hint">{t("settings.terminalHint")}</span>
       </fieldset>
       <fieldset>
         <legend>{t("settings.window")}</legend>
