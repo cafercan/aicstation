@@ -3,11 +3,19 @@ name: release-linux
 # Builds the Linux packages on the oldest supported Ubuntu, so they run on
 # distros with an older glibc too. Run by hand: the packages are kept as a
 # workflow artifact. When a release is published: they are also attached to
-# it (its tag must be v<version> of tauri.conf.json).
+# it (its tag must be v<version> of tauri.conf.json). A pull request that
+# changes the packaging builds them too, so a broken package shows up there.
 on:
   workflow_dispatch:
   release:
     types: [published]
+  pull_request:
+    paths:
+      - scripts/build-linux.sh
+      - src-tauri/tauri.conf.json
+      - src-tauri/tauri.linux.conf.json
+      - src-tauri/Cargo.toml
+      - .github/workflows/release-linux.yml
 
 permissions:
   contents: read
