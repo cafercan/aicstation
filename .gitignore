@@ -4,6 +4,8 @@ ui/node_modules/
 target/
 dist/
 src-tauri/gen/
+# Downloaded by scripts/fetch-butaglyph.mjs.
+src-tauri/binaries/
 .worktrees/
 # Secrets and signing material never belong in the repository.
 .env*
