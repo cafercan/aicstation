@@ -225,3 +225,10 @@ test("tepsiden Çık: kapatma onayından geçip pencereyi kapatır", async () =>
   await waitFor(() => expect(h.destroy).toHaveBeenCalledTimes(1));
   expect(calls("hide_to_tray")).toEqual([]);
 });
+
+test("ayarlar sayfası dil ve tema seçicilerini gösterir; ayarlar yüklenirken de", async () => {
+  render(<SettingsPage />);
+  expect(screen.getByRole("group", { name: "Genel" })).toBeTruthy();
+  expect(screen.getByRole("combobox", { name: "Dil" })).toBeTruthy();
+  expect(screen.getByRole("group", { name: "Tema" }).querySelectorAll("button.theme-swatch")).toHaveLength(6);
+});

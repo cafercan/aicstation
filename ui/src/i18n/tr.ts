@@ -169,6 +169,7 @@ export const tr = {
   "settings.notifyFinished": "Çalışan bir oturum işini bitirince (en az 10 sn)",
   "settings.notifySubagent": "Bir alt ajan bitince",
   "settings.notifySound": "Bildirim sesi (sistemin varsayılan sesi)",
+  "settings.general": "Genel",
   "settings.window": "Pencere",
   "settings.closeToTray": "Kapatınca tepsiye küçült",
   "settings.closeToTrayHint": "Pencere kapanınca terminaller ve izleme arka planda çalışmaya devam eder; çıkmak için tepsi menüsünden Çık'ı seçin.",

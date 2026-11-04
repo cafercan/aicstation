@@ -4,6 +4,7 @@ import SessionCardView from "./components/SessionCard";
 import KpiRow from "./components/KpiRow";
 import StatusBar from "./components/StatusBar";
 import Sidebar from "./components/Sidebar";
+import GeneralPrefs from "./components/GeneralPrefs";
 import type { SessionCard } from "./api";
 import { getLang, setLang } from "./i18n";
 import { getTheme } from "./theme";
@@ -264,7 +265,7 @@ const sidebar = (over: Partial<Parameters<typeof Sidebar>[0]> = {}) => (
 );
 
 test("dil seçici: sekiz dil, seçim anında uygulanır ve kalıcıdır", () => {
-  render(sidebar());
+  render(<>{sidebar()}<GeneralPrefs /></>);
   expect(screen.getByText("Geçmiş")).toBeTruthy();
   const sel = screen.getByRole("combobox", { name: "Dil" }) as HTMLSelectElement;
   expect(sel.value).toBe("tr");
@@ -288,12 +289,12 @@ test("dil seçici: sekiz dil, seçim anında uygulanır ve kalıcıdır", () => 
 
 test("dil seçici: kayıtlı dil açılışta seçili gelir", () => {
   setLang("ru");
-  render(sidebar());
+  render(<GeneralPrefs />);
   expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("ru");
 });
 
 test("tema kalıpları: altı yuvarlak düğme, ipucu çevrilir, tıklanınca tema uygulanır", () => {
-  render(sidebar());
+  render(<GeneralPrefs />);
   const group = screen.getByRole("group", { name: "Tema" });
   const sw = group.querySelectorAll("button.theme-swatch");
   expect(sw).toHaveLength(6);
@@ -390,12 +391,12 @@ test("kenar çubuğu alt bloğu: ok düğmesiyle kapanır/açılır, aria-expand
   expect(toggle.getAttribute("aria-expanded")).toBe("true");
   expect(toggle.getAttribute("aria-controls")).toBe("side-foot-body");
   expect(document.getElementById("side-foot-body")!.hidden).toBe(false);
-  expect(screen.getByRole("combobox", { name: "Dil" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "⚙ Ayarlar" })).toBeTruthy();
+  expect(screen.queryByRole("combobox", { name: "Dil" })).toBeNull();
   expect(screen.getByText("AI C-Station")).toBeTruthy();
   fireEvent.click(toggle);
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   expect(document.getElementById("side-foot-body")!.hidden).toBe(true);
-  expect(screen.queryByRole("combobox", { name: "Dil" })).toBeNull();
   expect(screen.queryByRole("button", { name: /^⚙/ })).toBeNull();
   expect(localStorage.getItem("station.footerOpen")).toBe("0");
   // Remounting keeps it closed (the choice lives in the store and in localStorage).
@@ -403,6 +404,6 @@ test("kenar çubuğu alt bloğu: ok düğmesiyle kapanır/açılır, aria-expand
   render(sidebar());
   expect(screen.getByRole("button", { name: /Ayarlar ve hakkında/ }).getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(screen.getByRole("button", { name: /Ayarlar ve hakkında/ }));
-  expect(screen.getByRole("combobox", { name: "Dil" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "⚙ Ayarlar" })).toBeTruthy();
   expect(localStorage.getItem("station.footerOpen")).toBe("1");
 });

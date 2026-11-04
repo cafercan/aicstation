@@ -162,6 +162,7 @@ export const fr: Dict = {
   "settings.notifyFinished": "Quand une session occupée termine son travail (au moins 10 s)",
   "settings.notifySubagent": "Quand un sous-agent termine",
   "settings.notifySound": "Son de notification (par défaut du système)",
+  "settings.general": "Général",
   "settings.window": "Fenêtre",
   "settings.closeToTray": "Réduire dans la zone de notification à la fermeture",
   "settings.closeToTrayHint": "Fermer la fenêtre laisse les terminaux et la surveillance tourner en arrière-plan ; pour quitter, choisissez Quitter dans le menu de l'icône.",

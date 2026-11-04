@@ -162,6 +162,7 @@ export const de: Dict = {
   "settings.notifyFinished": "Wenn eine laufende Sitzung fertig ist (mind. 10 s)",
   "settings.notifySubagent": "Wenn ein Subagent fertig ist",
   "settings.notifySound": "Benachrichtigungston (Systemstandard)",
+  "settings.general": "Allgemein",
   "settings.window": "Fenster",
   "settings.closeToTray": "Beim Schließen in den Infobereich minimieren",
   "settings.closeToTrayHint": "Beim Schließen des Fensters laufen Terminals und Überwachung im Hintergrund weiter; zum Beenden „Beenden“ im Menü des Infobereichs wählen.",

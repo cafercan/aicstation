@@ -162,6 +162,7 @@ export const es: Dict = {
   "settings.notifyFinished": "Cuando una sesión ocupada termina su trabajo (al menos 10 s)",
   "settings.notifySubagent": "Cuando termina un subagente",
   "settings.notifySound": "Sonido de notificación (predeterminado del sistema)",
+  "settings.general": "General",
   "settings.window": "Ventana",
   "settings.closeToTray": "Minimizar a la bandeja al cerrar",
   "settings.closeToTrayHint": "Al cerrar la ventana, los terminales y la supervisión siguen en segundo plano; para salir, elige Salir en el menú de la bandeja.",

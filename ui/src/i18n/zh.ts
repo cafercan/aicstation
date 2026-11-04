@@ -159,6 +159,7 @@ export const zh: Dict = {
   "settings.notifyFinished": "忙碌的会话完成工作时（至少 10 秒）",
   "settings.notifySubagent": "子智能体完成时",
   "settings.notifySound": "通知声音（系统默认）",
+  "settings.general": "常规",
   "settings.window": "窗口",
   "settings.closeToTray": "关闭时最小化到托盘",
   "settings.closeToTrayHint": "关闭窗口后，终端和监控会在后台继续运行；要退出，请在托盘菜单中选择“退出”。",

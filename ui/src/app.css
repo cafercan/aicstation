@@ -90,11 +90,6 @@ select {
   padding: 10px 6px 2px; border-top: 1px solid var(--border);
   display: flex; flex-direction: column; gap: 8px; user-select: none;
 }
-.lang-select {
-  width: 100%; font: inherit; font-size: 11.5px; color: var(--text); background: var(--surface-b);
-  border: 1px solid var(--border-strong); border-radius: 6px; padding: 3px 6px; cursor: pointer;
-}
-.lang-select:hover { background: var(--hover); }
 .theme-switch { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
 .theme-swatch {
   width: 20px; height: 20px; border-radius: 50%; padding: 0; position: relative; cursor: pointer;
@@ -105,7 +100,7 @@ select {
 }
 .theme-swatch:hover { transform: scale(1.12); }
 .theme-swatch.on { box-shadow: 0 0 0 2px var(--surface-b), 0 0 0 4px var(--accent); }
-.theme-swatch:focus-visible, .lang-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.theme-swatch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .smark { flex: none; vertical-align: -2px; }
 
 /* KPI boxes */

@@ -159,6 +159,7 @@ export const az: Dict = {
   "settings.notifyFinished": "İşləyən sessiya işini bitirəndə (ən azı 10 san)",
   "settings.notifySubagent": "Alt agent bitəndə",
   "settings.notifySound": "Bildiriş səsi (sistemin standart səsi)",
+  "settings.general": "Ümumi",
   "settings.window": "Pəncərə",
   "settings.closeToTray": "Bağlayanda sistem tepsisinə kiçilt",
   "settings.closeToTrayHint": "Pəncərə bağlananda terminallar və izləmə arxa planda işləməyə davam edir; çıxmaq üçün tepsi menyusundan Çıxış seçin.",

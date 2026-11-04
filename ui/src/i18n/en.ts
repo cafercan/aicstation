@@ -159,6 +159,7 @@ export const en: Dict = {
   "settings.notifyFinished": "When a busy session finishes its work (at least 10 s)",
   "settings.notifySubagent": "When a subagent finishes",
   "settings.notifySound": "Notification sound (system default)",
+  "settings.general": "General",
   "settings.window": "Window",
   "settings.closeToTray": "Minimize to tray on close",
   "settings.closeToTrayHint": "Closing the window keeps terminals and monitoring running in the background; choose Quit in the tray menu to exit.",

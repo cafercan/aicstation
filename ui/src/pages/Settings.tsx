@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { butaglyphInfo, listShells, openButaglyphEditor, type ButaglyphInfo } from "../api";
 import { errorText, useT, type Key } from "../i18n";
 import { isWindows } from "../platform";
+import GeneralPrefs from "../components/GeneralPrefs";
 import TerminalAppearance from "../components/TerminalAppearance";
 import { useTheme } from "../theme";
 import { MATCH } from "../terminal/match";
@@ -33,7 +34,13 @@ export default function SettingsPage() {
     butaglyphInfo().then((i) => { if (live && i) setButa(i); }).catch(() => {});
     return () => { live = false; };
   }, []);
-  if (!s) return <div className="settings"><p className="empty">{t("settings.loading")}</p></div>;
+  if (!s) return (
+    <div className="settings">
+      <h2>{t("settings.title")}</h2>
+      <GeneralPrefs />
+      <p className="empty">{t("settings.loading")}</p>
+    </div>
+  );
 
   const fail = (e: unknown) =>
     setError(typeof e === "string" || e instanceof Error ? errorText(e) : t("err.settings_save_failed"));
@@ -70,6 +77,7 @@ export default function SettingsPage() {
   return (
     <div className="settings">
       <h2>{t("settings.title")}</h2>
+      <GeneralPrefs />
       <fieldset>
         <legend>{t("settings.notifications")}</legend>
         {NOTIFY.map(([key, label]) => row(key, label))}

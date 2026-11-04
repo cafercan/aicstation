@@ -1,8 +1,7 @@
-import { useState, type CSSProperties } from "react";
+import { useState } from "react";
 import { statusColor, statusLabel, type StatusKind } from "../format";
-import { LANGS, LANG_NAMES, errorText, setLang, useLang, useT, type Lang } from "../i18n";
+import { errorText, useT } from "../i18n";
 import { createStore, readPref, writePref } from "../prefs";
-import { THEME_IDS, THEMES, setTheme, useTheme } from "../theme";
 import { isWindows } from "../platform";
 import SessionMark from "./SessionMark";
 
@@ -55,29 +54,11 @@ function Footer({ settingsOn, onSettings }: { settingsOn: boolean; onSettings: (
   );
 }
 
-/** Language select, theme swatches and the settings gear at the bottom of the sidebar. */
+/** The settings gear at the bottom of the sidebar (language and theme are on the settings page). */
 function Prefs({ settingsOn, onSettings }: { settingsOn: boolean; onSettings: () => void }) {
   const t = useT();
-  const lang = useLang();
-  const theme = useTheme();
   return (
     <div className="prefs">
-      <select className="lang-select" aria-label={t("nav.language")} value={lang}
-        onChange={(e) => setLang(e.target.value as Lang)}>
-        {LANGS.map((l) => <option key={l} value={l} lang={l}>{LANG_NAMES[l]}</option>)}
-      </select>
-      <div className="theme-switch" role="group" aria-label={t("nav.theme")}>
-        {THEME_IDS.map((id) => {
-          const name = t(`theme.${id}`);
-          const tk = THEMES[id].tokens;
-          return (
-            <button key={id} type="button" className={id === theme ? "theme-swatch on" : "theme-swatch"}
-              aria-pressed={id === theme} aria-label={name} title={name}
-              style={{ "--sw-bg": tk.bg, "--sw-ac": tk.accent } as CSSProperties}
-              onClick={() => setTheme(id)} />
-          );
-        })}
-      </div>
       <button type="button" className={settingsOn ? "gear on" : "gear"} aria-pressed={settingsOn}
         title={t("nav.settings")} onClick={onSettings}>⚙ {t("nav.settings")}</button>
     </div>

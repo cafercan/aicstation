@@ -170,6 +170,7 @@ export const ru: Dict = {
   "settings.notifyFinished": "Когда занятая сессия завершает работу (не менее 10 с)",
   "settings.notifySubagent": "Когда завершается субагент",
   "settings.notifySound": "Звук уведомления (системный по умолчанию)",
+  "settings.general": "Общие",
   "settings.window": "Окно",
   "settings.closeToTray": "Сворачивать в область уведомлений при закрытии",
   "settings.closeToTrayHint": "При закрытии окна терминалы и мониторинг продолжают работать в фоне; для выхода выберите «Выход» в меню значка.",
