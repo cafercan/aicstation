@@ -8,7 +8,8 @@
 //
 // Usage: node scripts/fetch-butaglyph.mjs [<target triple>]
 //   default target: this machine (x86_64 Linux or Windows).
-// Needs `tar` on PATH (Windows 10+ ships one that also reads .zip).
+// Needs `tar`: on PATH on Linux; on Windows the one in System32 (Windows 10+),
+// which also reads .zip.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -56,7 +57,11 @@ async function main() {
   try {
     const archive = join(tmp, asset.file);
     writeFileSync(archive, bytes);
-    execFileSync("tar", ["-xf", archive, "-C", tmp, binaryIn(target)], { stdio: "inherit" });
+    // Windows' own tar (bsdtar) reads .zip; a GNU tar earlier in PATH (Git's) does not.
+    const tar = process.platform === "win32"
+      ? join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe")
+      : "tar";
+    execFileSync(tar, ["-xf", archive, "-C", tmp, binaryIn(target)], { stdio: "inherit" });
     const out = join(root, "src-tauri", "binaries", sidecarName(target));
     mkdirSync(dirname(out), { recursive: true });
     copyFileSync(join(tmp, binaryIn(target)), out);
