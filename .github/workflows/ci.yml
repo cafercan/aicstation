@@ -34,6 +34,7 @@ jobs:
       - run: cargo test --workspace
       - run: npm --prefix ui test
       - run: node --test scripts/gen-notices.test.mjs
+      - run: node --test scripts/fetch-butaglyph.test.mjs
       - run: node scripts/gen-notices.mjs --check
 
       - run: cargo install cargo-audit --locked --version 0.22.2

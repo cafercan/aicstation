@@ -1,14 +1,16 @@
 {
   "name": "aicstation",
   "private": true,
-  "version": "1.3.0",
+  "version": "1.4.0",
   "scripts": {
     "tauri": "tauri",
     "debug-preview": "tauri build --debug --no-bundle",
     "bundle:linux": "bash scripts/build-linux.sh",
     "installer": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-installer.ps1",
     "notices": "node scripts/gen-notices.mjs",
-    "test:notices": "node --test scripts/gen-notices.test.mjs"
+    "test:notices": "node --test scripts/gen-notices.test.mjs",
+    "fetch-butaglyph": "node scripts/fetch-butaglyph.mjs",
+    "test:fetch-butaglyph": "node --test scripts/fetch-butaglyph.test.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

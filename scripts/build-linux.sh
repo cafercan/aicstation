@@ -5,6 +5,9 @@
 #   dist/AICStation-v<version>-linux-x86_64.rpm
 #   dist/AICStation-v<version>-linux-x86_64.AppImage
 #   dist/SHA256SUMS-linux.txt
+# butaglyph (scripts/butaglyph.json) is downloaded and shipped as a Tauri
+# sidecar: /usr/bin/buta in the .deb/.rpm, next to the app in the AppImage.
+# Only these builds add it, so `tauri dev` and cargo test do not need it.
 # Packages built on a newer distro need its glibc; release builds come from
 # the oldest supported Ubuntu (see .github/workflows/release-linux.yml).
 set -euo pipefail
@@ -17,7 +20,8 @@ case "$(uname -m)" in
   *) echo "only x86_64 is packaged" >&2; exit 1 ;;
 esac
 
-npx tauri build --bundles deb,rpm,appimage
+node scripts/fetch-butaglyph.mjs x86_64-unknown-linux-gnu
+npx tauri build --bundles deb,rpm,appimage --config '{"bundle":{"externalBin":["binaries/buta"]}}'
 
 bundle="target/release/bundle"
 one() { # the single file matching a glob, or fail

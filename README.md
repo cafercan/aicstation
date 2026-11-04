@@ -110,6 +110,8 @@ closed session in its own folder.
   can follow the app theme. Unicode 11 character widths.
 - **Prompt (optional):** a [butaglyph] prompt with one of its presets. It is
   loaded after your own shell configuration, which is never edited.
+  butaglyph comes with the installer and the Linux packages; a butaglyph you
+  installed yourself is used instead.
 - Split view: two terminals side by side with a draggable divider.
 - Clipboard like Windows Terminal: Ctrl+C copies when text is selected and
   otherwise sends ^C; Ctrl+V and right-click paste; Ctrl+Shift+C/V always
@@ -229,8 +231,7 @@ These are guarantees of the code in this repository:
 - Optional: Windows Terminal, for "Open in Windows Terminal" and "Go to tab"
 
 On Linux (x64): WebKitGTK 4.1, a notification service (any desktop has one)
-and, for the tray icon, libayatana-appindicator. Optional:
-[butaglyph] for the prompt.
+and, for the tray icon, libayatana-appindicator.
 
 ## Installation
 
@@ -240,7 +241,8 @@ Download `AICStation-v*-windows-x64-setup.exe` from the
 - The install is per user and needs no administrator rights.
 - The installer is not code-signed yet, so Windows SmartScreen may warn you.
   Choose "More info", then "Run anyway".
-- `LICENSE` and `THIRD_PARTY_NOTICES.md` are installed next to the app.
+- `LICENSE`, `THIRD_PARTY_NOTICES.md` and butaglyph (`buta.exe`) are
+  installed next to the app.
 
 On Linux (x64, glibc 2.34+: Ubuntu 22.04, Debian 12, Fedora 35 or newer),
 download one of these from the same page:
@@ -252,7 +254,8 @@ download one of these from the same page:
 - `AICStation-v*-linux-x86_64.AppImage` (any distro): make it executable
   (`chmod +x`) and run it.
 
-`SHA256SUMS-linux.txt` lists their checksums.
+`SHA256SUMS-linux.txt` lists their checksums. The .deb and .rpm also install
+butaglyph as `/usr/bin/buta`, so the `buta` command works in any terminal.
 
 ## Usage tips
 
@@ -399,7 +402,7 @@ Claude ve Claude Code, Anthropic'in ticari markalarıdır.
 - **Gömülü terminal:** gerçek kabuk (Windows'ta PowerShell, Linux'ta `$SHELL`;
   ayarlardan bash, zsh, fish, pwsh...), WebGL ile çizim, 18 renk şeması,
   yazı tipi ve imleç ayarları (canlı önizlemeli), isteğe bağlı [butaglyph]
-  prompt'u, bölünmüş görünüm, kopyala/yapıştır, arama, "Windows Terminal'de
+  prompt'u (kurulumla birlikte gelir), bölünmüş görünüm, kopyala/yapıştır, arama, "Windows Terminal'de
   aç" (Linux'ta "Sistem terminalinde aç").
 - **Bildirimler ve tepsi:** onay bekleyen ve biten oturumlar için Windows
   bildirimi (pencere odaktayken ayrıntıda ya da bölünmüş görünümün iki

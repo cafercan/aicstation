@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { chooseLicenses, copyrightLines, licenseFiles, npmPackages, render, rustPackages, sourcePointer } from "./gen-notices.mjs";
+import { bundledPrograms, chooseLicenses, copyrightLines, licenseFiles, npmPackages, render, rustPackages, sourcePointer } from "./gen-notices.mjs";
 
 test("chooseLicenses picks the preferred alternative and keeps every AND operand", () => {
   assert.deepEqual(chooseLicenses("MIT OR Apache-2.0"), ["MIT"]);
@@ -114,6 +114,15 @@ test("render: summary, tables, one text per license, copyrights, MPL source poin
   assert.match(doc, /## MPL-2\.0 source code[\s\S]*gamma 1\.0\.0: https:\/\/crates\.io\/crates\/gamma\/1\.0\.0 \(source: https:\/\/github\.com\/x\/gamma\)/);
   assert.match(doc, /Full text: https:\/\/spdx\.org\/licenses\/MPL-2\.0\.html/, "no local MPL text -> pointer");
   assert.match(doc, /## NOTICE files[\s\S]*### beta 1\.0\.0[\s\S]*Beta notice text/);
+});
+
+test("bundled butaglyph gets its own table and its copyright under MIT", () => {
+  const root = join(import.meta.dirname, "..");
+  const [buta] = bundledPrograms(root);
+  assert.equal(buta.name, "butaglyph");
+  const doc = render([buta]);
+  assert.match(doc, new RegExp(`## Bundled programs \\(1\\)[\\s\\S]*\\| butaglyph \\| ${buta.version.replace(/\./g, "\\.")} \\| MIT \\| MIT \\|`));
+  assert.match(doc, /- butaglyph [^\n]* — Copyright \(c\) 2026 flear/);
 });
 
 test("sourcePointer cleans git URLs and covers npm", () => {

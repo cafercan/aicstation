@@ -1,0 +1,90 @@
+name: release-windows
+
+# Builds the Windows installer (Inno Setup, scripts/build-installer.ps1).
+# Run by hand: the installer is kept as a workflow artifact. When a release
+# is published: it is also attached to it (its tag must be v<version> of
+# tauri.conf.json). A pull request that changes the packaging builds it too,
+# so a broken installer shows up there.
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+  pull_request:
+    paths:
+      - scripts/build-installer.ps1
+      - scripts/butaglyph.json
+      - scripts/fetch-butaglyph.mjs
+      - installer/**
+      - src-tauri/tauri.conf.json
+      - src-tauri/Cargo.toml
+      - .github/workflows/release-windows.yml
+
+permissions:
+  contents: read
+
+jobs:
+  installer:
+    runs-on: windows-latest
+    permissions:
+      contents: write # only used to attach the files to a published release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Rust toolchain (rustup on the runner)
+        shell: bash
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal
+          rustup default 1.99.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: Inno Setup 6
+        shell: pwsh
+        run: |
+          $iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") | Where-Object { Test-Path $_ }
+          if (-not $iscc) { choco install innosetup --no-progress -y }
+
+      - run: npm ci
+      - run: npm --prefix ui ci
+
+      - name: Release tag matches the app version
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version="v$(node -p 'require("./src-tauri/tauri.conf.json").version')"
+          [ "$TAG" = "$version" ] || { echo "tag $TAG != $version"; exit 1; }
+
+      - run: cargo test --workspace
+      # Not `npm run installer`: that starts Windows PowerShell 5.1, which
+      # cannot load Get-FileHash with the PSModulePath of the runner's pwsh.
+      - run: pwsh -NoProfile -File scripts/build-installer.ps1
+
+      - name: The installer ships butaglyph
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "aicstation-install"
+          $setup = Get-ChildItem dist\*-setup.exe | Select-Object -First 1
+          Start-Process $setup.FullName -Wait -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/DIR=$dir"
+          & "$dir\buta.exe" --version
+          if ($LASTEXITCODE -ne 0) { throw "buta.exe missing or broken" }
+          if (-not (Test-Path "$dir\aicstation.exe")) { throw "aicstation.exe missing" }
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: AICStation-windows
+          path: dist/
+          if-no-files-found: error
+
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
