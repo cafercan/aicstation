@@ -169,6 +169,23 @@ test("sağ tık: seçimsiz panodan yapıştırır, seçimle kopyalar; menü aç�
   expect(term.pasted).toEqual(["pano"]);
 });
 
+test("sağ tuş basma/bırakma xterm'e ulaşmaz (fare izleyen TUI ikinci kez yapıştırmaz); sol tuş ulaşır", () => {
+  const term = fakeTerm();
+  const { host, detach } = wire(term);
+  const inner = document.createElement("div");
+  host.appendChild(inner);
+  const seen: string[] = [];
+  for (const type of ["mousedown", "mouseup"]) inner.addEventListener(type, (e) => seen.push(`${type}:${(e as MouseEvent).button}`));
+  for (const button of [2, 0]) {
+    inner.dispatchEvent(new MouseEvent("mousedown", { button, bubbles: true }));
+    inner.dispatchEvent(new MouseEvent("mouseup", { button, bubbles: true }));
+  }
+  expect(seen).toEqual(["mousedown:0", "mouseup:0"]);
+  detach();
+  inner.dispatchEvent(new MouseEvent("mousedown", { button: 2, bubbles: true }));
+  expect(seen).toContain("mousedown:2");
+});
+
 // --- renderer ----------------------------------------------------------------
 
 test("WebGL yüklenir; bağlam kaybında atılır (DOM render'a döner)", () => {

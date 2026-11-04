@@ -71,10 +71,20 @@ export function attachInput(
     if (rightClickAction(term.hasSelection()) === "copy") copySelection(term, clip);
     else void pasteFromClipboard(term, clip);
   };
+  // Right button belongs to copy/paste. While a TUI has mouse tracking on,
+  // xterm would also report the press to the app, which may paste on it
+  // too (one click, two pastes). Keep the press and release away from xterm.
+  const onRightButton = (ev: MouseEvent) => {
+    if (ev.button === 2) ev.stopPropagation();
+  };
   host.addEventListener("wheel", onWheel, { capture: true, passive: false });
   host.addEventListener("contextmenu", onContextMenu, true);
+  host.addEventListener("mousedown", onRightButton, true);
+  host.addEventListener("mouseup", onRightButton, true);
   return () => {
     host.removeEventListener("wheel", onWheel, true);
     host.removeEventListener("contextmenu", onContextMenu, true);
+    host.removeEventListener("mousedown", onRightButton, true);
+    host.removeEventListener("mouseup", onRightButton, true);
   };
 }
