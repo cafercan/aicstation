@@ -61,7 +61,9 @@ jobs:
           [ "$TAG" = "$version" ] || { echo "tag $TAG != $version"; exit 1; }
 
       - run: cargo test --workspace
-      - run: npm run installer
+      # Not `npm run installer`: that starts Windows PowerShell 5.1, which
+      # cannot load Get-FileHash with the PSModulePath of the runner's pwsh.
+      - run: pwsh -NoProfile -File scripts/build-installer.ps1
 
       - name: The installer ships butaglyph
         shell: pwsh
