@@ -1,0 +1,16 @@
+{
+  "version": "0.5.0",
+  "license": "MIT",
+  "copyright": "Copyright (c) 2026 flear (https://github.com/Huseynteymurzade28)",
+  "repository": "https://github.com/Huseynteymurzade28/butaglyph",
+  "assets": {
+    "x86_64-unknown-linux-gnu": {
+      "file": "buta-v0.5.0-x86_64-linux.tar.gz",
+      "sha256": "b17ae6fba57810dabf8b5341f7d03a9223d3cf4c35b0c3f22fe4b47ad53abb74"
+    },
+    "x86_64-pc-windows-msvc": {
+      "file": "buta-v0.5.0-x86_64-windows.zip",
+      "sha256": "92198b8adc516b15bf1a3dc8bbe41d9317153742818fcccf80b3de1aab824f59"
+    }
+  }
+}
