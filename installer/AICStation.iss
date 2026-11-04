@@ -54,6 +54,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "..\target\release\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+; butaglyph, the terminals' prompt; scripts/build-installer.ps1 downloads it.
+Source: "..\src-tauri\binaries\buta-x86_64-pc-windows-msvc.exe"; DestDir: "{app}"; DestName: "buta.exe"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
 

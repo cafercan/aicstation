@@ -1,6 +1,7 @@
 # Builds the release exe and the Inno Setup installer, then writes SHA256SUMS.txt.
 # Output: dist\AICStation-v<version>-windows-x64-setup.exe and dist\SHA256SUMS.txt
-# Requires Inno Setup 6 (ISCC.exe).
+# Requires Inno Setup 6 (ISCC.exe). butaglyph (scripts/butaglyph.json) is
+# downloaded and installed next to the app as buta.exe.
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
@@ -15,6 +16,9 @@ if (-not $iscc) { throw "Inno Setup 6 (ISCC.exe) not found" }
 
 npx tauri build --no-bundle
 if ($LASTEXITCODE -ne 0) { throw "tauri build failed" }
+
+node scripts/fetch-butaglyph.mjs x86_64-pc-windows-msvc
+if ($LASTEXITCODE -ne 0) { throw "fetching butaglyph failed" }
 
 if (Test-Path dist) { Remove-Item -Recurse -Force dist }
 & $iscc "/DAppVersion=$version" installer\AICStation.iss
