@@ -1,7 +1,7 @@
 {
   "name": "aicstation",
   "private": true,
-  "version": "1.4.0",
+  "version": "1.4.1",
   "scripts": {
     "tauri": "tauri",
     "debug-preview": "tauri build --debug --no-bundle",
