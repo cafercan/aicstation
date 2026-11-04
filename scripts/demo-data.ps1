@@ -9,7 +9,7 @@
   folders under C:\Demo. Everything is made up. -Stop undoes all of it.
 
   Launch the app against it:
-    $env:CLAUDE_CONFIG_DIR = "<Dir>"; & "<repo>\target\debug\aicstation.exe"
+    $env:CLAUDE_CONFIG_DIR = "<Dir>"; & "<cargo target dir>\debug\aicstation.exe"
 
 .PARAMETER Dir
   Demo config dir. Only this dir is ever wiped (and only if this script made it).
@@ -327,7 +327,10 @@ Write-Host ("  5 live sessions (PIDs {0}), $Closed closed sessions, ~`${1:N0} ma
 Write-Host ""
 Write-Host "Launch the app against it:"
 $repo = Split-Path -Parent $PSScriptRoot
-Write-Host ('  $env:CLAUDE_CONFIG_DIR="{0}"; & "{1}\target\debug\aicstation.exe"' -f $Dir, $repo)
+# cargo's target dir (a cargo config may move it out of the repo).
+$target = try { (cargo metadata --format-version 1 --no-deps --manifest-path "$repo\Cargo.toml" | ConvertFrom-Json).target_directory } catch { $null }
+if (-not $target) { $target = "$repo\target" }
+Write-Host ('  $env:CLAUDE_CONFIG_DIR="{0}"; & "{1}\debug\aicstation.exe"' -f $Dir, $target)
 Write-Host ""
 $stopCmd = '.\scripts\demo-data.ps1 -Stop'
 if ($PSBoundParameters.ContainsKey('Dir')) { $stopCmd += ' -Dir "' + $Dir + '"' }

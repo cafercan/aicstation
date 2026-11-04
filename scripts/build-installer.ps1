@@ -16,12 +16,16 @@ if (-not $iscc) { throw "Inno Setup 6 (ISCC.exe) not found" }
 
 npx tauri build --no-bundle
 if ($LASTEXITCODE -ne 0) { throw "tauri build failed" }
+# The exe is in cargo's target dir, which a cargo config may move (e.g. a
+# shared D:\cargo-target\windows); the installer takes it from there.
+$target = (cargo metadata --format-version 1 --no-deps | ConvertFrom-Json).target_directory
+if ($LASTEXITCODE -ne 0 -or -not $target) { throw "cargo metadata failed" }
 
 node scripts/fetch-butaglyph.mjs x86_64-pc-windows-msvc
 if ($LASTEXITCODE -ne 0) { throw "fetching butaglyph failed" }
 
 if (Test-Path dist) { Remove-Item -Recurse -Force dist }
-& $iscc "/DAppVersion=$version" installer\AICStation.iss
+& $iscc "/DAppVersion=$version" "/DTargetDir=$target" installer\AICStation.iss
 if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
 
 $setup = "AICStation-v$version-windows-x64-setup.exe"

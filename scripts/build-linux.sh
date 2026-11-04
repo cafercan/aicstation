@@ -23,7 +23,9 @@ esac
 node scripts/fetch-butaglyph.mjs x86_64-unknown-linux-gnu
 npx tauri build --bundles deb,rpm,appimage --config '{"bundle":{"externalBin":["binaries/buta"]}}'
 
-bundle="target/release/bundle"
+# cargo's target dir: a cargo config may move it out of the repo.
+target="$(cargo metadata --format-version 1 --no-deps | node -pe 'JSON.parse(require("fs").readFileSync(0, "utf8")).target_directory')"
+bundle="$target/release/bundle"
 one() { # the single file matching a glob, or fail
   local f=( $1 )
   [ "${#f[@]}" -eq 1 ] && [ -f "${f[0]}" ] || { echo "expected one file for $1, got: ${f[*]}" >&2; exit 1; }

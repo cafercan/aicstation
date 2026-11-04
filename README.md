@@ -318,7 +318,7 @@ for screenshots and demos. It also creates folders under `C:\Demo`.
 
 ```powershell
 .\scripts\demo-data.ps1                 # default dir: %TEMP%\aicstation-demo
-$env:CLAUDE_CONFIG_DIR="$env:TEMP\aicstation-demo"; & .\target\debug\aicstation.exe
+$env:CLAUDE_CONFIG_DIR="$env:TEMP\aicstation-demo"; & .\target\debug\aicstation.exe   # or <your cargo target-dir>\debug
 .\scripts\demo-data.ps1 -Stop           # kill the dummy processes, remove the demo dir and C:\Demo folders
 ```
 

@@ -6,6 +6,11 @@
   #error Pass /DAppVersion=x.y.z (scripts/build-installer.ps1 does this)
 #endif
 
+; cargo's target dir (build-installer.ps1 passes the real one: a cargo config may move it).
+#ifndef TargetDir
+  #define TargetDir "..\target"
+#endif
+
 #define AppName "AI C-Station"
 #define AppFileName "AICStation"
 #define AppPublisher "cafercan"
@@ -53,7 +58,7 @@ Name: "french"; MessagesFile: "compiler:Languages\French.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "..\target\release\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#TargetDir}\release\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 ; butaglyph, the terminals' prompt; scripts/build-installer.ps1 downloads it.
 Source: "..\src-tauri\binaries\buta-x86_64-pc-windows-msvc.exe"; DestDir: "{app}"; DestName: "buta.exe"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
