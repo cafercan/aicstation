@@ -80,7 +80,16 @@ fn run(buta: &Path, args: &[&str]) -> Option<String> {
 }
 
 fn run_env(buta: &Path, args: &[&str], env: &[(&str, &str)]) -> Option<String> {
-    let out = Command::new(buta)
+    let mut cmd = Command::new(buta);
+    // buta is a console program and the app is not: without this every call
+    // flashes an empty console window (several when the settings page opens).
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let out = cmd
         .args(args)
         .env_clear()
         .envs(crate::pty::child_env(std::env::vars_os(), &Default::default()))
