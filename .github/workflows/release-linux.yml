@@ -67,7 +67,7 @@ jobs:
 
       - name: The packages ship butaglyph
         run: |
-          dpkg-deb -c dist/*.deb | grep -E ' \./usr/bin/buta$'
+          dpkg-deb -c dist/*.deb | grep -E ' (\./)?usr/bin/buta$'
           rpm -qlp dist/*.rpm | grep -x /usr/bin/buta
           (cd "$RUNNER_TEMP" && "$GITHUB_WORKSPACE"/dist/*.AppImage --appimage-extract >/dev/null)
           "$RUNNER_TEMP"/squashfs-root/usr/bin/buta --version
