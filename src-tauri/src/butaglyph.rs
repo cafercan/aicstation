@@ -32,22 +32,44 @@ pub fn set_preset_dir(dir: PathBuf) {
     let _ = PRESET_DIR.set(dir);
 }
 
-/// The `buta` binary: PATH (system bins first, see `platform::find_program`),
-/// then `~/.local/bin`, where its README installs it (an app started from
-/// the desktop menu may not have that folder in PATH).
+/// The `buta` binary: a butaglyph the user installed (PATH, system bins
+/// first, see `platform::find_program`; then `~/.local/bin`, where its
+/// README installs it, which an app started from the desktop menu may not
+/// have in PATH), else the one the app's packages ship next to the app.
 #[cfg(unix)]
 pub fn find() -> Option<PathBuf> {
     use std::ffi::OsStr;
-    crate::platform::find_program(OsStr::new("buta"), std::env::var_os("PATH").as_deref()).or_else(|| {
-        let home = crate::shell::home_dir()?;
-        crate::platform::find_program(home.join(".local/bin/buta").as_os_str(), None)
-    })
+    crate::platform::find_program(OsStr::new("buta"), std::env::var_os("PATH").as_deref())
+        .or_else(|| {
+            let home = crate::shell::home_dir()?;
+            crate::platform::find_program(home.join(".local/bin/buta").as_os_str(), None)
+        })
+        .or_else(|| bundled_in(&app_dir()?))
 }
 
-/// Windows: `%USERPROFILE%\.local\bin\buta.exe`, as its README installs it.
+/// Windows: `%USERPROFILE%\.local\bin\buta.exe`, as its README installs it,
+/// else the one the installer puts next to the app.
 #[cfg(windows)]
 pub fn find() -> Option<PathBuf> {
     let p = crate::shell::home_dir()?.join(".local").join("bin").join("buta.exe");
+    p.is_file().then_some(p).or_else(|| bundled_in(&app_dir()?))
+}
+
+/// Folder of the running app's executable.
+fn app_dir() -> Option<PathBuf> {
+    std::env::current_exe().ok()?.parent().map(Path::to_path_buf)
+}
+
+/// The `buta` shipped with the app in `dir` (Linux packages: Tauri's
+/// sidecar; Windows: the installer's `buta.exe`).
+#[cfg(unix)]
+fn bundled_in(dir: &Path) -> Option<PathBuf> {
+    crate::platform::find_program(dir.join("buta").as_os_str(), None)
+}
+
+#[cfg(windows)]
+fn bundled_in(dir: &Path) -> Option<PathBuf> {
+    let p = dir.join("buta.exe");
     p.is_file().then_some(p)
 }
 
@@ -212,6 +234,22 @@ mod tests {
         assert_eq!(p.len(), 2);
         assert!(p.iter().all(|s| s.contains("\x1b[")), "{p:?}");
         assert_ne!(p[0], p[1]);
+    }
+
+    #[test]
+    fn bundled_buta_is_found_next_to_the_app() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(bundled_in(tmp.path()), None);
+        let name = if cfg!(windows) { "buta.exe" } else { "buta" };
+        let buta = tmp.path().join(name);
+        std::fs::write(&buta, "").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(bundled_in(tmp.path()), None, "not executable");
+            std::fs::set_permissions(&buta, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        assert_eq!(bundled_in(tmp.path()), Some(buta));
     }
 
     #[test]
