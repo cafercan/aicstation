@@ -172,6 +172,7 @@ export const ru: Dict = {
   "settings.notifyWaiting": "Когда сессия начинает ждать подтверждения",
   "settings.notifyFinished": "Когда занятая сессия завершает работу (не менее 10 с)",
   "settings.notifySubagent": "Когда завершается субагент",
+  "settings.notifyContext": "Когда контекст сессии заполнится на",
   "settings.notifySound": "Звук уведомления (системный по умолчанию)",
   "settings.general": "Общие",
   "settings.window": "Окно",

@@ -10,6 +10,8 @@ pub struct Texts {
     pub finished: &'static str,
     /// A subagent of `{name}` finished.
     pub subagent: &'static str,
+    /// `{name}` used `{n}` percent of its context window.
+    pub context: &'static str,
     /// One-time note after the first close-to-tray.
     pub tray_notice: &'static str,
     /// Tray tooltip: `{open}` sessions, `{waiting}` of them waiting.
@@ -26,6 +28,7 @@ const TR: Texts = Texts {
     waiting: "{name} onay bekliyor",
     finished: "{name} tamamlandı",
     subagent: "{name}: bir alt ajan tamamlandı",
+    context: "{name}: bağlam {n}% dolu",
     tray_notice: "AI C-Station tepside çalışmaya devam ediyor",
     tooltip: "AI C-Station — {open} açık oturum, {waiting} onay bekliyor",
     show_hide: "Göster / Gizle",
@@ -37,6 +40,7 @@ const AZ: Texts = Texts {
     waiting: "{name} təsdiq gözləyir",
     finished: "{name} tamamlandı",
     subagent: "{name}: bir alt agent tamamlandı",
+    context: "{name}: kontekst {n}% doludur",
     tray_notice: "AI C-Station sistem tepsisində işləməyə davam edir",
     tooltip: "AI C-Station — {open} açıq sessiya, {waiting} təsdiq gözləyir",
     show_hide: "Göstər / Gizlət",
@@ -48,6 +52,7 @@ const EN: Texts = Texts {
     waiting: "{name} is awaiting approval",
     finished: "{name} finished",
     subagent: "{name}: a subagent finished",
+    context: "{name}: context is {n}% full",
     tray_notice: "AI C-Station keeps running in the tray",
     tooltip: "AI C-Station — open sessions: {open}, awaiting approval: {waiting}",
     show_hide: "Show / Hide",
@@ -59,6 +64,7 @@ const DE: Texts = Texts {
     waiting: "{name} wartet auf Freigabe",
     finished: "{name} ist fertig",
     subagent: "{name}: ein Subagent ist fertig",
+    context: "{name}: Kontext zu {n} % gefüllt",
     tray_notice: "AI C-Station läuft im Infobereich weiter",
     tooltip: "AI C-Station — offene Sitzungen: {open}, warten auf Freigabe: {waiting}",
     show_hide: "Anzeigen / Ausblenden",
@@ -70,6 +76,7 @@ const RU: Texts = Texts {
     waiting: "{name} ждёт подтверждения",
     finished: "{name}: работа завершена",
     subagent: "{name}: субагент завершил работу",
+    context: "{name}: контекст заполнен на {n}%",
     tray_notice: "AI C-Station продолжает работать в области уведомлений",
     tooltip: "AI C-Station — открытых сессий: {open}, ждут подтверждения: {waiting}",
     show_hide: "Показать / Скрыть",
@@ -81,6 +88,7 @@ const ES: Texts = Texts {
     waiting: "{name} está esperando aprobación",
     finished: "{name} ha terminado",
     subagent: "{name}: un subagente ha terminado",
+    context: "{name}: contexto al {n} %",
     tray_notice: "AI C-Station sigue en ejecución en la bandeja",
     tooltip: "AI C-Station — sesiones abiertas: {open}, esperando aprobación: {waiting}",
     show_hide: "Mostrar / Ocultar",
@@ -92,6 +100,7 @@ const FR: Texts = Texts {
     waiting: "{name} est en attente d'approbation",
     finished: "{name} a terminé",
     subagent: "{name} : un sous-agent a terminé",
+    context: "{name} : contexte rempli à {n} %",
     tray_notice: "AI C-Station continue de fonctionner dans la zone de notification",
     tooltip: "AI C-Station — sessions ouvertes : {open}, en attente d'approbation : {waiting}",
     show_hide: "Afficher / Masquer",
@@ -103,6 +112,7 @@ const ZH: Texts = Texts {
     waiting: "{name} 等待批准",
     finished: "{name} 已完成",
     subagent: "{name}：一个子智能体已完成",
+    context: "{name}：上下文已用 {n}%",
     tray_notice: "AI C-Station 仍在系统托盘中运行",
     tooltip: "AI C-Station — 打开的会话：{open}，等待批准：{waiting}",
     show_hide: "显示 / 隐藏",
@@ -137,6 +147,12 @@ pub fn texts(lang: &str) -> &'static Texts {
 /// expanded again: there is one pass per placeholder over the template only).
 pub fn with_name(template: &str, name: &str) -> String {
     template.replacen("{name}", name, 1)
+}
+
+/// `template` with `{n}` replaced, then `{name}` (so a name containing "{n}"
+/// is never expanded).
+pub fn with_name_n(template: &str, name: &str, n: u32) -> String {
+    with_name(&template.replacen("{n}", &n.to_string(), 1), name)
 }
 
 /// Longest tray tooltip Windows shows (NOTIFYICONDATAW.szTip is 128 UTF-16
@@ -224,6 +240,7 @@ mod tests {
                 ("waiting", t.waiting, &["{name}"][..]),
                 ("finished", t.finished, &["{name}"]),
                 ("subagent", t.subagent, &["{name}"]),
+                ("context", t.context, &["{name}", "{n}"]),
                 ("tray_notice", t.tray_notice, &[]),
                 ("tooltip", t.tooltip, &["{open}", "{waiting}"]),
                 ("show_hide", t.show_hide, &[]),

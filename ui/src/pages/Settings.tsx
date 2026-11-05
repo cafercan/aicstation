@@ -6,7 +6,9 @@ import GeneralPrefs from "../components/GeneralPrefs";
 import TerminalAppearance from "../components/TerminalAppearance";
 import { useTheme } from "../theme";
 import { MATCH } from "../terminal/match";
-import { setChoice, setToggle, useSettings, type Choice, type Toggle } from "../settings";
+import {
+  setChoice, setNumber, setToggle, useSettings, type Choice, type NumberSetting, type Toggle,
+} from "../settings";
 
 /** Display names of the shell ids (settings.rs SHELLS). */
 const SHELL_NAMES: Record<string, string> = {
@@ -17,8 +19,10 @@ const NOTIFY: [Toggle, Key][] = [
   ["notifyWaiting", "settings.notifyWaiting"],
   ["notifyFinished", "settings.notifyFinished"],
   ["notifySubagent", "settings.notifySubagent"],
-  ["notifySound", "settings.notifySound"],
 ];
+
+/** Context percents offered for the context alert (settings.rs CONTEXT_THRESHOLDS). */
+export const CONTEXT_STEPS = [50, 60, 70, 75, 80, 85, 90, 95, 99];
 
 /** Notification and window toggles, stored by the backend in settings.json. */
 export default function SettingsPage() {
@@ -47,6 +51,24 @@ export default function SettingsPage() {
   const toggle = (key: Toggle, value: boolean) => {
     setError(null);
     setToggle(key, value).catch(fail);
+  };
+  const setNum = (key: NumberSetting, value: number) => {
+    setError(null);
+    setNumber(key, value).catch(fail);
+  };
+  /** A toggle with a select of numbers next to it, used while the toggle is on. */
+  const thresholdRow = (key: Toggle, label: Key, num: NumberSetting, steps: number[], fmt: (n: number) => string) => {
+    const opts = steps.includes(s[num]) ? steps : [...steps, s[num]].sort((a, b) => a - b);
+    return (
+      <div key={key} className="settings-row settings-threshold">
+        <input type="checkbox" id={key} checked={s[key]} onChange={(e) => toggle(key, e.target.checked)} />
+        <label htmlFor={key}>{t(label)}</label>
+        <select aria-label={t(label)} value={s[num]} disabled={!s[key]}
+          onChange={(e) => setNum(num, Number(e.target.value))}>
+          {opts.map((n) => <option key={n} value={n}>{fmt(n)}</option>)}
+        </select>
+      </div>
+    );
   };
   const choose = (key: Choice, value: string) => {
     setError(null);
@@ -81,6 +103,8 @@ export default function SettingsPage() {
       <fieldset>
         <legend>{t("settings.notifications")}</legend>
         {NOTIFY.map(([key, label]) => row(key, label))}
+        {thresholdRow("notifyContext", "settings.notifyContext", "contextThreshold", CONTEXT_STEPS, (n) => `${n}%`)}
+        {row("notifySound", "settings.notifySound")}
       </fieldset>
       <fieldset>
         <legend>{t("settings.terminal")}</legend>

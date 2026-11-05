@@ -25,6 +25,9 @@ pub fn valid_preset(p: &str) -> bool {
         && !p.starts_with('-')
 }
 
+/// Context percents the context alert can be set to.
+pub const CONTEXT_THRESHOLDS: std::ops::RangeInclusive<u8> = 50..=99;
+
 /// Largest settings.json read; anything bigger is treated as corrupt.
 const MAX_FILE: u64 = 64 * 1024;
 
@@ -37,6 +40,10 @@ pub struct Settings {
     pub notify_finished: bool,
     /// A subagent of a session finishes.
     pub notify_subagent: bool,
+    /// A session's context use reaches `context_threshold` percent.
+    pub notify_context: bool,
+    /// One of [`CONTEXT_THRESHOLDS`].
+    pub context_threshold: u8,
     /// Toasts play the system default notification sound.
     pub notify_sound: bool,
     /// Closing the window hides it to the tray instead of exiting.
@@ -59,6 +66,8 @@ impl Default for Settings {
             notify_waiting: true,
             notify_finished: true,
             notify_subagent: false,
+            notify_context: true,
+            context_threshold: 85,
             notify_sound: false,
             close_to_tray: true,
             tray_notice_shown: false,
@@ -77,6 +86,7 @@ impl Settings {
             && SHELLS.contains(&self.shell.as_str())
             && PROMPTS.contains(&self.prompt.as_str())
             && valid_preset(&self.prompt_preset)
+            && CONTEXT_THRESHOLDS.contains(&self.context_threshold)
         {
             Ok(())
         } else {
@@ -92,6 +102,9 @@ pub fn from_json(v: &Value) -> Settings {
     let d = Settings::default();
     let Some(o) = v.as_object() else { return d };
     let flag = |key: &str, default: bool| o.get(key).and_then(Value::as_bool).unwrap_or(default);
+    let number = |key: &str, ok: &dyn Fn(u64) -> bool, default: u64| {
+        o.get(key).and_then(Value::as_u64).filter(|v| ok(*v)).unwrap_or(default)
+    };
     let pick = |key: &str, ok: &dyn Fn(&str) -> bool, default: String| {
         o.get(key).and_then(Value::as_str).filter(|v| ok(v)).map_or(default, str::to_string)
     };
@@ -99,6 +112,12 @@ pub fn from_json(v: &Value) -> Settings {
         notify_waiting: flag("notifyWaiting", d.notify_waiting),
         notify_finished: flag("notifyFinished", d.notify_finished),
         notify_subagent: flag("notifySubagent", d.notify_subagent),
+        notify_context: flag("notifyContext", d.notify_context),
+        context_threshold: number(
+            "contextThreshold",
+            &|v| u8::try_from(v).is_ok_and(|v| CONTEXT_THRESHOLDS.contains(&v)),
+            d.context_threshold.into(),
+        ) as u8,
         notify_sound: flag("notifySound", d.notify_sound),
         close_to_tray: flag("closeToTray", d.close_to_tray),
         tray_notice_shown: flag("trayNoticeShown", d.tray_notice_shown),
@@ -237,6 +256,29 @@ mod tests {
         let v: Value = serde_json::from_str(r#"{"shell":"fish","prompt":"x","promptPreset":"../evil"}"#).unwrap();
         let s = from_json(&v);
         assert_eq!((s.shell.as_str(), s.prompt.as_str(), s.prompt_preset.as_str()), ("fish", "own", ""));
+    }
+
+    #[test]
+    fn context_threshold_is_a_percent_in_range() {
+        let d = Settings::default();
+        assert!(d.notify_context);
+        assert_eq!(d.context_threshold, 85);
+        for bad in [0u8, 49, 100, 255] {
+            assert!(Settings { context_threshold: bad, ..d.clone() }.validate().is_err(), "{bad}");
+        }
+        for ok in [50u8, 85, 99] {
+            assert!(Settings { context_threshold: ok, ..d.clone() }.validate().is_ok(), "{ok}");
+        }
+        for (json, want) in [
+            (r#"{"contextThreshold":70}"#, 70),
+            (r#"{"contextThreshold":300}"#, 85),
+            (r#"{"contextThreshold":-1}"#, 85),
+            (r#"{"contextThreshold":70.5}"#, 85),
+            (r#"{"contextThreshold":"70"}"#, 85),
+        ] {
+            let v: Value = serde_json::from_str(json).unwrap();
+            assert_eq!(from_json(&v).context_threshold, want, "{json}");
+        }
     }
 
     #[test]

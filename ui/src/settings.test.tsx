@@ -5,7 +5,7 @@ import type { Settings } from "./api";
 const A = "0b2f6a40-1111-4c3e-9d2a-5f1e2d3c4b5a";
 
 const DEFAULTS: Settings = {
-  notifyWaiting: true, notifyFinished: true, notifySubagent: false, notifySound: false,
+  notifyWaiting: true, notifyFinished: true, notifySubagent: false, notifyContext: true, contextThreshold: 85, notifySound: false,
   closeToTray: true, trayNoticeShown: false, lang: "tr",
   shell: "auto", prompt: "own", promptPreset: "",
 };
@@ -96,6 +96,21 @@ test("anahtar değişince tüm ayarlar dil koduyla birlikte kaydedilir", async (
   fireEvent.click(screen.getByRole("checkbox", { name: "Bildirim sesi (sistemin varsayılan sesi)" }));
   await waitFor(() => expect(calls("set_settings")).toEqual([{ settings: { ...DEFAULTS, notifySound: true } }]));
   expect((screen.getByRole("checkbox", { name: "Bildirim sesi (sistemin varsayılan sesi)" }) as HTMLInputElement).checked).toBe(true);
+});
+
+test("bağlam uyarısı: eşik seçilir; uyarı kapalıyken seçim devre dışı", async () => {
+  await loadSettings();
+  invoke.mockClear();
+  render(<SettingsPage />);
+  const label = "Bir oturumun bağlamı şu orana ulaşınca";
+  const select = screen.getByRole("combobox", { name: label }) as HTMLSelectElement;
+  expect(select.value).toBe("85");
+  expect(select.disabled).toBe(false);
+  fireEvent.change(select, { target: { value: "70" } });
+  await waitFor(() => expect(h.stored.contextThreshold).toBe(70));
+  fireEvent.click(screen.getByRole("checkbox", { name: label }));
+  await waitFor(() => expect(h.stored.notifyContext).toBe(false));
+  expect((screen.getByRole("combobox", { name: label }) as HTMLSelectElement).disabled).toBe(true);
 });
 
 test("kabuk: kurulu kabuklar listelenir, seçim kaydedilir", async () => {

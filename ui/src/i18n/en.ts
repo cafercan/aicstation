@@ -161,6 +161,7 @@ export const en: Dict = {
   "settings.notifyWaiting": "When a session starts awaiting approval",
   "settings.notifyFinished": "When a busy session finishes its work (at least 10 s)",
   "settings.notifySubagent": "When a subagent finishes",
+  "settings.notifyContext": "When a session's context reaches",
   "settings.notifySound": "Notification sound (system default)",
   "settings.general": "General",
   "settings.window": "Window",

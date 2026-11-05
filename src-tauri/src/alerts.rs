@@ -19,6 +19,8 @@ pub enum AlertKind {
     Finished,
     /// One of the session's subagents finished.
     Subagent,
+    /// The context use reached the threshold (`Alert::n` is the percent).
+    Context,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,6 +29,8 @@ pub struct Alert {
     pub session_id: String,
     pub name: String,
     pub waiting_for: Option<String>,
+    /// The number the text shows (context percent), when the kind has one.
+    pub n: Option<u32>,
 }
 
 /// Which alerts are enabled (from the settings).
@@ -35,6 +39,18 @@ pub struct AlertToggles {
     pub waiting: bool,
     pub finished: bool,
     pub subagent: bool,
+    /// Context percent that alerts; None when that alert is off.
+    pub context: Option<u8>,
+}
+
+impl AlertToggles {
+    /// The card's context use is at or over the threshold (false when off or unknown).
+    fn context_over(&self, card: &SessionCard) -> bool {
+        match (self.context, card.context_pct) {
+            (Some(th), Some(pct)) => pct >= th as f32,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,6 +79,8 @@ struct Seen {
     /// "finished" measures the whole stretch, not only its last busy part.
     busy_since: Option<Instant>,
     agents_finished: u32,
+    /// Context use was at or over the threshold.
+    context_over: bool,
 }
 
 #[derive(Default)]
@@ -101,6 +119,7 @@ impl Detector {
                 Phase::Idle => None,
             };
             let is_focused = focused.contains(&card.session_id.as_str());
+            let context_over = toggles.context_over(card);
             let in_window =
                 |last: &HashMap<String, Instant>| last.get(&card.session_id).is_some_and(|t| now.duration_since(*t) < DEBOUNCE);
             if let (false, Some(o)) = (first, old) {
@@ -113,6 +132,8 @@ impl Detector {
                     toggles.finished.then_some(AlertKind::Finished)
                 } else if card.agents_finished > o.agents_finished {
                     toggles.subagent.then_some(AlertKind::Subagent)
+                } else if context_over && !o.context_over {
+                    Some(AlertKind::Context)
                 } else {
                     None
                 };
@@ -122,6 +143,7 @@ impl Detector {
                         session_id: card.session_id.clone(),
                         name: card.name.clone(),
                         waiting_for: card.waiting_for.clone().filter(|w| !w.trim().is_empty()),
+                        n: (kind == AlertKind::Context).then(|| card.context_pct.unwrap_or(0.0).round() as u32),
                     };
                     if is_focused {
                         // Seen on screen: nothing to tell, also not later.
@@ -142,6 +164,7 @@ impl Detector {
                         AlertKind::Waiting => toggles.waiting && ph == Phase::Waiting,
                         AlertKind::Finished => toggles.finished,
                         AlertKind::Subagent => toggles.subagent,
+                        AlertKind::Context => context_over,
                     };
                     if enabled && !is_focused {
                         self.last_alert.insert(card.session_id.clone(), now);
@@ -153,7 +176,7 @@ impl Detector {
             }
             next.insert(
                 card.session_id.clone(),
-                Seen { phase: ph, busy_since, agents_finished: card.agents_finished },
+                Seen { phase: ph, busy_since, agents_finished: card.agents_finished, context_over },
             );
         }
         // Forget sessions that are gone.
@@ -171,7 +194,7 @@ mod tests {
 
     const A: &str = "0b2f6a40-1111-4c3e-9d2a-5f1e2d3c4b5a";
     const B: &str = "7c9e1d20-2222-4a8b-8e3f-1a2b3c4d5e6f";
-    const ALL: AlertToggles = AlertToggles { waiting: true, finished: true, subagent: true };
+    const ALL: AlertToggles = AlertToggles { waiting: true, finished: true, subagent: true, context: Some(85) };
 
     fn card(id: &str, status: SessionStatus) -> SessionCard {
         SessionCard {
@@ -385,7 +408,7 @@ mod tests {
     #[test]
     fn toggles_and_subagents() {
         let t0 = Instant::now();
-        let off = AlertToggles { waiting: false, finished: true, subagent: false };
+        let off = AlertToggles { waiting: false, finished: true, subagent: false, context: None };
         let mut d = Detector::default();
         d.observe(&[card(A, SessionStatus::Busy)], t0, off, &[]);
         assert!(d.observe(&[card(A, SessionStatus::Waiting)], secs(t0, 1), off, &[]).is_empty());
@@ -410,5 +433,50 @@ mod tests {
         d.observe(&[], secs(t0, 3), ALL, &[]);
         // Back after vanishing: treated as new.
         assert!(d.observe(&[card(A, SessionStatus::Waiting)], secs(t0, 4), ALL, &[]).is_empty());
+    }
+
+    fn ctx(id: &str, pct: Option<f32>) -> SessionCard {
+        SessionCard { context_pct: pct, ..card(id, SessionStatus::Busy) }
+    }
+
+    #[test]
+    fn context_alerts_once_when_it_crosses_the_threshold() {
+        let t0 = Instant::now();
+        let mut d = Detector::default();
+        d.observe(&[ctx(A, Some(80.0))], t0, ALL, &[]);
+        assert!(d.observe(&[ctx(A, Some(84.9))], secs(t0, 1), ALL, &[]).is_empty());
+        let got = d.observe(&[ctx(A, Some(86.4))], secs(t0, 2), ALL, &[]);
+        assert_eq!(kinds(&got), [(AlertKind::Context, A)]);
+        assert_eq!(got[0].n, Some(86));
+        // Staying over it: no repeat, even after the debounce window.
+        assert!(d.observe(&[ctx(A, Some(95.0))], secs(t0, 30), ALL, &[]).is_empty());
+        // Compacted below and over again: a new alert.
+        d.observe(&[ctx(A, Some(20.0))], secs(t0, 40), ALL, &[]);
+        let got = d.observe(&[ctx(A, Some(90.0))], secs(t0, 60), ALL, &[]);
+        assert_eq!(kinds(&got), [(AlertKind::Context, A)]);
+    }
+
+    #[test]
+    fn context_over_at_startup_or_unknown_or_off_is_quiet() {
+        let t0 = Instant::now();
+        let mut d = Detector::default();
+        d.observe(&[ctx(A, Some(99.0)), ctx(B, None)], t0, ALL, &[]);
+        assert!(d.observe(&[ctx(A, Some(99.0)), ctx(B, None)], secs(t0, 1), ALL, &[]).is_empty());
+        let off = AlertToggles { context: None, ..ALL };
+        let mut d = Detector::default();
+        d.observe(&[ctx(A, Some(10.0))], t0, off, &[]);
+        assert!(d.observe(&[ctx(A, Some(99.0))], secs(t0, 1), off, &[]).is_empty());
+    }
+
+    #[test]
+    fn deferred_context_alert_is_dropped_once_back_under_the_threshold() {
+        let t0 = Instant::now();
+        let mut d = Detector::default();
+        d.observe(&[ctx(A, Some(10.0))], t0, ALL, &[]);
+        assert_eq!(d.observe(&[card(A, SessionStatus::Waiting)], secs(t0, 1), ALL, &[]).len(), 1);
+        // Over the threshold inside the waiting alert's window: deferred.
+        assert!(d.observe(&[ctx(A, Some(90.0))], secs(t0, 2), ALL, &[]).is_empty());
+        d.observe(&[ctx(A, Some(30.0))], secs(t0, 3), ALL, &[]);
+        assert!(d.observe(&[ctx(A, Some(30.0))], secs(t0, 20), ALL, &[]).is_empty());
     }
 }
