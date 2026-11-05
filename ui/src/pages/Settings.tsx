@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { butaglyphInfo, listShells, openButaglyphEditor, type ButaglyphInfo } from "../api";
+import { butaglyphInfo, listShells, openButaglyphEditor, setUsageBridge, type ButaglyphInfo } from "../api";
+import { refreshClaudeStatus, useClaudeStatus } from "../terminal/claudeBar";
 import { errorText, useT, type Key } from "../i18n";
 import { isWindows } from "../platform";
 import GeneralPrefs from "../components/GeneralPrefs";
@@ -53,6 +54,34 @@ function BudgetInput({ value, disabled, label, onSave }: {
         value={text} disabled={disabled} onChange={(e) => setText(e.target.value)} onBlur={commit}
         onKeyDown={(e) => { if (e.key === "Enter") commit(); }} />
     </span>
+  );
+}
+
+/**
+ * "Show Claude usage limits": whether the status line bridge is Claude
+ * Code's statusLine (read from ~/.claude/settings.json, not stored by us).
+ * Turning it on edits that file, so it asks first.
+ */
+function UsageLimitsRow({ onError }: { onError: (e: unknown) => void }) {
+  const t = useT();
+  const status = useClaudeStatus();
+  const [busy, setBusy] = useState(false);
+  const change = async (on: boolean) => {
+    if (on && !window.confirm(t("settings.usageLimitsConfirm"))) return;
+    setBusy(true);
+    try { await setUsageBridge(on); } catch (e) { onError(e); }
+    await refreshClaudeStatus();
+    setBusy(false);
+  };
+  return (
+    <label className="settings-row">
+      <input type="checkbox" checked={status?.bridge ?? false} disabled={busy || status === null}
+        onChange={(e) => { void change(e.target.checked); }} />
+      <span>
+        {t("settings.usageLimits")}
+        <span className="settings-hint">{t("settings.usageLimitsHint")}</span>
+      </span>
+    </label>
   );
 }
 
@@ -192,6 +221,7 @@ export default function SettingsPage() {
           </>
         )}
         <span className="settings-hint">{t("settings.terminalHint")}</span>
+        <UsageLimitsRow onError={(e) => setError(typeof e === "string" || e instanceof Error ? errorText(e) : String(e))} />
       </fieldset>
       <TerminalAppearance />
       <fieldset>

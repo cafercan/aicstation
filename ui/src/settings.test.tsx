@@ -19,6 +19,7 @@ const h = vi.hoisted(() => ({
   listeners: new Map<string, (e: { payload: unknown }) => void>(),
   closeHandler: null as null | ((e: { preventDefault: () => void }) => void),
   destroy: vi.fn(async () => {}),
+  bridge: false,
 }));
 
 const invoke = vi.hoisted(() => vi.fn(async (cmd: string, args?: Record<string, unknown>): Promise<unknown> => {
@@ -34,6 +35,8 @@ const invoke = vi.hoisted(() => vi.fn(async (cmd: string, args?: Record<string, 
   if (cmd === "butaglyph_info") return h.buta;
   if (cmd === "open_butaglyph_editor") return undefined;
   if (cmd === "get_session_detail") return null;
+  if (cmd === "claude_status") return { bridge: h.bridge, limits: null, sessions: {}, defaultEffort: null };
+  if (cmd === "set_usage_bridge") { h.bridge = args!.on as boolean; return h.bridge; }
   if (cmd === "get_history") return { rows: [], todayCost: 0, todayTokens: 0, todayComplete: true, indexing: false };
   return undefined;
 }));
@@ -69,6 +72,7 @@ beforeEach(() => {
   ] };
   h.listeners.clear();
   h.closeHandler = null;
+  h.bridge = false;
   invoke.mockClear();
   h.destroy.mockClear();
   setLang("tr");
@@ -281,4 +285,27 @@ test("ayarlar sayfası dil ve tema seçicilerini gösterir; ayarlar yüklenirken
   expect(screen.getByRole("group", { name: "Genel" })).toBeTruthy();
   expect(screen.getByRole("combobox", { name: "Dil" })).toBeTruthy();
   expect(screen.getByRole("group", { name: "Tema" }).querySelectorAll("button.theme-swatch")).toHaveLength(6);
+});
+
+test("Claude kullanım limitleri: açmak onay ister; vazgeçilirse dokunulmaz, kapatmak sormaz", async () => {
+  await loadSettings();
+  render(<SettingsPage />);
+  const name = /Claude kullanım limitlerini/;
+  const box = () => screen.getByRole("checkbox", { name }) as HTMLInputElement;
+  await waitFor(() => expect(box().disabled).toBe(false));
+  expect(box().checked).toBe(false);
+  const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false);
+  fireEvent.click(box());
+  expect(confirm).toHaveBeenCalledWith(expect.stringContaining("~/.claude/settings.json"));
+  expect(calls("set_usage_bridge")).toEqual([]);
+  confirm.mockReturnValueOnce(true);
+  fireEvent.click(box());
+  await waitFor(() => expect(box().checked).toBe(true));
+  expect(calls("set_usage_bridge")).toEqual([{ on: true }]);
+  confirm.mockClear();
+  fireEvent.click(box());
+  await waitFor(() => expect(box().checked).toBe(false));
+  expect(confirm).not.toHaveBeenCalled();
+  expect(calls("set_usage_bridge")).toEqual([{ on: true }, { on: false }]);
+  confirm.mockRestore();
 });
