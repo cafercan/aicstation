@@ -95,13 +95,25 @@ test("ağaçta ajan seçilince sağdaki liste o ajanın tool çağrılarını g�
   expect(rows[0].textContent).toContain("ADC_CAL");
 });
 
-test('tool satırı: Ok "✓", Error "✗", Running "… çalışıyor"', async () => {
+test('tool satırı: en yeni en üstte; Ok "✓", Error "✗", Running "… çalışıyor"', async () => {
   invoke.mockResolvedValue(detail());
   render(<SessionDetailPage sessionId="s1" onBack={() => {}} />);
   const rows = await screen.findAllByTestId("tool-row");
-  expect(rows[0].textContent).toContain("✓");
+  expect(rows[0].textContent).toContain("make all");
+  expect(rows[0].textContent).toContain("… çalışıyor");
   expect(rows[1].textContent).toContain("✗");
-  expect(rows[2].textContent).toContain("… çalışıyor");
+  expect(rows[2].textContent).toContain("main.c");
+  expect(rows[2].textContent).toContain("✓");
+});
+
+test("ajanın tool çağrıları da en yeni en üstte", async () => {
+  const ag = node("ag", { kind: "agent" }, "ADC bul", [], [call("a1", "Read", "eski.c", "Ok"), call("a2", "Grep", "yeni", "Ok")]);
+  invoke.mockResolvedValue(detail({ tree: { roots: [ag], total: 1, finished: 0 } }));
+  render(<SessionDetailPage sessionId="s1" onBack={() => {}} />);
+  fireEvent.click(await screen.findByTestId("node-ag"));
+  expect(screen.getAllByTestId("tool-row").map((r) => r.textContent)).toEqual([
+    expect.stringContaining("yeni"), expect.stringContaining("eski.c"),
+  ]);
 });
 
 test('"Sekmeye git" gömülü terminalde o terminale geçer', async () => {
@@ -393,7 +405,7 @@ test("ayrıntı sayfası İngilizce: etiketler, ağaç, çalışan çağrı, hat
   expect(screen.getByText("AGENT TREE")).toBeTruthy();
   expect(screen.getByText("RECENT TOOL CALLS · main session")).toBeTruthy();
   expect(screen.getByTestId("node-ph").textContent).toContain("Phase Review");
-  expect(screen.getAllByTestId("tool-row")[2].textContent).toContain("… running");
+  expect(screen.getAllByTestId("tool-row")[0].textContent).toContain("… running");
   expect(screen.getByText("agents / finished")).toBeTruthy();
   expect(screen.getByText("working")).toBeTruthy();
 });

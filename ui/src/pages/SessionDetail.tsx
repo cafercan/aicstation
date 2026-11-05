@@ -143,7 +143,8 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal, live 
   // Main session plus agents, the same scope as the card's estimated cost.
   const est = fmtEstCost(card.costUsd);
   const selNode = sel === MAIN ? null : findNode(tree.roots, sel);
-  const calls = selNode ? selNode.stats.toolCalls : detail.mainToolCalls;
+  // The backend keeps calls oldest first; newest goes on top, like the agent tree.
+  const calls = [...(selNode ? selNode.stats.toolCalls : detail.mainToolCalls)].reverse();
   const caption = selNode ? nodeLabel(selNode) : tx("detail.mainCaption");
   const kind = statusKind(card.status, card.pid);
   const target = kind === "closed" ? null : gotoTarget(card, terminalForPid(card.parentPid));
