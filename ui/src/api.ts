@@ -195,6 +195,10 @@ export interface Settings {
   notifyWaiting: boolean;
   notifyFinished: boolean;
   notifySubagent: boolean;
+  /** A session's context use reaches `contextThreshold` percent. */
+  notifyContext: boolean;
+  /** 50–99. */
+  contextThreshold: number;
   notifySound: boolean;
   closeToTray: boolean;
   /** Shell id of the embedded terminals ("auto" = platform default). */

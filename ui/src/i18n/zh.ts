@@ -161,6 +161,7 @@ export const zh: Dict = {
   "settings.notifyWaiting": "会话开始等待批准时",
   "settings.notifyFinished": "忙碌的会话完成工作时（至少 10 秒）",
   "settings.notifySubagent": "子智能体完成时",
+  "settings.notifyContext": "当会话的上下文用量达到",
   "settings.notifySound": "通知声音（系统默认）",
   "settings.general": "常规",
   "settings.window": "窗口",

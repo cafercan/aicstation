@@ -161,6 +161,7 @@ export const az: Dict = {
   "settings.notifyWaiting": "Sessiya təsdiq gözləməyə başlayanda",
   "settings.notifyFinished": "İşləyən sessiya işini bitirəndə (ən azı 10 san)",
   "settings.notifySubagent": "Alt agent bitəndə",
+  "settings.notifyContext": "Sessiyanın konteksti bu həddə çatanda",
   "settings.notifySound": "Bildiriş səsi (sistemin standart səsi)",
   "settings.general": "Ümumi",
   "settings.window": "Pəncərə",

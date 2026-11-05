@@ -2,7 +2,7 @@
 //! tray. Runs after every snapshot refresh, whether the window is shown or not.
 use crate::alerts::{Alert, AlertKind, AlertToggles, Detector};
 use crate::errors;
-use crate::native_text::{texts, with_name};
+use crate::native_text::{texts, with_name, with_name_n};
 use crate::settings::{Settings, SettingsStore};
 use crate::toast::{Toast, Toaster};
 use crate::tray;
@@ -45,7 +45,12 @@ pub fn suppressed(context: &[String], visible: bool, minimized: bool, focused: b
 }
 
 pub fn toggles(s: &Settings) -> AlertToggles {
-    AlertToggles { waiting: s.notify_waiting, finished: s.notify_finished, subagent: s.notify_subagent }
+    AlertToggles {
+        waiting: s.notify_waiting,
+        finished: s.notify_finished,
+        subagent: s.notify_subagent,
+        context: s.notify_context.then_some(s.context_threshold),
+    }
 }
 
 /// Title and body of an alert's toast in `lang`.
@@ -55,8 +60,13 @@ pub fn alert_text(a: &Alert, lang: &str) -> (String, Option<String>) {
         AlertKind::Waiting => t.waiting,
         AlertKind::Finished => t.finished,
         AlertKind::Subagent => t.subagent,
+        AlertKind::Context => t.context,
     };
-    (with_name(template, &a.name), a.waiting_for.clone())
+    let title = match a.n {
+        Some(n) => with_name_n(template, &a.name, n),
+        None => with_name(template, &a.name),
+    };
+    (title, a.waiting_for.clone())
 }
 
 impl Notifier {
@@ -149,16 +159,23 @@ mod tests {
 
     #[test]
     fn toast_texts_follow_the_language() {
-        let a = Alert { kind: AlertKind::Waiting, session_id: A.into(), name: "api".into(), waiting_for: Some("Bash".into()) };
+        let a = Alert { kind: AlertKind::Waiting, session_id: A.into(), name: "api".into(), waiting_for: Some("Bash".into()), n: None };
         assert_eq!(alert_text(&a, "tr"), ("api onay bekliyor".into(), Some("Bash".into())));
         let f = Alert { kind: AlertKind::Finished, waiting_for: None, ..a };
         assert_eq!(alert_text(&f, "tr"), ("api tamamlandı".into(), None));
         assert_eq!(alert_text(&f, "en").0, "api finished");
+        let c = Alert { kind: AlertKind::Context, n: Some(87), ..f };
+        assert_eq!(alert_text(&c, "tr").0, "api: bağlam 87% dolu");
+        assert_eq!(alert_text(&c, "en").0, "api: context is 87% full");
     }
 
     #[test]
     fn toggles_come_from_settings() {
         let s = Settings { notify_waiting: false, ..Settings::default() };
-        assert_eq!(toggles(&s), AlertToggles { waiting: false, finished: true, subagent: false });
+        assert_eq!(toggles(&s), AlertToggles { waiting: false, finished: true, subagent: false, context: Some(85) });
+        let s = Settings { notify_context: false, context_threshold: 70, ..s };
+        assert_eq!(toggles(&s).context, None);
+        let s = Settings { notify_context: true, ..s };
+        assert_eq!(toggles(&s).context, Some(70));
     }
 }

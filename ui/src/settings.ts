@@ -7,7 +7,8 @@ import { getSettings, setSettings, type Settings } from "./api";
 import { getLang } from "./i18n";
 import { createStore } from "./prefs";
 
-export type Toggle = "notifyWaiting" | "notifyFinished" | "notifySubagent" | "notifySound" | "closeToTray";
+export type Toggle =
+  | "notifyWaiting" | "notifyFinished" | "notifySubagent" | "notifyContext" | "notifySound" | "closeToTray";
 
 const store = createStore<Settings | null>(null);
 export const useSettings = store.use;
@@ -48,6 +49,16 @@ export type Choice = "shell" | "prompt" | "promptPreset";
 
 /** Sets one choice; rejects with the backend's error code (state rolled back). */
 export async function setChoice(key: Choice, value: string): Promise<void> {
+  const cur = store.get();
+  if (!cur || cur[key] === value) return;
+  await save({ ...cur, [key]: value });
+}
+
+/** Numeric settings (alert thresholds). */
+export type NumberSetting = "contextThreshold";
+
+/** Sets one number; rejects with the backend's error code (state rolled back). */
+export async function setNumber(key: NumberSetting, value: number): Promise<void> {
   const cur = store.get();
   if (!cur || cur[key] === value) return;
   await save({ ...cur, [key]: value });

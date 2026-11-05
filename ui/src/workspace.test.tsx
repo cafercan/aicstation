@@ -15,7 +15,7 @@ const invoke = vi.hoisted(() => vi.fn(async (cmd: string): Promise<unknown> => {
   if (cmd === "get_session_detail") return null;
   if (cmd === "get_settings" || cmd === "set_settings") {
     return {
-      notifyWaiting: true, notifyFinished: true, notifySubagent: false, notifySound: true, closeToTray: false,
+      notifyWaiting: true, notifyFinished: true, notifySubagent: false, notifyContext: true, contextThreshold: 85, notifySound: true, closeToTray: false,
       trayNoticeShown: false, lang: "tr", shell: "auto", prompt: "own", promptPreset: "",
     };
   }
