@@ -53,6 +53,30 @@ export async function pasteFromClipboard(
   return true;
 }
 
+/**
+ * Clipboard for OSC 52, which a program in the terminal uses to set the
+ * clipboard (Claude Code's fullscreen TUI copies its own mouse selection this
+ * way). Writes only: a read query (`ESC]52;c;?`) gets an empty answer, so a
+ * program cannot read the clipboard, which may hold passwords, without the
+ * user pasting. Only the system clipboard (`c`, or no selection given) is
+ * set; the X11 primary selection (`p`) is ignored. An empty write (also what
+ * invalid base64 decodes to) leaves the clipboard as it is.
+ */
+export interface Osc52Provider {
+  readText(selection: string): string;
+  writeText(selection: string, text: string): Promise<void>;
+}
+
+export function osc52Clipboard(clip: ClipboardLike | undefined = systemClipboard()): Osc52Provider {
+  return {
+    readText: () => "",
+    writeText: async (selection, text) => {
+      if (selection !== "" && !selection.includes("c")) return;
+      await copyText(text, clip);
+    },
+  };
+}
+
 /** Windows Terminal: right-click copies a selection, otherwise pastes. */
 export function rightClickAction(hasSelection: boolean): "copy" | "paste" {
   return hasSelection ? "copy" : "paste";
