@@ -116,7 +116,9 @@ closed session in its own folder.
   spacing and scrollback, with a live preview in Settings. The color scheme
   can follow the app theme. Unicode 11 character widths.
 - **Prompt (optional):** a [butaglyph] prompt with one of its presets. It is
-  loaded after your own shell configuration, which is never edited.
+  loaded after your own shell configuration, which is never edited. The
+  presets are shown without their language version modules (Node, Rust,
+  Python, ...); the rest of each preset is unchanged.
   butaglyph comes with the installer and the Linux packages; a butaglyph you
   installed yourself is used instead.
 - Split view: two terminals side by side with a draggable divider.
