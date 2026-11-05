@@ -35,7 +35,7 @@ const invoke = vi.hoisted(() => vi.fn(async (cmd: string, args?: Record<string, 
   if (cmd === "butaglyph_info") return h.buta;
   if (cmd === "open_butaglyph_editor") return undefined;
   if (cmd === "get_session_detail") return null;
-  if (cmd === "claude_status") return { bridge: h.bridge, limits: null, sessions: {}, defaultEffort: null };
+  if (cmd === "claude_status") return { bridge: h.bridge, limits: null, sessions: {} };
   if (cmd === "set_usage_bridge") { h.bridge = args!.on as boolean; return h.bridge; }
   if (cmd === "get_history") return { rows: [], todayCost: 0, todayTokens: 0, todayComplete: true, indexing: false };
   return undefined;
