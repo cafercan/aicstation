@@ -64,12 +64,18 @@ closed session in its own folder.
   model's window size is not known, it shows "?" instead of guessing.
 - Token usage (exact) and elapsed time for each session, with the estimated
   dollar cost shown smaller next to it, and summary figures at the top.
-- Search by name, folder or model (case- and accent-insensitive, including
-  Turkish İ/ı), plus status filter chips.
+- The git branch of each session as a small badge on its card.
+- Search by name, folder, model or git branch (case- and accent-insensitive,
+  including Turkish İ/ı), plus status filter chips.
 
 ### Session detail
 
 - The subagent tree and the most recent tool calls.
+- **Changed files**: every file the session and its subagents changed with a
+  successful Edit, Write, MultiEdit or NotebookEdit call, with the number of
+  edits, newest first. Paths inside the session folder are shown relative to
+  it. Changes made by shell commands (`rm`, `mv`, `sed -i`, ...) are not
+  listed.
 - **Go to tab**: switches to the embedded terminal that hosts the session, or
   brings the hosting Windows Terminal window forward and selects the tab whose
   title matches the session name. This is best-effort: if several tabs share
@@ -86,7 +92,8 @@ closed session in its own folder.
   still running; the dollar amounts next to the token counts are labeled as
   estimates. The page refreshes
   them every 30 seconds while it is open.
-- Filter by text and date range, and sort by date or tokens.
+- Filter by text (name, folder, model, git branch) and date range, and sort
+  by date or tokens.
 - Content search inside the transcripts of both live and past sessions. It
   streams the files and returns short snippets. It stops at 50 hits, after
   8 seconds or 2 GiB read, or when you cancel it (Clear, or leaving the page);
@@ -133,8 +140,21 @@ closed session in its own folder.
   when a session starts waiting for approval, when
   a session finishes after working for at least 10 seconds, and (optional,
   off by default) when a subagent finishes. Each has its own switch in
-  Settings. A session gets at most one notification every 15 seconds (one
-  that comes sooner is shown when the 15 seconds are up, if it still applies).
+  Settings.
+- Threshold alerts, also in Settings:
+  - **Context** (on, 85% by default): once when a session's context use
+    reaches the chosen percent, and again only after it dropped below it
+    (for example after a compaction).
+  - **Quiet session** (off by default, 10 minutes): a session that shows
+    "running" but has written nothing to its transcript and used no tokens
+    (its subagents included) for the chosen time. Sessions running a shell
+    command are not counted, since a long build or test run is quiet too.
+  - **Daily budget** (off by default, $20): once a day, when today's
+    estimated cost across all sessions reaches the limit. It is only as good
+    as the built-in price table (see [Usage tips](#usage-tips)).
+- All but the daily budget are per session: a session gets at most one
+  notification every 15 seconds (one that comes sooner is shown when the 15
+  seconds are up, if it still applies).
   While the app window is focused, there is no notification for the session
   shown in the detail view or in either visible pane of a split terminal.
 - While the app is running, clicking one of its recent notifications opens
@@ -391,9 +411,10 @@ Anthropic ile bağlantılı değildir ve Anthropic tarafından onaylanmamıştı
 Claude ve Claude Code, Anthropic'in ticari markalarıdır.
 
 - **Canlı pano:** her oturum için durum (çalışıyor, hazır, onay bekliyor,
-  kapandı), alt ajan halkası, bağlam yüzdesi ve token kullanımı (tahmini maliyet ikincil); arama ve
-  durum filtresi.
-- **Oturum ayrıntısı:** alt ajan ağacı, son tool çağrıları, "Sekmeye git"
+  kapandı), alt ajan halkası, bağlam yüzdesi ve token kullanımı (tahmini maliyet ikincil), git
+  branch rozeti; arama (branch dahil) ve durum filtresi.
+- **Oturum ayrıntısı:** alt ajan ağacı, son tool çağrıları, oturumun ve alt
+  ajanlarının değiştirdiği dosyalar, "Sekmeye git"
   (gömülü terminal ya da Windows Terminal sekmesi), kapanmış oturumu sürdürme.
 - **Geçmiş:** önbellekli dizin, kullanım grafikleri (token, tahmini $; 7/30/90 gün, projeler,
   modeller; çalışan oturumlar dahil), canlı ve geçmiş oturumlarda içerikte
@@ -407,7 +428,9 @@ Claude ve Claude Code, Anthropic'in ticari markalarıdır.
 - **Bildirimler ve tepsi:** onay bekleyen ve biten oturumlar için Windows
   bildirimi (pencere odaktayken ayrıntıda ya da bölünmüş görünümün iki
   bölmesinde görünen oturum için bildirim yok; bildirime tıklamak uygulama
-  çalışırken son bildirimlerde oturumu açar), tepsi simgesi, tek kopya çalışma.
+  çalışırken son bildirimlerde oturumu açar); eşik uyarıları: bağlam belirli
+  bir orana ulaşınca, çalışan bir oturum belirli bir süre hiç ilerlemeyince
+  ve günün tahmini maliyeti bir sınıra ulaşınca; tepsi simgesi, tek kopya çalışma.
 - **Klavye kısayolları** (fiziksel tuş konumları; her klavye düzeninde
   çalışır), 8 arayüz dili ve 6 tema.
 
