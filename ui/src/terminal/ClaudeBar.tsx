@@ -23,7 +23,7 @@ export default function ClaudeBar({ session: c, now = Date.now() }: Props) {
   const parts: [string, ReactNode][] = [];
 
   const model = shortModel(c.model);
-  const effort = line?.effort ?? status?.defaultEffort ?? null;
+  const effort = line?.effort ?? null;
   if (model || effort) {
     parts.push(["model", <>
       {model && <span className="c2">{model}</span>}

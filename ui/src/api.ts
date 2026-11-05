@@ -292,9 +292,8 @@ export interface ClaudeStatus {
   /** AI C-Station is Claude Code's status line (Settings: show usage limits). */
   bridge: boolean;
   limits: UsageLimits | null;
+  /** Per session; the effort is known only from here (a session may not run the default). */
   sessions: Record<string, SessionLine>;
-  /** `effortLevel` of Claude Code's settings.json. */
-  defaultEffort: string | null;
 }
 
 export const claudeStatus = () => invoke<ClaudeStatus>("claude_status");

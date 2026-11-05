@@ -435,13 +435,6 @@ pub fn refresh(settings: &Path, data: &Path, command: &str) -> Result<(), String
     enable(settings, data, command)
 }
 
-/// `effortLevel` from Claude Code's settings.json (the default for new sessions).
-pub fn default_effort(settings: &Path) -> Option<String> {
-    let text = station_core::small_file::read_small_file(&real_path(settings))?;
-    let v: Value = serde_json::from_str(&text).ok()?;
-    v.get("effortLevel")?.as_str().filter(|s| effort_ok(s)).map(str::to_string)
-}
-
 // ---- Commands ---------------------------------------------------------------
 
 /// What the per-terminal Claude bars show from the status line.
@@ -451,9 +444,9 @@ pub struct ClaudeStatus {
     /// The bridge is Claude Code's status line.
     pub bridge: bool,
     pub limits: Option<Limits>,
+    /// Per session; the effort comes only from here: `effortLevel` in
+    /// settings.json is just the default, and a session may run another.
     pub sessions: BTreeMap<String, SessionLine>,
-    /// `effortLevel` of Claude Code's settings.json.
-    pub default_effort: Option<String>,
 }
 
 fn claude_settings() -> PathBuf {
@@ -466,7 +459,7 @@ pub fn status_now(data: &Path) -> ClaudeStatus {
     let settings = claude_settings();
     let bridge = is_enabled(&settings, data);
     let st = if bridge { read_status(data) } else { Status::default() };
-    ClaudeStatus { bridge, limits: st.limits, sessions: st.sessions, default_effort: default_effort(&settings) }
+    ClaudeStatus { bridge, limits: st.limits, sessions: st.sessions }
 }
 
 /// Turns the bridge on or off; returns whether it is on afterwards.
@@ -698,13 +691,5 @@ mod tests {
         assert!(is_enabled(&link, &data));
         disable(&link, &data).unwrap();
         assert_eq!(std::fs::read_to_string(&real).unwrap(), USER);
-    }
-
-    #[test]
-    fn default_effort_from_settings() {
-        let (_d, s, _) = settings_with("{\"effortLevel\":\"high\"}");
-        assert_eq!(default_effort(&s).as_deref(), Some("high"));
-        let (_d, s, _) = settings_with("{\"effortLevel\":\"a b\"}");
-        assert_eq!(default_effort(&s), None);
     }
 }

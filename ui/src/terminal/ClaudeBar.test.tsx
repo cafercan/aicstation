@@ -63,12 +63,13 @@ test("limitView: percent left, meter cells, level; a passed reset hides the wind
   expect(shortModel(null)).toBeNull();
 });
 
-test("bar without the bridge: model, folder and branch, context, tokens; no limits", async () => {
-  h.status = { bridge: false, limits: null, sessions: {}, defaultEffort: "high" };
+test("bar without the bridge: model, folder and branch, context, tokens; no limits, no effort", async () => {
+  h.status = { bridge: false, limits: null, sessions: {} };
   render(<ClaudeBar session={card()} now={NOW} />);
   await flush();
   const bar = screen.getByTestId("claude-bar");
-  expect(bar.textContent).toBe("opus-5-5 high │ aicstation (main) │ ctx 62% │ 1.2M tok ~$1.20 est.");
+  // The effort is unknown without the bridge (settings.json only holds the default).
+  expect(bar.textContent).toBe("opus-5-5 │ aicstation (main) │ ctx 62% │ 1.2M tok ~$1.20 est.");
   expect(screen.queryByTestId("cbar-fiveHour")).toBeNull();
   expect(invoke).toHaveBeenCalledWith("git_dirty", { cwd: "/home/u/aicstation" });
 });
@@ -79,7 +80,6 @@ test("bar with the bridge: limits with reset, session effort and lines, dirty ma
     bridge: true,
     limits: { fiveHour: { usedPct: 42, resetsAtMs: NOW + 2 * H + 10 * 60_000 }, sevenDay: { usedPct: 59, resetsAtMs: NOW + 3 * 24 * H }, updatedMs: NOW },
     sessions: { s1: { effort: "max", linesAdded: 120, linesRemoved: 30, updatedMs: NOW } },
-    defaultEffort: "high",
   };
   render(<ClaudeBar session={card()} now={NOW} />);
   await flush();
@@ -99,7 +99,7 @@ test("unknown parts are left out", async () => {
 test("one shared poll for all bars, stopped when none is shown", async () => {
   vi.useFakeTimers();
   try {
-    h.status = { bridge: false, limits: null, sessions: {}, defaultEffort: null };
+    h.status = { bridge: false, limits: null, sessions: {} };
     const a = render(<><ClaudeBar session={card()} now={NOW} /><ClaudeBar session={card({ sessionId: "s2" })} now={NOW} /></>);
     const polls = () => invoke.mock.calls.filter((c) => c[0] === "claude_status").length;
     expect(polls()).toBe(1);
