@@ -6,6 +6,7 @@
     "tauri": "tauri",
     "debug-preview": "tauri build --debug --no-bundle",
     "bundle:linux": "bash scripts/build-linux.sh",
+    "bundle:arch": "bash scripts/build-arch.sh",
     "installer": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-installer.ps1",
     "notices": "node scripts/gen-notices.mjs",
     "test:notices": "node --test scripts/gen-notices.test.mjs",
