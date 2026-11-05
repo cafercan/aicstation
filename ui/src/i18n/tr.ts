@@ -104,6 +104,9 @@ export const tr = {
   "detail.workflow": "Workflow {id}",
   "detail.phase": "Aşama {name}",
   "detail.agent": "ajan",
+  "detail.changedFiles": "DEĞİŞEN DOSYALAR · {n}",
+  "detail.noChanges": "dosya değişikliği yok",
+  "detail.edits": "{n} düzenleme",
   "goto.failed": "Sekmeye gidilemedi: {err}",
 
   // Embedded terminal

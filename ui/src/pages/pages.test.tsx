@@ -106,6 +106,29 @@ test('tool satırı: en yeni en üstte; Ok "✓", Error "✗", Running "… çal
   expect(rows[2].textContent).toContain("✓");
 });
 
+test("değişen dosyalar: klasöre göre yol ve düzenleme sayısı", async () => {
+  invoke.mockResolvedValue(detail({
+    changedFiles: [
+      { path: "C:/x/demo/src/adc.c", edits: 3, lastAt: "2026-06-10T10:05:00Z" },
+      { path: "D:/baska/notlar.md", edits: 1, lastAt: "2026-06-10T10:00:00Z" },
+    ],
+  }));
+  render(<SessionDetailPage sessionId="s1" onBack={() => {}} />);
+  const rows = await screen.findAllByTestId("changed-file");
+  expect(rows).toHaveLength(2);
+  expect(rows[0].textContent).toContain("src/adc.c");
+  expect(rows[0].textContent).not.toContain("C:/x/demo");
+  expect(rows[0].textContent).toContain("3 düzenleme");
+  expect(rows[1].textContent).toContain("D:/baska/notlar.md");
+  expect(screen.getByText("DEĞİŞEN DOSYALAR · 2")).toBeTruthy();
+});
+
+test("değişen dosya yoksa boş mesajı gösterilir", async () => {
+  invoke.mockResolvedValue(detail());
+  render(<SessionDetailPage sessionId="s1" onBack={() => {}} />);
+  expect(await screen.findByText("dosya değişikliği yok")).toBeTruthy();
+});
+
 test("ajanın tool çağrıları da en yeni en üstte", async () => {
   const ag = node("ag", { kind: "agent" }, "ADC bul", [], [call("a1", "Read", "eski.c", "Ok"), call("a2", "Grep", "yeni", "Ok")]);
   invoke.mockResolvedValue(detail({ tree: { roots: [ag], total: 1, finished: 0 } }));

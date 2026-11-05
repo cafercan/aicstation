@@ -94,6 +94,9 @@ export const en: Dict = {
   "detail.workflow": "Workflow {id}",
   "detail.phase": "Phase {name}",
   "detail.agent": "agent",
+  "detail.changedFiles": "CHANGED FILES · {n}",
+  "detail.noChanges": "no file changes",
+  "detail.edits": { one: "1 edit", other: "{n} edits" },
   "goto.failed": "Could not go to tab: {err}",
 
   "term.resumeTitle": "Resume: {id}",

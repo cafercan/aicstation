@@ -189,6 +189,13 @@ select {
 .tree .node:hover { background: var(--hover); }
 .tree .node.sel { background: var(--selected); }
 .log { flex: 1; font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px; line-height: 1.7; min-width: 0; }
+.files {
+  margin-top: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 10px 12px; box-shadow: var(--shadow); font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px;
+  line-height: 1.7; max-height: 240px; overflow-y: auto;
+}
+.files .file { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.files .fp { color: var(--strong); }
 .cap { color: var(--muted); font-size: 10px; letter-spacing: .08em; margin-bottom: 4px; font-family: "Segoe UI Variable", "Segoe UI", system-ui, "Microsoft YaHei UI", "Microsoft YaHei", sans-serif; }
 .g { color: var(--busy-text); } .y { color: var(--yellow); } .x { color: var(--muted); } .r { color: var(--waiting-text); } .c2 { color: var(--cyan); }
 

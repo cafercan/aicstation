@@ -97,6 +97,9 @@ export const fr: Dict = {
   "detail.workflow": "Workflow {id}",
   "detail.phase": "Phase {name}",
   "detail.agent": "agent",
+  "detail.changedFiles": "FICHIERS MODIFIÉS · {n}",
+  "detail.noChanges": "aucun fichier modifié",
+  "detail.edits": { one: "1 modification", other: "{n} modifications" },
   "goto.failed": "Impossible d'aller à l'onglet : {err}",
 
   "term.resumeTitle": "Reprise : {id}",

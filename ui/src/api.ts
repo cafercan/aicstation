@@ -15,6 +15,15 @@ export interface ToolCall {
   state: ToolState;
 }
 
+/** A file changed by successful editing tool calls (Edit, Write, ...). */
+export interface ChangedFile {
+  /** Full path, as the tool call named it. */
+  path: string;
+  edits: number;
+  /** RFC3339 */
+  lastAt: string;
+}
+
 /** "busy" | "waiting" | "idle" or any raw string the registry reports. */
 export type SessionStatus = string;
 
@@ -142,6 +151,8 @@ export interface SessionDetail {
   toolCallCount: number;
   tree: AgentTree;
   mainToolCalls: ToolCall[];
+  /** Files changed by the session and its agents, most recent first (absent in old fixtures). */
+  changedFiles?: ChangedFile[];
 }
 
 export const getSnapshot = () => invoke<Snapshot>("get_snapshot");

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import {
-  clampPct, donutSegments, fmtBreakdown, fmtContext, fmtCost, fmtEstCost, fmtTokens, usageSum, fmtElapsed, folderName, statusColor, statusKind,
+  clampPct, donutSegments, fmtBreakdown, fmtContext, fmtCost, fmtEstCost, fmtTokens, usageSum, fmtElapsed, folderName, relPath, statusColor, statusKind,
   statusLabel, statusTextColor, toolSuccess,
 } from "./format";
 import { setLang } from "./i18n";
@@ -157,4 +157,14 @@ test("durum ve halka renkleri etkin temayı izler", () => {
   applyTheme("station-dark");
   expect(statusTextColor("waiting")).toBe("#ff8193");
   expect(donutSegments(1, 1).map((s) => s.color)).toEqual(["#48c774", "#5aa0ff"]);
+});
+
+test("relPath: klasörün içindeki yol göreli, dışındaki olduğu gibi", () => {
+  expect(relPath("/home/x/proje/src/a.rs", "/home/x/proje")).toBe("src/a.rs");
+  expect(relPath("/home/x/proje/src/a.rs", "/home/x/proje/")).toBe("src/a.rs");
+  expect(relPath("C:\\isler\\pusula\\adc.c", "C:\\isler\\pusula")).toBe("adc.c");
+  // Same prefix, different folder.
+  expect(relPath("/home/x/proje2/a.rs", "/home/x/proje")).toBe("/home/x/proje2/a.rs");
+  expect(relPath("/etc/hosts", "/home/x")).toBe("/etc/hosts");
+  expect(relPath("/a/b", "")).toBe("/a/b");
 });
