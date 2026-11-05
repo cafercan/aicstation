@@ -2,7 +2,7 @@ import { Fragment, type ReactNode } from "react";
 import type { SessionCard } from "../api";
 import { fmtContext, fmtEstCost, fmtTokens, folderName, usageSum } from "../format";
 import { useT, type Key } from "../i18n";
-import { fmtReset, limitView, meter, shortModel, useClaudeStatus, useGitDirty } from "./claudeBar";
+import { fmtReset, limitView, meter, shortModel, useClaudeStatus, useGitDirty } from "./claudeBarData";
 
 interface Props {
   session: SessionCard;

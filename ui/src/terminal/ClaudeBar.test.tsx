@@ -14,7 +14,7 @@ const invoke = vi.hoisted(() => vi.fn(async (cmd: string): Promise<unknown> => {
 vi.mock("@tauri-apps/api/core", () => ({ invoke, Channel: class {} }));
 
 import ClaudeBar from "./ClaudeBar";
-import { fmtReset, limitView, meter, shortModel, STATUS_POLL_MS } from "./claudeBar";
+import { fmtReset, limitView, meter, shortModel, STATUS_POLL_MS } from "./claudeBarData";
 import { resetUiState } from "../testing/reset";
 import { setLang } from "../i18n";
 
