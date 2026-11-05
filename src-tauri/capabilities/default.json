@@ -28,6 +28,8 @@
     "allow-set-focus-context",
     "allow-hide-to-tray",
     "allow-search-history",
-    "allow-cancel-search"
+    "allow-cancel-search",
+    "allow-claude-status",
+    "allow-set-usage-bridge"
   ]
 }

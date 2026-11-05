@@ -1278,3 +1278,25 @@ pub fn set_focus_context(notifier: tauri::State<'_, Notifier>, session_ids: Vec<
 pub fn hide_to_tray(app: tauri::AppHandle) -> Result<(), String> {
     crate::notifier::hide_to_tray(&app)
 }
+
+fn app_data(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    use tauri::Manager;
+    app.path().app_data_dir().map_err(|e| e.to_string())
+}
+
+/// Status line data for the per-terminal Claude bars.
+#[tauri::command]
+pub async fn claude_status(app: tauri::AppHandle) -> Result<crate::statusline::ClaudeStatus, String> {
+    let data = app_data(&app)?;
+    tauri::async_runtime::spawn_blocking(move || crate::statusline::status_now(&data)).await.map_err(|e| e.to_string())
+}
+
+/// "Show Claude usage limits": the status line bridge on or off.
+#[tauri::command]
+pub async fn set_usage_bridge(app: tauri::AppHandle, on: bool) -> Result<bool, String> {
+    let data = app_data(&app)?;
+    tauri::async_runtime::spawn_blocking(move || crate::statusline::set_bridge(&data, on))
+        .await
+        .map_err(|e| e.to_string())?
+}
+

@@ -10,6 +10,7 @@ mod platform;
 mod pty;
 mod settings;
 mod shell;
+mod statusline;
 mod toast;
 mod tray;
 #[cfg(windows)]
@@ -224,6 +225,11 @@ fn settings_path_guess() -> Option<PathBuf> {
 }
 
 fn main() {
+    // `aicstation statusline`: Claude Code's status line command (no window,
+    // no single-instance check; it runs once per status line update).
+    if std::env::args_os().nth(1).is_some_and(|a| a == "statusline") {
+        std::process::exit(statusline::run_bridge());
+    }
     // A second launch brings the running instance forward and exits; when
     // that instance does not answer, the user is told instead.
     #[cfg(windows)]
@@ -247,6 +253,7 @@ fn main() {
             std::fs::create_dir_all(&data)?;
             let settings = settings::SettingsStore::open(data.join("settings.json"));
             butaglyph::set_preset_dir(data.join("prompts"));
+            statusline::refresh_on_start(&data);
             if let Err(e) = integration::install(&data.join("shell-integration")) {
                 eprintln!("kabuk entegrasyonu yazılamadı: {e}");
             }
@@ -338,7 +345,9 @@ fn main() {
             commands::set_focus_context,
             commands::hide_to_tray,
             commands::search_history,
-            commands::cancel_search
+            commands::cancel_search,
+            commands::claude_status,
+            commands::set_usage_bridge
         ])
         .build(tauri::generate_context!())
         .expect("AI C-Station başlatılamadı")
