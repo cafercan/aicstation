@@ -279,6 +279,19 @@ pub fn run_chained(command: &str, input: &[u8]) -> (Vec<u8>, i32) {
     (reader.join().unwrap_or_default(), code)
 }
 
+/// `aicstation statusline --off` (run by the Windows uninstaller): puts the
+/// user's previous status line back. Returns the exit code.
+pub fn run_off() -> i32 {
+    let Some(dir) = data_dir() else { return 1 };
+    match disable(&claude_settings(), &dir) {
+        Ok(()) => 0,
+        Err(e) => {
+            eprintln!("aicstation statusline --off: {e}");
+            1
+        }
+    }
+}
+
 /// `aicstation statusline`: returns the exit code.
 pub fn run_bridge() -> i32 {
     let mut input = Vec::new();
@@ -305,7 +318,12 @@ pub fn run_bridge() -> i32 {
 /// `command` string that runs this executable as the bridge. The path is
 /// quoted for the shell Claude Code uses (sh on Linux, Git Bash or cmd on
 /// Windows); a path that cannot be quoted safely for those is refused.
-pub fn bridge_command(exe: &Path) -> Result<String, String> {
+///
+/// On Linux, when the program is gone (package removed, AppImage deleted)
+/// the command runs the user's previous status line itself, so it keeps
+/// working without the app. On Windows the uninstaller turns the bridge off
+/// (`statusline --off`).
+pub fn bridge_command(exe: &Path, previous: Option<&str>) -> Result<String, String> {
     let s = exe.to_str().ok_or("program path is not valid UTF-8")?;
     if cfg!(windows) {
         if s.contains(['"', '$', '`', '%', '!']) {
@@ -313,7 +331,11 @@ pub fn bridge_command(exe: &Path) -> Result<String, String> {
         }
         Ok(format!("\"{s}\" statusline"))
     } else {
-        Ok(format!("'{}' statusline", s.replace('\'', r"'\''")))
+        let q = format!("'{}'", s.replace('\'', r"'\''"));
+        Ok(match previous {
+            Some(p) => format!("if [ -x {q} ]; then exec {q} statusline; fi; {p}"),
+            None => format!("if [ -x {q} ]; then exec {q} statusline; fi"),
+        })
     }
 }
 
@@ -378,19 +400,30 @@ pub fn is_enabled(settings: &Path, data: &Path) -> bool {
     read_settings(&real_path(settings)).is_ok_and(|(m, _)| current_command(&m) == Some(b.command.as_str()))
 }
 
+/// Turns the bridge on for program `exe`; see [`enable_with`].
+pub fn enable(settings: &Path, data: &Path, exe: &Path) -> Result<(), String> {
+    enable_with(settings, data, |prev| bridge_command(exe, prev))
+}
+
 /// Turns the bridge on: keeps the user's `statusLine` in the bridge file,
-/// then points `statusLine` at `command` (keeping its padding and refresh
-/// interval). Already on: only the command is updated (the program moved).
-pub fn enable(settings: &Path, data: &Path, command: &str) -> Result<(), String> {
+/// then points `statusLine` at the command `make` builds from the previous
+/// status line's command (keeping its padding and refresh interval).
+/// Already on: only the command is updated (the program moved).
+pub fn enable_with(
+    settings: &Path,
+    data: &Path,
+    make: impl Fn(Option<&str>) -> Result<String, String>,
+) -> Result<(), String> {
     let settings = real_path(settings);
     let (mut m, newline) = read_settings(&settings)?;
     let known = read_bridge(data);
     let ours = known.as_ref().is_some_and(|b| current_command(&m) == Some(b.command.as_str()));
     let previous = if ours { known.and_then(|b| b.previous) } else { m.get("statusLine").cloned() };
+    let command = make(previous_command(&Bridge { command: String::new(), previous: previous.clone() }))?;
     // The bridge file first: once settings.json points at the bridge, the
     // previous value must already be safe.
     std::fs::create_dir_all(data).map_err(|e| e.to_string())?;
-    let b = Bridge { command: command.to_string(), previous: previous.clone() };
+    let b = Bridge { command: command.clone(), previous: previous.clone() };
     write_atomic(&data.join(BRIDGE_FILE), &serde_json::to_vec_pretty(&b).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
     let mut line = Map::new();
@@ -426,13 +459,13 @@ pub fn disable(settings: &Path, data: &Path) -> Result<(), String> {
 }
 
 /// The bridge is on but its command names another program path (the app was
-/// moved, or a new AppImage): point it at `command`.
-pub fn refresh(settings: &Path, data: &Path, command: &str) -> Result<(), String> {
+/// moved, or a new AppImage): point it at `exe`.
+pub fn refresh(settings: &Path, data: &Path, exe: &Path) -> Result<(), String> {
     let Some(b) = read_bridge(data) else { return Ok(()) };
-    if b.command == command || !is_enabled(settings, data) {
+    if bridge_command(exe, previous_command(&b))? == b.command || !is_enabled(settings, data) {
         return Ok(());
     }
-    enable(settings, data, command)
+    enable(settings, data, exe)
 }
 
 // ---- Commands ---------------------------------------------------------------
@@ -467,7 +500,7 @@ pub fn set_bridge(data: &Path, on: bool) -> Result<bool, String> {
     let settings = claude_settings();
     if on {
         let exe = program_path().ok_or("program path unknown")?;
-        enable(&settings, data, &bridge_command(&exe)?)?;
+        enable(&settings, data, &exe)?;
     } else {
         disable(&settings, data)?;
     }
@@ -476,8 +509,8 @@ pub fn set_bridge(data: &Path, on: bool) -> Result<bool, String> {
 
 /// At startup: an enabled bridge follows the program to its current path.
 pub fn refresh_on_start(data: &Path) {
-    let Some(cmd) = program_path().and_then(|p| bridge_command(&p).ok()) else { return };
-    if let Err(e) = refresh(&claude_settings(), data, &cmd) {
+    let Some(exe) = program_path() else { return };
+    if let Err(e) = refresh(&claude_settings(), data, &exe) {
         eprintln!("status line bridge: {e}");
     }
 }
@@ -593,12 +626,34 @@ mod tests {
     #[test]
     fn bridge_command_quotes_the_path() {
         if cfg!(windows) {
-            assert_eq!(bridge_command(Path::new(r"C:\Program Files\AICStation\aicstation.exe")).unwrap(),
+            assert_eq!(bridge_command(Path::new(r"C:\Program Files\AICStation\aicstation.exe"), Some("x")).unwrap(),
                 r#""C:\Program Files\AICStation\aicstation.exe" statusline"#);
-            assert!(bridge_command(Path::new(r"C:\a$b\x.exe")).is_err());
+            assert!(bridge_command(Path::new(r"C:\a$b\x.exe"), None).is_err());
         } else {
-            assert_eq!(bridge_command(Path::new("/opt/my apps/it's/aicstation")).unwrap(), r"'/opt/my apps/it'\''s/aicstation' statusline");
+            let q = r"'/opt/my apps/it'\''s/aicstation'";
+            assert_eq!(bridge_command(Path::new("/opt/my apps/it's/aicstation"), None).unwrap(),
+                format!("if [ -x {q} ]; then exec {q} statusline; fi"));
+            assert_eq!(bridge_command(Path::new("/opt/my apps/it's/aicstation"), Some("~/line.sh")).unwrap(),
+                format!("if [ -x {q} ]; then exec {q} statusline; fi; ~/line.sh"));
         }
+    }
+
+    /// The real command through sh: the bridge runs while the program is
+    /// there; once it is gone, the previous status line runs by itself.
+    #[cfg(unix)]
+    #[test]
+    fn without_the_program_the_previous_status_line_still_runs() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tempfile::tempdir().unwrap();
+        let exe = d.path().join("fake app");
+        std::fs::write(&exe, "#!/bin/sh\ncat >/dev/null; echo bridge\n").unwrap();
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let cmd = bridge_command(&exe, Some("tr a-z A-Z")).unwrap();
+        assert_eq!(run_chained(&cmd, b"mine").0, b"bridge\n");
+        std::fs::remove_file(&exe).unwrap();
+        assert_eq!(run_chained(&cmd, b"mine"), (b"MINE".to_vec(), 0));
+        let alone = bridge_command(&exe, None).unwrap();
+        assert_eq!(run_chained(&alone, b"x").0, b"");
     }
 
     fn settings_with(text: &str) -> (tempfile::TempDir, PathBuf, PathBuf) {
@@ -615,7 +670,7 @@ mod tests {
     #[test]
     fn enable_and_disable_restore_the_users_status_line_exactly() {
         let (_d, s, data) = settings_with(USER);
-        enable(&s, &data, "'/usr/bin/aicstation' statusline").unwrap();
+        enable_with(&s, &data, |_| Ok("'/usr/bin/aicstation' statusline".into())).unwrap();
         assert!(is_enabled(&s, &data));
         let on: Value = serde_json::from_str(&std::fs::read_to_string(&s).unwrap()).unwrap();
         assert_eq!(on["statusLine"], json!({ "type": "command", "command": "'/usr/bin/aicstation' statusline", "refreshInterval": 60 }));
@@ -623,7 +678,7 @@ mod tests {
         assert_eq!(on.as_object().unwrap().keys().collect::<Vec<_>>(), ["model", "statusLine", "alwaysThinkingEnabled"]);
         assert_eq!(previous_command(&read_bridge(&data).unwrap()), Some("~/.claude/line.sh"));
         // Turning it on again does not lose the previous value.
-        enable(&s, &data, "'/usr/bin/aicstation' statusline").unwrap();
+        enable_with(&s, &data, |_| Ok("'/usr/bin/aicstation' statusline".into())).unwrap();
         disable(&s, &data).unwrap();
         assert_eq!(std::fs::read_to_string(&s).unwrap(), USER);
         assert!(!is_enabled(&s, &data) && read_bridge(&data).is_none());
@@ -632,7 +687,7 @@ mod tests {
     #[test]
     fn without_a_previous_status_line_disable_removes_the_key() {
         let (_d, s, data) = settings_with("{\"model\":\"opus\"}");
-        enable(&s, &data, "bridge").unwrap();
+        enable_with(&s, &data, |_| Ok("bridge".into())).unwrap();
         assert_eq!(read_bridge(&data).unwrap().previous, None);
         disable(&s, &data).unwrap();
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&s).unwrap()).unwrap();
@@ -640,24 +695,24 @@ mod tests {
         // No settings file at all.
         let d = tempfile::tempdir().unwrap();
         let s = d.path().join("settings.json");
-        enable(&s, &d.path().join("data"), "bridge").unwrap();
+        enable_with(&s, &d.path().join("data"), |_| Ok("bridge".into())).unwrap();
         assert!(is_enabled(&s, &d.path().join("data")));
     }
 
     #[test]
     fn a_settings_file_that_does_not_parse_is_never_touched() {
         let (_d, s, data) = settings_with("{ \"model\": \"opus\", }");
-        assert!(enable(&s, &data, "bridge").is_err());
+        assert!(enable_with(&s, &data, |_| Ok("bridge".into())).is_err());
         assert_eq!(std::fs::read_to_string(&s).unwrap(), "{ \"model\": \"opus\", }");
         assert!(read_bridge(&data).is_none());
         let (_d, s, data) = settings_with("[]");
-        assert!(enable(&s, &data, "bridge").is_err());
+        assert!(enable_with(&s, &data, |_| Ok("bridge".into())).is_err());
     }
 
     #[test]
     fn a_status_line_changed_by_the_user_is_left_alone() {
         let (_d, s, data) = settings_with(USER);
-        enable(&s, &data, "bridge").unwrap();
+        enable_with(&s, &data, |_| Ok("bridge".into())).unwrap();
         let mine = "{\n  \"statusLine\": {\n    \"type\": \"command\",\n    \"command\": \"new.sh\"\n  }\n}\n";
         std::fs::write(&s, mine).unwrap();
         assert!(!is_enabled(&s, &data));
@@ -669,14 +724,17 @@ mod tests {
     #[test]
     fn refresh_follows_a_moved_program() {
         let (_d, s, data) = settings_with(USER);
-        enable(&s, &data, "old statusline").unwrap();
-        refresh(&s, &data, "new statusline").unwrap();
-        assert_eq!(read_bridge(&data).unwrap().command, "new statusline");
-        assert_eq!(previous_command(&read_bridge(&data).unwrap()), Some("~/.claude/line.sh"));
+        let (old, new) = (Path::new("/old/aicstation"), Path::new("/new/aicstation"));
+        enable(&s, &data, old).unwrap();
+        refresh(&s, &data, old).unwrap();
+        assert_eq!(read_bridge(&data).unwrap().command, bridge_command(old, Some("~/.claude/line.sh")).unwrap());
+        refresh(&s, &data, new).unwrap();
+        assert_eq!(read_bridge(&data).unwrap().command, bridge_command(new, Some("~/.claude/line.sh")).unwrap());
+        assert!(is_enabled(&s, &data));
         disable(&s, &data).unwrap();
         assert_eq!(std::fs::read_to_string(&s).unwrap(), USER);
         // Off: refresh does nothing.
-        refresh(&s, &data, "x").unwrap();
+        refresh(&s, &data, new).unwrap();
         assert!(read_bridge(&data).is_none());
     }
 
@@ -686,7 +744,7 @@ mod tests {
         let (d, real, data) = settings_with(USER);
         let link = d.path().join("link.json");
         std::os::unix::fs::symlink(&real, &link).unwrap();
-        enable(&link, &data, "bridge").unwrap();
+        enable_with(&link, &data, |_| Ok("bridge".into())).unwrap();
         assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
         assert!(is_enabled(&link, &data));
         disable(&link, &data).unwrap();
