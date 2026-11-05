@@ -74,3 +74,11 @@ test("filterHistory: metin, tarih aralığı (yerel, iki uç dahil), tarihe/toke
   // The input is not mutated.
   expect(ids(rows)).toEqual(["a", "b", "c", "d"]);
 });
+
+test("filterSessions ve filterHistory git branch'e göre de arar", () => {
+  const cards = [card({ sessionId: "a", gitBranch: "feat/adc-kalibrasyon" }), card({ sessionId: "b", gitBranch: null })];
+  expect(filterSessions(cards, "kalibrasyon", new Set()).map((c) => c.sessionId)).toEqual(["a"]);
+  const r = hrow("x", 1, 0);
+  const rows = [{ ...r, summary: { ...r.summary!, gitBranch: "fix/uart" } }, hrow("y", 2, 0)];
+  expect(filterHistory(rows, { query: "uart", from: "", to: "", sort: "date" }).map((h) => h.sessionId)).toEqual(["x"]);
+});

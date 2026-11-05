@@ -190,7 +190,10 @@ export default function History({ onOpen, onResume, onTerminal }: Props) {
               return (
                 <tr key={r.sessionId} onClick={() => onOpen(r.sessionId)}>
                   <td>{new Date(r.modifiedMs).toLocaleString(locale())}</td>
-                  <td>{name}</td>
+                  <td>
+                    {name}
+                    {s?.gitBranch && <span className="branch" title={s.gitBranch}>⎇ {s.gitBranch}</span>}
+                  </td>
                   <td title={rowCwd(r)}>{rowCwd(r) || "?"}</td>
                   <td>{s ? s.model ?? "?" : "?"}</td>
                   <td>{s ? fmtElapsed(s.lastAtMs - s.firstAtMs) : "?"}</td>

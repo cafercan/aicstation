@@ -62,7 +62,9 @@ export default function SessionCardView({ card, now, onOpen, onGoto }: Props) {
       </div>
       {note && <div className="goto-note" role="alert">{errorText(note)}</div>}
       <div className="path" title={card.cwd}>
-        <span className="cwd">{card.cwd}</span><span className="model">{card.model ?? "?"}</span>
+        <span className="cwd">{card.cwd}</span>
+        {card.gitBranch && <span className="branch" title={card.gitBranch}>⎇ {card.gitBranch}</span>}
+        <span className="model">{card.model ?? "?"}</span>
       </div>
       <div className="agents">
         <AgentDonut running={running} finished={finished} />
