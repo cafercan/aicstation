@@ -1,6 +1,7 @@
 //! Glue between the snapshot thread, the alert detector, the toasts and the
 //! tray. Runs after every snapshot refresh, whether the window is shown or not.
-use crate::alerts::{Alert, AlertKind, AlertToggles, Detector};
+use crate::alerts::{Alert, AlertKind, AlertToggles, BudgetWatch, Detector};
+use crate::commands::AppState;
 use crate::errors;
 use crate::native_text::{texts, with_name, with_name_n};
 use crate::settings::{Settings, SettingsStore};
@@ -15,6 +16,7 @@ use tauri::{AppHandle, Manager};
 #[derive(Default)]
 pub struct Notifier {
     detector: Mutex<Detector>,
+    budget: Mutex<BudgetWatch>,
     /// Sessions whose detail or embedded terminal panes the UI shows
     /// (set_focus_context): at most [`MAX_FOCUS`].
     focus: Mutex<Vec<String>>,
@@ -52,6 +54,11 @@ pub fn toggles(s: &Settings) -> AlertToggles {
         context: s.notify_context.then_some(s.context_threshold),
         stalled: s.notify_stalled.then(|| std::time::Duration::from_secs(u64::from(s.stalled_minutes) * 60)),
     }
+}
+
+/// Title of the daily cost toast in `lang`.
+pub fn budget_text(lang: &str, limit_usd: u32) -> String {
+    texts(lang).budget.replacen("{n}", &limit_usd.to_string(), 1)
 }
 
 /// Title and body of an alert's toast in `lang`.
@@ -107,6 +114,15 @@ pub fn after_snapshot(app: &AppHandle, snap: &Snapshot) {
         let handle = app.clone();
         let id = a.session_id.clone();
         toaster.show(&toast, move || tray::navigate(&handle, Some(id.clone())));
+    }
+    if settings.notify_budget {
+        let (day, cost) = app.state::<AppState>().today_cost();
+        let limit = Some(settings.daily_budget_usd);
+        if notifier.budget.lock().unwrap_or_else(|e| e.into_inner()).observe(day, cost, limit) {
+            let toast = Toast::new(&budget_text(&settings.lang, settings.daily_budget_usd), None, settings.notify_sound);
+            let handle = app.clone();
+            toaster.show(&toast, move || tray::navigate(&handle, None));
+        }
     }
     tray::update(app, snap, &settings.lang);
 }
@@ -169,6 +185,8 @@ mod tests {
         let c = Alert { kind: AlertKind::Context, n: Some(87), ..f };
         assert_eq!(alert_text(&c, "tr").0, "api: bağlam 87% dolu");
         assert_eq!(alert_text(&c, "en").0, "api: context is 87% full");
+        assert_eq!(budget_text("tr", 25), "Bugünkü tahmini maliyet $25 sınırına ulaştı");
+        assert_eq!(budget_text("en", 25), "Today's estimated cost reached $25");
         let q = Alert { kind: AlertKind::Stalled, n: Some(10), ..c };
         assert_eq!(alert_text(&q, "tr").0, "api 10 dakikadır sessiz");
     }

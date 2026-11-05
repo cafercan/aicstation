@@ -174,6 +174,8 @@ export const tr = {
   "settings.notifyContext": "Bir oturumun bağlamı şu orana ulaşınca",
   "settings.notifyStalled": "Çalışan bir oturum şu süre boyunca hiç ilerlemezse",
   "settings.minutes": "{n} dk",
+  "settings.notifyBudget": "Bugünkü tahmini maliyet şu tutara ulaşınca",
+  "settings.budgetHint": "Tutarlar uygulamanın fiyat tablosundan yapılan bir tahmindir; gerçek faturanız farklı olabilir. Günde bir kez bildirilir.",
   "settings.notifySound": "Bildirim sesi (sistemin varsayılan sesi)",
   "settings.general": "Genel",
   "settings.window": "Pencere",

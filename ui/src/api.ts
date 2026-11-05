@@ -203,6 +203,10 @@ export interface Settings {
   notifyStalled: boolean;
   /** 2–120. */
   stalledMinutes: number;
+  /** Today's estimated cost reaches `dailyBudgetUsd`. */
+  notifyBudget: boolean;
+  /** Whole dollars, 1–10000. */
+  dailyBudgetUsd: number;
   notifySound: boolean;
   closeToTray: boolean;
   /** Shell id of the embedded terminals ("auto" = platform default). */

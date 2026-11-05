@@ -25,6 +25,36 @@ const NOTIFY: [Toggle, Key][] = [
 export const CONTEXT_STEPS = [50, 60, 70, 75, 80, 85, 90, 95, 99];
 /** Quiet minutes offered for the stalled-session alert (settings.rs STALLED_MINUTES). */
 export const STALLED_STEPS = [5, 10, 15, 20, 30, 45, 60, 90, 120];
+/** Daily budget limits in whole dollars (settings.rs DAILY_BUDGETS). */
+export const BUDGET_MIN = 1;
+export const BUDGET_MAX = 10_000;
+
+/** Whole dollars from the budget box; null when not a number in range. */
+export function parseBudget(v: string): number | null {
+  if (!/^\d+$/.test(v.trim())) return null;
+  const n = Number(v);
+  return n >= BUDGET_MIN && n <= BUDGET_MAX ? n : null;
+}
+
+/** The daily budget box: saved on blur or Enter, reset when the text is invalid. */
+function BudgetInput({ value, disabled, label, onSave }: {
+  value: number; disabled: boolean; label: string; onSave: (n: number) => void;
+}) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => setText(String(value)), [value]);
+  const commit = () => {
+    const n = parseBudget(text);
+    if (n === null) setText(String(value));
+    else if (n !== value) onSave(n);
+  };
+  return (
+    <span className="settings-budget">
+      $<input type="number" inputMode="numeric" min={BUDGET_MIN} max={BUDGET_MAX} step={1} aria-label={label}
+        value={text} disabled={disabled} onChange={(e) => setText(e.target.value)} onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Enter") commit(); }} />
+    </span>
+  );
+}
 
 /** Notification and window toggles, stored by the backend in settings.json. */
 export default function SettingsPage() {
@@ -108,6 +138,14 @@ export default function SettingsPage() {
         {thresholdRow("notifyContext", "settings.notifyContext", "contextThreshold", CONTEXT_STEPS, (n) => `${n}%`)}
         {thresholdRow("notifyStalled", "settings.notifyStalled", "stalledMinutes", STALLED_STEPS,
           (n) => t("settings.minutes", { n }))}
+        <div className="settings-row settings-threshold">
+          <input type="checkbox" id="notifyBudget" checked={s.notifyBudget}
+            onChange={(e) => toggle("notifyBudget", e.target.checked)} />
+          <label htmlFor="notifyBudget">{t("settings.notifyBudget")}</label>
+          <BudgetInput value={s.dailyBudgetUsd} disabled={!s.notifyBudget} label={t("settings.notifyBudget")}
+            onSave={(n) => setNum("dailyBudgetUsd", n)} />
+        </div>
+        <span className="settings-hint">{t("settings.budgetHint")}</span>
         {row("notifySound", "settings.notifySound")}
       </fieldset>
       <fieldset>

@@ -95,6 +95,28 @@ struct Seen {
     stall_alerted: bool,
 }
 
+/// The daily cost alert: once per local day and limit, the first time
+/// today's estimated cost is at or over the limit. Not per session, so it
+/// has no debounce or focus rules.
+#[derive(Default)]
+pub struct BudgetWatch {
+    /// The day and limit (in dollars) last alerted for.
+    alerted: Option<(chrono::NaiveDate, u32)>,
+}
+
+impl BudgetWatch {
+    /// True when the alert should be shown now. `limit` is None while the
+    /// alert is off.
+    pub fn observe(&mut self, day: chrono::NaiveDate, cost_usd: f64, limit: Option<u32>) -> bool {
+        let Some(limit) = limit else { return false };
+        if cost_usd < f64::from(limit) || self.alerted == Some((day, limit)) {
+            return false;
+        }
+        self.alerted = Some((day, limit));
+        true
+    }
+}
+
 #[derive(Default)]
 pub struct Detector {
     /// None until the first snapshot has been observed.
@@ -576,5 +598,22 @@ mod tests {
         assert!(d.observe(&[c.clone()], secs(t0, 601), ALL, &[]).is_empty());
         let got = d.observe(&[c], secs(t0, 616), ALL, &[]);
         assert_eq!(kinds(&got), [(AlertKind::Stalled, A)]);
+    }
+
+    #[test]
+    fn budget_alerts_once_per_day_and_limit() {
+        let day = chrono::NaiveDate::from_ymd_opt(2026, 11, 5).unwrap();
+        let next = day.succ_opt().unwrap();
+        let mut b = BudgetWatch::default();
+        assert!(!b.observe(day, 50.0, None), "off");
+        assert!(!b.observe(day, 19.99, Some(20)));
+        assert!(b.observe(day, 20.0, Some(20)));
+        assert!(!b.observe(day, 35.0, Some(20)), "once a day");
+        // A raised limit is a new limit: it alerts when reached.
+        assert!(!b.observe(day, 35.0, Some(40)));
+        assert!(b.observe(day, 41.0, Some(40)));
+        // The next day starts over.
+        assert!(!b.observe(next, 1.0, Some(40)));
+        assert!(b.observe(next, 40.0, Some(40)));
     }
 }

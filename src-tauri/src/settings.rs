@@ -29,6 +29,8 @@ pub fn valid_preset(p: &str) -> bool {
 pub const CONTEXT_THRESHOLDS: std::ops::RangeInclusive<u8> = 50..=99;
 /// Quiet minutes the stalled-session alert can be set to.
 pub const STALLED_MINUTES: std::ops::RangeInclusive<u16> = 2..=120;
+/// Daily cost limits (whole dollars) the budget alert can be set to.
+pub const DAILY_BUDGETS: std::ops::RangeInclusive<u32> = 1..=10_000;
 
 /// Largest settings.json read; anything bigger is treated as corrupt.
 const MAX_FILE: u64 = 64 * 1024;
@@ -50,6 +52,10 @@ pub struct Settings {
     pub notify_stalled: bool,
     /// One of [`STALLED_MINUTES`].
     pub stalled_minutes: u16,
+    /// Today's estimated cost reaches `daily_budget_usd`.
+    pub notify_budget: bool,
+    /// One of [`DAILY_BUDGETS`], in whole dollars.
+    pub daily_budget_usd: u32,
     /// Toasts play the system default notification sound.
     pub notify_sound: bool,
     /// Closing the window hides it to the tray instead of exiting.
@@ -76,6 +82,8 @@ impl Default for Settings {
             context_threshold: 85,
             notify_stalled: false,
             stalled_minutes: 10,
+            notify_budget: false,
+            daily_budget_usd: 20,
             notify_sound: false,
             close_to_tray: true,
             tray_notice_shown: false,
@@ -96,6 +104,7 @@ impl Settings {
             && valid_preset(&self.prompt_preset)
             && CONTEXT_THRESHOLDS.contains(&self.context_threshold)
             && STALLED_MINUTES.contains(&self.stalled_minutes)
+            && DAILY_BUDGETS.contains(&self.daily_budget_usd)
         {
             Ok(())
         } else {
@@ -133,6 +142,12 @@ pub fn from_json(v: &Value) -> Settings {
             &|v| u16::try_from(v).is_ok_and(|v| STALLED_MINUTES.contains(&v)),
             d.stalled_minutes.into(),
         ) as u16,
+        notify_budget: flag("notifyBudget", d.notify_budget),
+        daily_budget_usd: number(
+            "dailyBudgetUsd",
+            &|v| u32::try_from(v).is_ok_and(|v| DAILY_BUDGETS.contains(&v)),
+            d.daily_budget_usd.into(),
+        ) as u32,
         notify_sound: flag("notifySound", d.notify_sound),
         close_to_tray: flag("closeToTray", d.close_to_tray),
         tray_notice_shown: flag("trayNoticeShown", d.tray_notice_shown),
@@ -310,6 +325,20 @@ mod tests {
         assert_eq!(s.stalled_minutes, 30);
         let v: Value = serde_json::from_str(r#"{"stalledMinutes":70000}"#).unwrap();
         assert_eq!(from_json(&v).stalled_minutes, 10);
+    }
+
+    #[test]
+    fn daily_budget_in_whole_dollars_in_range() {
+        let d = Settings::default();
+        assert!(!d.notify_budget);
+        assert_eq!(d.daily_budget_usd, 20);
+        for bad in [0u32, 10_001] {
+            assert!(Settings { daily_budget_usd: bad, ..d.clone() }.validate().is_err(), "{bad}");
+        }
+        let v: Value = serde_json::from_str(r#"{"notifyBudget":true,"dailyBudgetUsd":75}"#).unwrap();
+        assert_eq!((from_json(&v).notify_budget, from_json(&v).daily_budget_usd), (true, 75));
+        let v: Value = serde_json::from_str(r#"{"dailyBudgetUsd":12.5}"#).unwrap();
+        assert_eq!(from_json(&v).daily_budget_usd, 20);
     }
 
     #[test]
