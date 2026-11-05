@@ -1,0 +1,26 @@
+# Maintainer: cafercan <https://github.com/cafercan>
+#
+# Template: scripts/build-arch.sh fills in @VERSION@ and @SHA256@ from the
+# .deb of a release and writes the finished PKGBUILD next to the package.
+# The .deb is built on the oldest supported Ubuntu, so its binaries run on
+# Arch's newer libraries as is; this package only moves its files into place.
+pkgname=aicstation-bin
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc="Sessions, agents and terminals for Claude Code (unofficial, not affiliated with Anthropic)"
+arch=('x86_64')
+url="https://github.com/cafercan/aicstation"
+license=('MIT')
+depends=('webkit2gtk-4.1' 'gtk3' 'libayatana-appindicator' 'hicolor-icon-theme')
+optdepends=('xdg-utils: open session folders in the file manager')
+# The app ships butaglyph as /usr/bin/buta.
+provides=('aicstation' 'butaglyph')
+conflicts=('aicstation' 'butaglyph')
+options=('!strip' '!debug')
+source=("AICStation-v${pkgver}-linux-amd64.deb::${url}/releases/download/v${pkgver}/AICStation-v${pkgver}-linux-amd64.deb")
+sha256sums=('@SHA256@')
+
+package() {
+  bsdtar -xf data.tar.gz -C "$pkgdir" --no-same-owner
+  install -Dm644 "$pkgdir/usr/lib/AICStation/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
