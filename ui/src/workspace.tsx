@@ -13,7 +13,7 @@ import { t } from "./i18n";
 import { focusSearch } from "./shortcuts/bus";
 import { KEYMAP, cycle, matchChord, type Binding } from "./shortcuts/keymap";
 import { inSplit, openSplit, paneLayout, splitAfterClose, type Split } from "./terminal/split";
-import type { TerminalEntry } from "./terminal/store";
+import { sessionsIn, type TerminalEntry } from "./terminal/store";
 
 export type Overlay = "palette" | "help" | null;
 
@@ -25,6 +25,8 @@ export const showTerminal = (setView: Dispatch<SetStateAction<View>>, id: number
 
 interface AreaProps {
   terminals: TerminalEntry[];
+  /** Live Claude sessions: each terminal running one shows its bar. */
+  sessions: SessionCard[];
   labels: Map<number, string>;
   termId: number | null;
   split: Split | null;
@@ -67,6 +69,7 @@ export function TerminalArea(p: AreaProps) {
           const b = box.get(x.id);
           return (
             <TerminalView key={x.id} entry={x} visible={!!b} active={b?.active ?? false}
+              session={sessionsIn(x, p.sessions)[0]}
               pane={splitShown && b ? { left: b.left, width: b.width } : undefined}
               onActivate={splitShown && b && !b.active ? () => showTerminal(p.setView, x.id) : undefined} />
           );
@@ -99,7 +102,6 @@ export function useSplitCleanup(
 }
 
 export interface ShortcutCtx extends AreaProps {
-  sessions: SessionCard[];
   overlay: Overlay;
   setOverlay: Dispatch<SetStateAction<Overlay>>;
   onNew: () => void;

@@ -63,3 +63,23 @@ test("Ctrl+Shift+F hedefi: yalnızca görünen etkin bölmenin arama çubuğu a�
   expect(bars).toHaveLength(1);
   expect(bars[0].closest("[data-terminal]")!.getAttribute("data-terminal")).toBe("3");
 });
+
+test("Claude bar: only under a terminal running a Claude session, and only while shown", () => {
+  const session = {
+    sessionId: "s1", pid: 5, parentPid: 1, name: "demo", cwd: "/x/proj", status: "busy", waitingFor: null,
+    model: "claude-opus-5-5", contextPct: 10, costUsd: 0,
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 },
+    agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 0,
+    gitBranch: null, hostKind: "embedded",
+  } as const;
+  const { container } = render(<>
+    <TerminalView entry={entry(1)} visible pane={{ left: 0, width: 50 }} active session={session} />
+    <TerminalView entry={entry(2)} visible pane={{ left: 50, width: 50 }} active={false} />
+    <TerminalView entry={entry(3)} visible={false} session={{ ...session, sessionId: "s3" }} />
+  </>);
+  const wraps = [...container.querySelectorAll<HTMLElement>(".term-wrap")];
+  expect(wraps.map((w) => w.querySelectorAll("[data-testid=claude-bar]").length)).toEqual([1, 0, 0]);
+  expect(wraps[0].className).toContain("has-cbar");
+  expect(wraps[1].className).not.toContain("has-cbar");
+  expect(wraps[0].querySelector("[data-testid=claude-bar]")!.textContent).toContain("opus-5-5");
+});

@@ -136,10 +136,10 @@ export default function App() {
     };
   });
   const area = {
-    terminals, labels: new Map(sideTerms.map((s) => [s.id, s.label])), termId, split, setSplit, setView,
+    terminals, sessions: snapshot.sessions, labels: new Map(sideTerms.map((s) => [s.id, s.label])), termId, split, setSplit, setView,
     newTerminal: () => openTerminal().then((t) => t.id),
   };
-  const shortcuts = { ...area, sessions: snapshot.sessions, overlay, setOverlay, onNew, onClose };
+  const shortcuts = { ...area, overlay, setOverlay, onNew, onClose };
   useShortcuts(shortcuts);
 
   const selectedId = typeof view === "object" && "session" in view ? view.session : null;

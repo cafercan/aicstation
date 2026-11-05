@@ -222,6 +222,21 @@ table.hist tbody tr:hover { background: var(--hover); }
 /* Terminals */
 .term-wrap { position: absolute; inset: 0; }
 .term-host { position: absolute; inset: 0; padding: 6px; }
+/* Claude bar: one line under a terminal running Claude Code. */
+.term-wrap.has-cbar .term-host { bottom: 22px; }
+.cbar {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 22px; line-height: 21px; padding: 0 10px;
+  background: var(--sb-bg); border-top: 1px solid var(--border); color: var(--dim);
+  font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cbar .c2 { color: var(--cyan); } .cbar .g { color: var(--busy-text); }
+.cbar-sep { color: var(--border-strong); }
+.cbar-effort { color: var(--muted); }
+.cbar-del { color: var(--waiting-text); }
+.cbar-reset { color: var(--muted); }
+.cbar-limit.ok .cbar-meter { color: var(--busy-text); }
+.cbar-limit.low .cbar-meter, .cbar-limit.low { color: var(--yellow); }
+.cbar-limit.critical .cbar-meter, .cbar-limit.critical { color: var(--waiting-text); }
 .term-search {
   position: absolute; top: 8px; right: 24px; z-index: 10; display: flex; align-items: center; gap: 4px;
   padding: 4px 6px; background: var(--raised); border: 1px solid var(--border); border-radius: 6px;

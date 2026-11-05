@@ -11,6 +11,8 @@ import SearchBar from "../terminal/SearchBar";
 import { registerSearchFocus } from "../shortcuts/bus";
 import { useTheme } from "../theme";
 import { throttle } from "../throttle";
+import type { SessionCard } from "../api";
+import ClaudeBar from "../terminal/ClaudeBar";
 
 interface Props {
   entry: TerminalEntry;
@@ -21,6 +23,8 @@ interface Props {
   active?: boolean;
   /** Pointer or focus entered this pane. */
   onActivate?: () => void;
+  /** The Claude Code session running in this terminal: its bar is shown under it. */
+  session?: SessionCard;
 }
 
 /** Terminals that already got a renderer decision (StrictMode runs effects twice). */
@@ -30,7 +34,7 @@ const gpuTried = new WeakSet<Terminal>();
 const RESIZE_MS = 80;
 
 /** Stays mounted while hidden so output and scrollback are kept. */
-export default function TerminalView({ entry, visible, pane, active = true, onActivate }: Props) {
+export default function TerminalView({ entry, visible, pane, active = true, onActivate, session }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const [searching, setSearching] = useState(false);
   const look = useAppearance();
@@ -66,11 +70,12 @@ export default function TerminalView({ entry, visible, pane, active = true, onAc
 
   const style: CSSProperties = { display: visible ? "block" : "none", background: SCHEMES[activeScheme(look, appTheme)].theme.background };
   if (pane) { style.left = `${pane.left}%`; style.width = `${pane.width}%`; style.right = "auto"; }
-  const cls = `term-wrap${pane ? " split" : ""}${pane && active ? " active" : ""}`;
+  const cls = `term-wrap${pane ? " split" : ""}${pane && active ? " active" : ""}${session ? " has-cbar" : ""}`;
   return (
     <div className={cls} style={style} data-terminal={entry.id}
       onMouseDownCapture={onActivate} onFocusCapture={onActivate}>
       <div className="term-host" ref={host} style={{ padding: look.padding }} />
+      {session && visible && <ClaudeBar session={session} />}
       {searching && (
         <SearchBar search={entry.search} onClose={() => { setSearching(false); entry.term.focus(); }} />
       )}
