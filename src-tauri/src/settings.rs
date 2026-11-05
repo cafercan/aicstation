@@ -27,6 +27,8 @@ pub fn valid_preset(p: &str) -> bool {
 
 /// Context percents the context alert can be set to.
 pub const CONTEXT_THRESHOLDS: std::ops::RangeInclusive<u8> = 50..=99;
+/// Quiet minutes the stalled-session alert can be set to.
+pub const STALLED_MINUTES: std::ops::RangeInclusive<u16> = 2..=120;
 
 /// Largest settings.json read; anything bigger is treated as corrupt.
 const MAX_FILE: u64 = 64 * 1024;
@@ -44,6 +46,10 @@ pub struct Settings {
     pub notify_context: bool,
     /// One of [`CONTEXT_THRESHOLDS`].
     pub context_threshold: u8,
+    /// A busy session shows no activity for `stalled_minutes`.
+    pub notify_stalled: bool,
+    /// One of [`STALLED_MINUTES`].
+    pub stalled_minutes: u16,
     /// Toasts play the system default notification sound.
     pub notify_sound: bool,
     /// Closing the window hides it to the tray instead of exiting.
@@ -68,6 +74,8 @@ impl Default for Settings {
             notify_subagent: false,
             notify_context: true,
             context_threshold: 85,
+            notify_stalled: false,
+            stalled_minutes: 10,
             notify_sound: false,
             close_to_tray: true,
             tray_notice_shown: false,
@@ -87,6 +95,7 @@ impl Settings {
             && PROMPTS.contains(&self.prompt.as_str())
             && valid_preset(&self.prompt_preset)
             && CONTEXT_THRESHOLDS.contains(&self.context_threshold)
+            && STALLED_MINUTES.contains(&self.stalled_minutes)
         {
             Ok(())
         } else {
@@ -118,6 +127,12 @@ pub fn from_json(v: &Value) -> Settings {
             &|v| u8::try_from(v).is_ok_and(|v| CONTEXT_THRESHOLDS.contains(&v)),
             d.context_threshold.into(),
         ) as u8,
+        notify_stalled: flag("notifyStalled", d.notify_stalled),
+        stalled_minutes: number(
+            "stalledMinutes",
+            &|v| u16::try_from(v).is_ok_and(|v| STALLED_MINUTES.contains(&v)),
+            d.stalled_minutes.into(),
+        ) as u16,
         notify_sound: flag("notifySound", d.notify_sound),
         close_to_tray: flag("closeToTray", d.close_to_tray),
         tray_notice_shown: flag("trayNoticeShown", d.tray_notice_shown),
@@ -279,6 +294,22 @@ mod tests {
             let v: Value = serde_json::from_str(json).unwrap();
             assert_eq!(from_json(&v).context_threshold, want, "{json}");
         }
+    }
+
+    #[test]
+    fn stalled_minutes_in_range() {
+        let d = Settings::default();
+        assert!(!d.notify_stalled);
+        assert_eq!(d.stalled_minutes, 10);
+        for bad in [0u16, 1, 121, 9999] {
+            assert!(Settings { stalled_minutes: bad, ..d.clone() }.validate().is_err(), "{bad}");
+        }
+        let v: Value = serde_json::from_str(r#"{"notifyStalled":true,"stalledMinutes":30}"#).unwrap();
+        let s = from_json(&v);
+        assert!(s.notify_stalled);
+        assert_eq!(s.stalled_minutes, 30);
+        let v: Value = serde_json::from_str(r#"{"stalledMinutes":70000}"#).unwrap();
+        assert_eq!(from_json(&v).stalled_minutes, 10);
     }
 
     #[test]

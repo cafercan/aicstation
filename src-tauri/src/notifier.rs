@@ -50,6 +50,7 @@ pub fn toggles(s: &Settings) -> AlertToggles {
         finished: s.notify_finished,
         subagent: s.notify_subagent,
         context: s.notify_context.then_some(s.context_threshold),
+        stalled: s.notify_stalled.then(|| std::time::Duration::from_secs(u64::from(s.stalled_minutes) * 60)),
     }
 }
 
@@ -61,6 +62,7 @@ pub fn alert_text(a: &Alert, lang: &str) -> (String, Option<String>) {
         AlertKind::Finished => t.finished,
         AlertKind::Subagent => t.subagent,
         AlertKind::Context => t.context,
+        AlertKind::Stalled => t.stalled,
     };
     let title = match a.n {
         Some(n) => with_name_n(template, &a.name, n),
@@ -167,12 +169,19 @@ mod tests {
         let c = Alert { kind: AlertKind::Context, n: Some(87), ..f };
         assert_eq!(alert_text(&c, "tr").0, "api: bağlam 87% dolu");
         assert_eq!(alert_text(&c, "en").0, "api: context is 87% full");
+        let q = Alert { kind: AlertKind::Stalled, n: Some(10), ..c };
+        assert_eq!(alert_text(&q, "tr").0, "api 10 dakikadır sessiz");
     }
 
     #[test]
     fn toggles_come_from_settings() {
         let s = Settings { notify_waiting: false, ..Settings::default() };
-        assert_eq!(toggles(&s), AlertToggles { waiting: false, finished: true, subagent: false, context: Some(85) });
+        assert_eq!(
+            toggles(&s),
+            AlertToggles { waiting: false, finished: true, subagent: false, context: Some(85), stalled: None }
+        );
+        let q = Settings { notify_stalled: true, stalled_minutes: 15, ..s.clone() };
+        assert_eq!(toggles(&q).stalled, Some(std::time::Duration::from_secs(900)));
         let s = Settings { notify_context: false, context_threshold: 70, ..s };
         assert_eq!(toggles(&s).context, None);
         let s = Settings { notify_context: true, ..s };

@@ -21,6 +21,9 @@ pub enum AlertKind {
     Subagent,
     /// The context use reached the threshold (`Alert::n` is the percent).
     Context,
+    /// A busy session showed no activity for the set time (`Alert::n` is
+    /// the minutes).
+    Stalled,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,7 +32,7 @@ pub struct Alert {
     pub session_id: String,
     pub name: String,
     pub waiting_for: Option<String>,
-    /// The number the text shows (context percent), when the kind has one.
+    /// The number the text shows (context percent, quiet minutes), when the kind has one.
     pub n: Option<u32>,
 }
 
@@ -41,6 +44,8 @@ pub struct AlertToggles {
     pub subagent: bool,
     /// Context percent that alerts; None when that alert is off.
     pub context: Option<u8>,
+    /// Quiet time of a busy session that alerts; None when that alert is off.
+    pub stalled: Option<Duration>,
 }
 
 impl AlertToggles {
@@ -81,6 +86,13 @@ struct Seen {
     agents_finished: u32,
     /// Context use was at or over the threshold.
     context_over: bool,
+    /// What counts as activity: last activity time and total tokens (the
+    /// tokens include the agents, whose work does not touch the main transcript).
+    activity: (u64, u64),
+    /// Since when `activity` has not changed.
+    quiet_since: Instant,
+    /// The current quiet stretch was already reported.
+    stall_alerted: bool,
 }
 
 #[derive(Default)]
@@ -120,6 +132,15 @@ impl Detector {
             };
             let is_focused = focused.contains(&card.session_id.as_str());
             let context_over = toggles.context_over(card);
+            let activity = (card.last_activity_ms, card.tokens.total());
+            let quiet_since = match old {
+                Some(o) if o.activity == activity => o.quiet_since,
+                _ => now,
+            };
+            // Only plain "busy": a shell command may run quietly for long.
+            let stalled = card.status == SessionStatus::Busy
+                && toggles.stalled.is_some_and(|limit| now.duration_since(quiet_since) >= limit);
+            let mut stall_alerted = stalled && old.is_some_and(|o| o.stall_alerted);
             let in_window =
                 |last: &HashMap<String, Instant>| last.get(&card.session_id).is_some_and(|t| now.duration_since(*t) < DEBOUNCE);
             if let (false, Some(o)) = (first, old) {
@@ -134,6 +155,9 @@ impl Detector {
                     toggles.subagent.then_some(AlertKind::Subagent)
                 } else if context_over && !o.context_over {
                     Some(AlertKind::Context)
+                } else if stalled && !o.stall_alerted {
+                    stall_alerted = true;
+                    Some(AlertKind::Stalled)
                 } else {
                     None
                 };
@@ -143,7 +167,11 @@ impl Detector {
                         session_id: card.session_id.clone(),
                         name: card.name.clone(),
                         waiting_for: card.waiting_for.clone().filter(|w| !w.trim().is_empty()),
-                        n: (kind == AlertKind::Context).then(|| card.context_pct.unwrap_or(0.0).round() as u32),
+                        n: match kind {
+                            AlertKind::Context => Some(card.context_pct.unwrap_or(0.0).round() as u32),
+                            AlertKind::Stalled => toggles.stalled.map(|d| (d.as_secs() / 60) as u32),
+                            _ => None,
+                        },
                     };
                     if is_focused {
                         // Seen on screen: nothing to tell, also not later.
@@ -165,6 +193,7 @@ impl Detector {
                         AlertKind::Finished => toggles.finished,
                         AlertKind::Subagent => toggles.subagent,
                         AlertKind::Context => context_over,
+                        AlertKind::Stalled => stalled,
                     };
                     if enabled && !is_focused {
                         self.last_alert.insert(card.session_id.clone(), now);
@@ -176,7 +205,15 @@ impl Detector {
             }
             next.insert(
                 card.session_id.clone(),
-                Seen { phase: ph, busy_since, agents_finished: card.agents_finished, context_over },
+                Seen {
+                    phase: ph,
+                    busy_since,
+                    agents_finished: card.agents_finished,
+                    context_over,
+                    activity,
+                    quiet_since,
+                    stall_alerted,
+                },
             );
         }
         // Forget sessions that are gone.
@@ -194,7 +231,13 @@ mod tests {
 
     const A: &str = "0b2f6a40-1111-4c3e-9d2a-5f1e2d3c4b5a";
     const B: &str = "7c9e1d20-2222-4a8b-8e3f-1a2b3c4d5e6f";
-    const ALL: AlertToggles = AlertToggles { waiting: true, finished: true, subagent: true, context: Some(85) };
+    const ALL: AlertToggles = AlertToggles {
+        waiting: true,
+        finished: true,
+        subagent: true,
+        context: Some(85),
+        stalled: Some(Duration::from_secs(600)),
+    };
 
     fn card(id: &str, status: SessionStatus) -> SessionCard {
         SessionCard {
@@ -408,7 +451,7 @@ mod tests {
     #[test]
     fn toggles_and_subagents() {
         let t0 = Instant::now();
-        let off = AlertToggles { waiting: false, finished: true, subagent: false, context: None };
+        let off = AlertToggles { waiting: false, finished: true, subagent: false, context: None, stalled: None };
         let mut d = Detector::default();
         d.observe(&[card(A, SessionStatus::Busy)], t0, off, &[]);
         assert!(d.observe(&[card(A, SessionStatus::Waiting)], secs(t0, 1), off, &[]).is_empty());
@@ -478,5 +521,60 @@ mod tests {
         assert!(d.observe(&[ctx(A, Some(90.0))], secs(t0, 2), ALL, &[]).is_empty());
         d.observe(&[ctx(A, Some(30.0))], secs(t0, 3), ALL, &[]);
         assert!(d.observe(&[ctx(A, Some(30.0))], secs(t0, 20), ALL, &[]).is_empty());
+    }
+
+    fn busy_at(id: &str, activity_ms: u64, out: u64) -> SessionCard {
+        let mut c = card(id, SessionStatus::Busy);
+        c.last_activity_ms = activity_ms;
+        c.tokens.output = out;
+        c
+    }
+
+    #[test]
+    fn stalled_alerts_once_per_quiet_stretch_of_a_busy_session() {
+        let t0 = Instant::now();
+        let mut d = Detector::default();
+        d.observe(&[busy_at(A, 1, 0)], t0, ALL, &[]);
+        assert!(d.observe(&[busy_at(A, 1, 0)], secs(t0, 599), ALL, &[]).is_empty());
+        let got = d.observe(&[busy_at(A, 1, 0)], secs(t0, 600), ALL, &[]);
+        assert_eq!(kinds(&got), [(AlertKind::Stalled, A)]);
+        assert_eq!(got[0].n, Some(10));
+        assert!(d.observe(&[busy_at(A, 1, 0)], secs(t0, 2000), ALL, &[]).is_empty(), "once per stretch");
+        // Activity (here: an agent's tokens) starts a new stretch.
+        d.observe(&[busy_at(A, 1, 50)], secs(t0, 2001), ALL, &[]);
+        assert!(d.observe(&[busy_at(A, 1, 50)], secs(t0, 2500), ALL, &[]).is_empty());
+        let got = d.observe(&[busy_at(A, 1, 50)], secs(t0, 2601), ALL, &[]);
+        assert_eq!(kinds(&got), [(AlertKind::Stalled, A)]);
+    }
+
+    #[test]
+    fn stalled_needs_plain_busy_and_its_toggle() {
+        let t0 = Instant::now();
+        let shell = || SessionCard { status: SessionStatus::Other("shell".into()), ..busy_at(A, 1, 0) };
+        let idle = || SessionCard { status: SessionStatus::Idle, ..busy_at(B, 1, 0) };
+        let mut d = Detector::default();
+        d.observe(&[shell(), idle()], t0, ALL, &[]);
+        assert!(d.observe(&[shell(), idle()], secs(t0, 3600), ALL, &[]).is_empty());
+        let off = AlertToggles { stalled: None, ..ALL };
+        let mut d = Detector::default();
+        d.observe(&[busy_at(A, 1, 0)], t0, off, &[]);
+        assert!(d.observe(&[busy_at(A, 1, 0)], secs(t0, 3600), off, &[]).is_empty());
+    }
+
+    #[test]
+    fn stalled_waits_for_a_higher_priority_alert_of_the_same_tick() {
+        let t0 = Instant::now();
+        let mut d = Detector::default();
+        let mut c = busy_at(A, 1, 0);
+        d.observe(&[c.clone()], t0, ALL, &[]);
+        // A subagent finished (counts, not activity) just as the limit is reached.
+        c.agents_total = 1;
+        c.agents_finished = 1;
+        let got = d.observe(&[c.clone()], secs(t0, 600), ALL, &[]);
+        assert_eq!(kinds(&got), [(AlertKind::Subagent, A)]);
+        // The stalled alert comes next, after the debounce window.
+        assert!(d.observe(&[c.clone()], secs(t0, 601), ALL, &[]).is_empty());
+        let got = d.observe(&[c], secs(t0, 616), ALL, &[]);
+        assert_eq!(kinds(&got), [(AlertKind::Stalled, A)]);
     }
 }
