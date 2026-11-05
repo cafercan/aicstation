@@ -1,7 +1,8 @@
 name: release-linux
 
 # Builds the Linux packages on the oldest supported Ubuntu, so they run on
-# distros with an older glibc too. Run by hand: the packages are kept as a
+# distros with an older glibc too, then the Arch package from the .deb in an
+# Arch container. Run by hand: the packages are kept as a
 # workflow artifact. When a release is published: they are also attached to
 # it (its tag must be v<version> of tauri.conf.json). A pull request that
 # changes the packaging builds them too, so a broken package shows up there.
@@ -12,6 +13,8 @@ on:
   pull_request:
     paths:
       - scripts/build-linux.sh
+      - scripts/build-arch.sh
+      - packaging/arch/**
       - scripts/butaglyph.json
       - scripts/fetch-butaglyph.mjs
       - src-tauri/tauri.conf.json
@@ -84,3 +87,56 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
         run: gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+
+  arch:
+    needs: packages
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    permissions:
+      contents: write # only used to attach the files to a published release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: The .deb of the packages job
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: AICStation-linux
+          path: dist/
+
+      # makepkg does not run as root.
+      - name: Build the package
+        run: |
+          useradd -m builder
+          chown -R builder: "$GITHUB_WORKSPACE"
+          su builder -c "cd '$GITHUB_WORKSPACE' && bash scripts/build-arch.sh"
+
+      - name: The package installs with its dependencies
+        run: |
+          pacman -Syu --noconfirm
+          pacman -U --noconfirm dist/AICStation-v*-linux-x86_64.pkg.tar.zst
+          pacman -Qi aicstation-bin
+          buta --version
+          # Every library the app links to is there.
+          if ldd /usr/bin/aicstation | grep 'not found'; then exit 1; fi
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: AICStation-arch
+          path: |
+            dist/*.pkg.tar.zst
+            dist/PKGBUILD
+            dist/SHA256SUMS-arch.txt
+          if-no-files-found: error
+
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          pacman -S --noconfirm --needed github-cli
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          gh release upload "$TAG" dist/*.pkg.tar.zst dist/PKGBUILD dist/SHA256SUMS-arch.txt \
+            --repo "$GITHUB_REPOSITORY" --clobber
