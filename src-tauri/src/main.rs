@@ -228,8 +228,10 @@ fn settings_path_guess() -> Option<PathBuf> {
 fn main() {
     // `aicstation statusline`: Claude Code's status line command (no window,
     // no single-instance check; it runs once per status line update).
+    // `statusline --off` is run by the Windows uninstaller.
     if std::env::args_os().nth(1).is_some_and(|a| a == "statusline") {
-        std::process::exit(statusline::run_bridge());
+        let off = std::env::args_os().nth(2).is_some_and(|a| a == "--off");
+        std::process::exit(if off { statusline::run_off() } else { statusline::run_bridge() });
     }
     // A second launch brings the running instance forward and exits; when
     // that instance does not answer, the user is told instead.
@@ -255,6 +257,16 @@ fn main() {
             let settings = settings::SettingsStore::open(data.join("settings.json"));
             butaglyph::set_preset_dir(data.join("prompts"));
             statusline::refresh_on_start(&data);
+            // "Show Claude usage limits" is on by default: turned on once, at
+            // the first start of a release build (a dev build would point
+            // Claude Code at target/debug). A settings.json that does not
+            // parse is left alone and tried again next time.
+            if !cfg!(debug_assertions) && !settings.get().usage_bridge_offered {
+                match statusline::set_bridge(&data, true) {
+                    Ok(_) => settings.mark_usage_bridge_offered(),
+                    Err(e) => eprintln!("status line bridge: {e}"),
+                }
+            }
             if let Err(e) = integration::install(&data.join("shell-integration")) {
                 eprintln!("kabuk entegrasyonu yazılamadı: {e}");
             }
