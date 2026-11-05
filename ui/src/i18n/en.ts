@@ -164,6 +164,8 @@ export const en: Dict = {
   "settings.notifyContext": "When a session's context reaches",
   "settings.notifyStalled": "When a busy session shows no activity for",
   "settings.minutes": "{n} min",
+  "settings.notifyBudget": "When today's estimated cost reaches",
+  "settings.budgetHint": "Amounts are an estimate from the app's price table; your actual bill may differ. Notified once a day.",
   "settings.notifySound": "Notification sound (system default)",
   "settings.general": "General",
   "settings.window": "Window",

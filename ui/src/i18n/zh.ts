@@ -164,6 +164,8 @@ export const zh: Dict = {
   "settings.notifyContext": "当会话的上下文用量达到",
   "settings.notifyStalled": "当运行中的会话持续无活动",
   "settings.minutes": "{n} 分钟",
+  "settings.notifyBudget": "当今日估算费用达到",
+  "settings.budgetHint": "金额是根据应用内置价格表的估算，实际账单可能不同。每天最多通知一次。",
   "settings.notifySound": "通知声音（系统默认）",
   "settings.general": "常规",
   "settings.window": "窗口",

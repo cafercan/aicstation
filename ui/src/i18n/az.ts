@@ -164,6 +164,8 @@ export const az: Dict = {
   "settings.notifyContext": "Sessiyanın konteksti bu həddə çatanda",
   "settings.notifyStalled": "İşləyən sessiya bu müddət ərzində irəliləməsə",
   "settings.minutes": "{n} dəq",
+  "settings.notifyBudget": "Bugünkü təxmini xərc bu məbləğə çatanda",
+  "settings.budgetHint": "Məbləğlər tətbiqin qiymət cədvəlinə əsaslanan təxmindir; real hesabınız fərqli ola bilər. Gündə bir dəfə bildirilir.",
   "settings.notifySound": "Bildiriş səsi (sistemin standart səsi)",
   "settings.general": "Ümumi",
   "settings.window": "Pəncərə",

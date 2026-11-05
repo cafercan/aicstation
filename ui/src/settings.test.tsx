@@ -5,7 +5,7 @@ import type { Settings } from "./api";
 const A = "0b2f6a40-1111-4c3e-9d2a-5f1e2d3c4b5a";
 
 const DEFAULTS: Settings = {
-  notifyWaiting: true, notifyFinished: true, notifySubagent: false, notifyContext: true, contextThreshold: 85, notifyStalled: false, stalledMinutes: 10, notifySound: false,
+  notifyWaiting: true, notifyFinished: true, notifySubagent: false, notifyContext: true, contextThreshold: 85, notifyStalled: false, stalledMinutes: 10, notifyBudget: false, dailyBudgetUsd: 20, notifySound: false,
   closeToTray: true, trayNoticeShown: false, lang: "tr",
   shell: "auto", prompt: "own", promptPreset: "",
 };
@@ -54,7 +54,7 @@ vi.mock("@xterm/xterm", () => ({ Terminal: class {} }));
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: class {} }));
 
 import App from "./App";
-import SettingsPage from "./pages/Settings";
+import SettingsPage, { parseBudget } from "./pages/Settings";
 import { loadSettings } from "./settings";
 import { resetUiState } from "./testing/reset";
 import { setLang } from "./i18n";
@@ -124,6 +124,28 @@ test("sessiz oturum uyarısı: varsayılan kapalı; açılıp süre seçilir", a
   await waitFor(() => expect(h.stored.notifyStalled).toBe(true));
   fireEvent.change(screen.getByRole("combobox", { name: label }), { target: { value: "30" } });
   await waitFor(() => expect(h.stored.stalledMinutes).toBe(30));
+});
+
+test("günlük bütçe: geçerli tutar kaydedilir, geçersiz tutar eski değere döner", async () => {
+  await loadSettings();
+  render(<SettingsPage />);
+  const label = "Bugünkü tahmini maliyet şu tutara ulaşınca";
+  fireEvent.click(screen.getByRole("checkbox", { name: label }));
+  await waitFor(() => expect(h.stored.notifyBudget).toBe(true));
+  const box = screen.getByRole("spinbutton", { name: label }) as HTMLInputElement;
+  fireEvent.change(box, { target: { value: "50" } });
+  fireEvent.blur(box);
+  await waitFor(() => expect(h.stored.dailyBudgetUsd).toBe(50));
+  fireEvent.change(box, { target: { value: "0" } });
+  fireEvent.keyDown(box, { key: "Enter" });
+  expect(box.value).toBe("50");
+  expect(h.stored.dailyBudgetUsd).toBe(50);
+});
+
+test("parseBudget: yalnız aralıktaki tam dolar", () => {
+  expect(parseBudget("20")).toBe(20);
+  expect(parseBudget(" 7 ")).toBe(7);
+  for (const bad of ["", "0", "10001", "2.5", "-3", "abc", "1e3"]) expect(parseBudget(bad)).toBeNull();
 });
 
 test("kabuk: kurulu kabuklar listelenir, seçim kaydedilir", async () => {

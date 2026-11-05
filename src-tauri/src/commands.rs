@@ -226,6 +226,17 @@ impl AppState {
         }
     }
 
+    /// Today's local date and estimated cost across closed and live sessions,
+    /// counted like `get_history`'s `today_cost` but without copying the rows.
+    pub fn today_cost(&self) -> (chrono::NaiveDate, f64) {
+        let (live, day, live_cost) = self.fresh_cache(|c| {
+            let ids: HashSet<String> = c.snap.sessions.iter().map(|s| s.session_id.clone()).collect();
+            (ids, c.day, c.live_cost)
+        });
+        let (closed, _) = cost_on_rows(lock(&self.history_rows).iter(), day, &live);
+        (day, closed + live_cost)
+    }
+
     /// Whether history indexing still has work (false once everything is indexed).
     pub fn is_indexing(&self) -> bool {
         self.indexing.load(Ordering::Relaxed)

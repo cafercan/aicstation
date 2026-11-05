@@ -175,6 +175,8 @@ export const ru: Dict = {
   "settings.notifyContext": "Когда контекст сессии заполнится на",
   "settings.notifyStalled": "Когда работающая сессия не проявляет активности",
   "settings.minutes": "{n} мин",
+  "settings.notifyBudget": "Когда оценка расходов за сегодня достигнет",
+  "settings.budgetHint": "Суммы — оценка по таблице цен приложения; реальный счёт может отличаться. Уведомление раз в день.",
   "settings.notifySound": "Звук уведомления (системный по умолчанию)",
   "settings.general": "Общие",
   "settings.window": "Окно",
