@@ -122,6 +122,15 @@ closed session in its own folder.
   butaglyph comes with the installer and the Linux packages; a butaglyph you
   installed yourself is used instead.
 - Split view: two terminals side by side with a draggable divider.
+- **Claude bar:** a terminal running Claude Code gets one line under it (each
+  split pane its own): model and effort, folder and branch (`*` for
+  uncommitted changes), context, tokens and estimated cost. With **Show Claude
+  usage limits** on in Settings it also shows the 5-hour and weekly limits
+  with their reset time, and the lines added/removed. Claude Code passes the
+  limits only to its status line command, so that option sets
+  `aicstation statusline` as `statusLine` in `~/.claude/settings.json`. Your
+  own status line keeps running and showing (the bridge runs it with the same
+  input), and turning the option off puts the previous setting back exactly.
 - Clipboard like Windows Terminal: Ctrl+C copies when text is selected and
   otherwise sends ^C; Ctrl+V and right-click paste; Ctrl+Shift+C/V always
   copy/paste.
@@ -213,15 +222,21 @@ Ctrl+= / Ctrl+- / Ctrl+0 work as described above.
 These are guarantees of the code in this repository:
 
 - **Read-only access to Claude Code's files.** AI C-Station reads
-  `~/.claude` (or `CLAUDE_CONFIG_DIR` if it is set) and never writes there. It
-  never opens `sessions/*.key` files.
+  `~/.claude` (or `CLAUDE_CONFIG_DIR` if it is set) and never writes there,
+  except for one setting you turn on yourself (below). It never opens
+  `sessions/*.key` files.
 - **The app makes no network requests.** It has no telemetry, no analytics, no
   auto-updater and no listening ports. The WebView2 runtime and Windows may
   make their own connections, outside the app's control. Programs you run in
   an embedded terminal, such as `claude` itself, use the network as they
   normally would.
-- **No hooks and no settings changes.** It does not install Claude Code hooks
-  and does not modify Claude Code settings.
+- **No hooks; settings only on request.** It does not install Claude Code
+  hooks. It changes Claude Code's `settings.json` only when you turn on **Show
+  Claude usage limits** (it asks first): then only the `statusLine` key, and
+  turning it off restores the previous value. A `settings.json` that does not
+  parse is never written. The status line bridge reads the status line JSON
+  with a size cap, keeps only a few checked fields and never runs anything
+  from it; the only command it runs is your own previous status line.
 - **Locked-down UI.** A strict Content Security Policy allows no remote
   scripts, styles, fonts or connections. The UI talks to the Rust core only
   through Tauri IPC commands. Capabilities are narrowed to exactly the
@@ -232,8 +247,10 @@ These are guarantees of the code in this repository:
   - In its own app data folder (`%APPDATA%\com.cafercan.sessionstation`,
     on Linux `~/.local/share/com.cafercan.sessionstation`): the history
     cache (`history-cache.json`), `settings.json`, a copy of the app icon
-    used by notifications, the small startup scripts of the embedded shells
-    and the butaglyph presets you pick.
+    used by notifications, the small startup scripts of the embedded shells,
+    the butaglyph presets you pick and, with Show Claude usage limits on,
+    `claude-status.json` (the limits) and `statusline-bridge.json` (your
+    previous status line).
   - On Windows, one registry key,
     `HKCU\Software\Classes\AppUserModelId\com.cafercan.sessionstation`, which
     Windows needs to show the app's notifications. The uninstaller does not
@@ -438,7 +455,11 @@ Claude ve Claude Code, Anthropic'in ticari markalarıdır.
   ayarlardan bash, zsh, fish, pwsh...), WebGL ile çizim, 18 renk şeması,
   yazı tipi ve imleç ayarları (canlı önizlemeli), isteğe bağlı [butaglyph]
   prompt'u (kurulumla birlikte gelir), bölünmüş görünüm, kopyala/yapıştır, arama, "Windows Terminal'de
-  aç" (Linux'ta "Sistem terminalinde aç").
+  aç" (Linux'ta "Sistem terminalinde aç"). Claude Code çalışan terminalin
+  altında tek satırlık Claude çubuğu: model ve efor, klasör ve branch (`*`:
+  kaydedilmemiş değişiklik), bağlam, token ve tahmini maliyet; ayarlardan
+  "Claude kullanım limitlerini göster" açılınca 5 saatlik ve haftalık
+  limitler (sıfırlanma süresiyle) ve eklenen/silinen satırlar.
 - **Bildirimler ve tepsi:** onay bekleyen ve biten oturumlar için Windows
   bildirimi (pencere odaktayken ayrıntıda ya da bölünmüş görünümün iki
   bölmesinde görünen oturum için bildirim yok; bildirime tıklamak uygulama
@@ -450,7 +471,9 @@ Claude ve Claude Code, Anthropic'in ticari markalarıdır.
 
 **Gizlilik:** `~/.claude` yalnızca okunur (`sessions/*.key` hiç açılmaz).
 Uygulamanın kendisi ağ isteği yapmaz; telemetri ve otomatik güncelleme yoktur.
-Hook kurmaz, Claude Code ayarlarını değiştirmez. Yalnızca kendi uygulama veri
+Hook kurmaz. Claude Code ayarlarını yalnızca "Claude kullanım limitlerini
+göster" açılınca (önce sorar) değiştirir: sadece `statusLine`; kendi status
+line'ın çalışmaya devam eder ve kapatınca önceki ayar aynen geri gelir. Yalnızca kendi uygulama veri
 klasörüne (geçmiş önbelleği, ayarlar) ve bildirimler için bir HKCU kayıt
 anahtarına yazar. Claude Code'un belgelenmemiş dosya biçimlerine dayanır; bu
 biçimler değişebilir.
