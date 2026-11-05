@@ -84,6 +84,11 @@ Root: HKCU; Subkey: "Software\Classes\AppUserModelId\{#AppUserModelId}"; Flags: 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 
+[UninstallRun]
+; Claude Code's statusLine may point at this program (Show Claude usage
+; limits): put the user's previous status line back before it is removed.
+Filename: "{app}\{#AppExeName}"; Parameters: "statusline --off"; Flags: runhidden waituntilterminated; RunOnceId: "StatuslineOff"
+
 [Code]
 const
   WV2_GUID = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
