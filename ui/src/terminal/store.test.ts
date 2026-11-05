@@ -31,6 +31,7 @@ vi.mock("@xterm/xterm", () => ({
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: class { fit() {} } }));
 vi.mock("@xterm/addon-unicode11", () => ({ Unicode11Addon: class { kind = "unicode11"; } }));
 vi.mock("@xterm/addon-search", () => ({ SearchAddon: class { kind = "search"; } }));
+vi.mock("@xterm/addon-clipboard", () => ({ ClipboardAddon: class { kind = "clipboard"; } }));
 
 import { ubuntuTheme, terminalFont, renderOptions } from "./theme";
 import {
@@ -81,7 +82,7 @@ test("render ayarları: hücre ızgarası sıkı, renkler değiştirilmez", () =
   });
 });
 
-test("xterm seçenekleri: 10.000 satır geçmiş, unicode 11 genişlikleri, arama eklentisi", async () => {
+test("xterm seçenekleri: 10.000 satır geçmiş, unicode 11 genişlikleri, arama ve OSC 52 eklentisi", async () => {
   const t = await openTerminal();
   const term = t.term as unknown as {
     opts: Record<string, unknown>; unicode: { activeVersion: string }; addons: { kind?: string }[];
@@ -90,7 +91,7 @@ test("xterm seçenekleri: 10.000 satır geçmiş, unicode 11 genişlikleri, aram
     ...terminalFont, ...renderOptions, theme: ubuntuTheme, scrollback: 10000, allowProposedApi: true,
   });
   expect(term.unicode.activeVersion).toBe("11");
-  expect(term.addons.map((a) => a.kind).filter(Boolean)).toEqual(["unicode11", "search"]);
+  expect(term.addons.map((a) => a.kind).filter(Boolean)).toEqual(["unicode11", "search", "clipboard"]);
   expect((t.search as unknown as { kind: string }).kind).toBe("search");
 });
 
@@ -242,7 +243,7 @@ test("devam terminali: yalnız oturum kimliği gönderilir, ad oturum adı, ayn�
   expect(terminalName(t, [card({ parentPid: 99, name: "canli" })])).toBe("canli");
   const term = t.term as unknown as { opts: Record<string, unknown>; addons: { kind?: string }[] };
   expect(term.opts).toMatchObject({ theme: ubuntuTheme, scrollback: 10000 });
-  expect(term.addons.map((a) => a.kind).filter(Boolean)).toEqual(["unicode11", "search"]);
+  expect(term.addons.map((a) => a.kind).filter(Boolean)).toEqual(["unicode11", "search", "clipboard"]);
   FakeChannel.all[1].onmessage(0 as never); // exit
   expect(getTerminals()).toHaveLength(0);
 });

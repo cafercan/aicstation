@@ -1,4 +1,5 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { ClipboardAddon } from "@xterm/addon-clipboard";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
@@ -8,6 +9,7 @@ import { ptySpawnResume, type PtyInfo, type SessionCard } from "../api";
 import { t, type Key, type Params } from "../i18n";
 import { onTestReset } from "../prefs";
 import { clampFontSize } from "./keys";
+import { osc52Clipboard } from "./clipboard";
 import { isWindows } from "../platform";
 import { renderOptions } from "./theme";
 import { getAppearance, subscribeAppearance, xtermOptions } from "./appearance";
@@ -121,6 +123,9 @@ async function startTerminal(spawn: Spawn, title?: TerminalTitle): Promise<Termi
   term.unicode.activeVersion = "11";
   const search = new SearchAddon();
   term.loadAddon(search);
+  // OSC 52: programs (Claude Code's fullscreen TUI) may set the clipboard,
+  // never read it.
+  term.loadAddon(new ClipboardAddon(undefined, osc52Clipboard()));
 
   const onOutput = new Channel<number[]>();
   const onExit = new Channel<number>();

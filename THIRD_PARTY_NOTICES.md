@@ -13,9 +13,9 @@ license(s) named in the "Used" column.
 
 | License | Packages |
 |---|---|
-| MIT | 226 |
+| MIT | 227 |
 | Apache-2.0 | 4 |
-| BSD-3-Clause | 3 |
+| BSD-3-Clause | 4 |
 | Zlib | 2 |
 | Unicode-3.0 | 19 |
 | CC0-1.0 | 1 |
@@ -271,16 +271,18 @@ license(s) named in the "Used" column.
 | zlib-rs | 0.6.8 | Zlib | Zlib |
 | zmij | 1.0.23 | MIT | MIT |
 
-## UI packages (npm) (11)
+## UI packages (npm) (13)
 
 | Package | Version | Declared license | Used |
 |---|---|---|---|
 | @tauri-apps/api | 2.12.4 | Apache-2.0 OR MIT | MIT |
+| @xterm/addon-clipboard | 0.2.0 | MIT | MIT |
 | @xterm/addon-fit | 0.11.0 | MIT | MIT |
 | @xterm/addon-search | 0.16.0 | MIT | MIT |
 | @xterm/addon-unicode11 | 0.9.0 | MIT | MIT |
 | @xterm/addon-webgl | 0.19.0 | MIT | MIT |
 | @xterm/xterm | 6.0.0 | MIT | MIT |
+| js-base64 | 3.9.6 | BSD-3-Clause | BSD-3-Clause |
 | js-tokens | 4.0.0 | MIT | MIT |
 | loose-envify | 1.4.0 | MIT | MIT |
 | react | 18.3.1 | MIT | MIT |
@@ -525,6 +527,7 @@ Packages:
 - wry 0.57.1 — Copyright (c) 2020-2023 Ngo Iok Ui & Tauri Programme within The Commons Conservancy
 - zmij 1.0.23 — Authors: David Tolnay <dtolnay@gmail.com>
 - @tauri-apps/api 2.12.4 — Copyright (c) 2017 - Present Tauri Apps Contributors
+- @xterm/addon-clipboard 0.2.0 — Copyright (c) 2023, The xterm.js authors (https://github.com/xtermjs/xterm.js)
 - @xterm/addon-fit 0.11.0 — Copyright (c) 2019, The xterm.js authors (https://github.com/xtermjs/xterm.js)
 - @xterm/addon-search 0.16.0 — Copyright (c) 2017, The xterm.js authors (https://github.com/xtermjs/xterm.js)
 - @xterm/addon-unicode11 0.9.0 — Copyright (c) 2019, The xterm.js authors (https://github.com/xtermjs/xterm.js)
@@ -777,6 +780,7 @@ Packages:
 - alloc-no-stdlib 3.0.0 — Copyright (c) 2016 Dropbox, Inc.
 - alloc-stdlib 0.3.0 — Authors: Daniel Reiter Horn <danielrh@dropbox.com>
 - brotli 9.1.1 — Copyright (c) 2016 Dropbox, Inc.; Copyright (c) 2009, 2010, 2013-2016 by the Brotli Authors.
+- js-base64 3.9.6 — Copyright (c) 2014, Dan Kogai
 
 ```text
 Redistribution and use in source and binary forms, with or without
