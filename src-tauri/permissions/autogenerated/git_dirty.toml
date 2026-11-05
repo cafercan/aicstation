@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-git-dirty"
+description = "Enables the git_dirty command without any pre-configured scope."
+commands.allow = ["git_dirty"]
+
+[[permission]]
+identifier = "deny-git-dirty"
+description = "Denies the git_dirty command without any pre-configured scope."
+commands.deny = ["git_dirty"]

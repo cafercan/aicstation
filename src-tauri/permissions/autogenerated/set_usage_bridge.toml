@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-usage-bridge"
+description = "Enables the set_usage_bridge command without any pre-configured scope."
+commands.allow = ["set_usage_bridge"]
+
+[[permission]]
+identifier = "deny-set-usage-bridge"
+description = "Denies the set_usage_bridge command without any pre-configured scope."
+commands.deny = ["set_usage_bridge"]

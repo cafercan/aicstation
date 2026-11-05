@@ -27,6 +27,7 @@ const COMMANDS: &[&str] = &[
     "cancel_search",
     "claude_status",
     "set_usage_bridge",
+    "git_dirty",
 ];
 
 fn main() {
