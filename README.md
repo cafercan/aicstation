@@ -125,6 +125,8 @@ closed session in its own folder.
 - Clipboard like Windows Terminal: Ctrl+C copies when text is selected and
   otherwise sends ^C; Ctrl+V and right-click paste; Ctrl+Shift+C/V always
   copy/paste.
+- Programs may set the clipboard with OSC 52 (Claude Code's fullscreen TUI
+  copies its own mouse selection this way); they can never read it.
 - Search with Ctrl+F. Change the font size with Ctrl+mouse wheel or
   Ctrl+= / Ctrl+-, and reset it with Ctrl+0.
 - **Open in Windows Terminal**: opens a new PowerShell tab in your home folder
