@@ -30,6 +30,7 @@
     "allow-search-history",
     "allow-cancel-search",
     "allow-claude-status",
-    "allow-set-usage-bridge"
+    "allow-set-usage-bridge",
+    "allow-git-dirty"
   ]
 }

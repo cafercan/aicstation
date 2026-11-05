@@ -1300,3 +1300,8 @@ pub async fn set_usage_bridge(app: tauri::AppHandle, on: bool) -> Result<bool, S
         .map_err(|e| e.to_string())?
 }
 
+/// Whether the session folder has modified tracked files (`None`: unknown).
+#[tauri::command]
+pub async fn git_dirty(cwd: String) -> Option<bool> {
+    tauri::async_runtime::spawn_blocking(move || crate::gitstat::dirty(&cwd)).await.ok().flatten()
+}

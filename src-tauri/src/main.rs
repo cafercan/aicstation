@@ -3,6 +3,7 @@ mod alerts;
 mod butaglyph;
 mod commands;
 mod errors;
+mod gitstat;
 mod integration;
 mod native_text;
 mod notifier;
@@ -347,7 +348,8 @@ fn main() {
             commands::search_history,
             commands::cancel_search,
             commands::claude_status,
-            commands::set_usage_bridge
+            commands::set_usage_bridge,
+            commands::git_dirty
         ])
         .build(tauri::generate_context!())
         .expect("AI C-Station başlatılamadı")
