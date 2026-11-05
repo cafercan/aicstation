@@ -124,15 +124,71 @@ pub fn info() -> Info {
     Info { installed: true, version, presets }
 }
 
+/// butaglyph modules that show a language's version (node, rust, ...). The
+/// app's prompt leaves them out; everything else of a preset is kept.
+pub const LANGUAGE_MODULES: [&str; 13] =
+    ["python", "node", "rust", "go", "zig", "java", "ruby", "php", "deno", "bun", "dotnet", "lua", "haskell"];
+
+/// butaglyph's default module order (config.zig `default_order`), used for a
+/// preset that has no `.order` of its own.
+const DEFAULT_ORDER: [&str; 22] = [
+    "dir", "git_branch", "git_status", "python", "node", "rust", "go", "zig", "java", "ruby", "php", "deno", "bun",
+    "dotnet", "lua", "haskell", "aws", "duration", "status", "jobs", "line_break", "character",
+];
+
+fn order_list<'a>(ids: impl IntoIterator<Item = &'a str>) -> String {
+    let kept: Vec<String> =
+        ids.into_iter().filter(|id| !LANGUAGE_MODULES.contains(id)).map(|id| format!(".{id}")).collect();
+    format!(".{{ {} }}", kept.join(", "))
+}
+
+/// A preset config (ZON) without the language modules: its `.order` list
+/// is rewritten without them, or, when it has none, the default order
+/// without them is added. A module left out of `.order` is never computed.
+/// Text with neither an `.order` nor an opening `.{` is returned as is.
+pub fn without_languages(zon: &str) -> String {
+    // Byte offset of each line start, skipping comment lines.
+    let mut offset = 0;
+    let mut order_at = None;
+    let mut open_at = None;
+    for line in zon.split_inclusive('\n') {
+        let t = line.trim_start();
+        let start = offset + (line.len() - t.len());
+        offset += line.len();
+        if t.starts_with("//") {
+            continue;
+        }
+        if open_at.is_none() && t.starts_with(".{") {
+            open_at = Some(start + 2);
+        }
+        if order_at.is_none() && t.starts_with(".order") {
+            order_at = Some(start);
+        }
+    }
+    if let Some(at) = order_at {
+        let Some(open) = zon[at..].find(".{").map(|i| at + i) else { return zon.to_string() };
+        let Some(close) = zon[open..].find('}').map(|i| open + i) else { return zon.to_string() };
+        // Identifiers of the list; comments inside it are dropped.
+        let body: String = zon[open + 2..close].lines().map(|l| l.split("//").next().unwrap_or("")).collect::<Vec<_>>().join(" ");
+        let ids = body.split([',', ' ', '\t', '\r']).filter_map(|t| t.strip_prefix('.')).filter(|t| !t.is_empty());
+        return format!("{}{}{}", &zon[..open], order_list(ids), &zon[close + 1..]);
+    }
+    match open_at {
+        Some(at) => format!("{}\n    .order = {},{}", &zon[..at], order_list(DEFAULT_ORDER), &zon[at..]),
+        None => zon.to_string(),
+    }
+}
+
 /// The config file of preset `name`, written from `buta preset <name>` into
 /// the preset folder (refreshed each time, so a newer buta's version of the
-/// preset is used). None for an invalid name or when buta refuses it.
+/// preset is used), without the language modules ([`without_languages`]).
+/// None for an invalid name or when buta refuses it.
 pub fn preset_config(buta: &Path, name: &str) -> Option<PathBuf> {
     if name.is_empty() || !crate::settings::valid_preset(name) {
         return None;
     }
     let dir = PRESET_DIR.get()?;
-    let text = run(buta, &["preset", name])?;
+    let text = without_languages(&run(buta, &["preset", name])?);
     std::fs::create_dir_all(dir).ok()?;
     let path = dir.join(format!("{name}.zon"));
     if std::fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {
@@ -278,7 +334,81 @@ mod tests {
         let dir = PRESET_DIR.get().unwrap().clone();
         let p = preset_config(&buta, "neon").expect("written");
         assert_eq!(p, dir.join("neon.zon"));
-        assert_eq!(std::fs::read_to_string(&p).unwrap(), ".{ .glyphs = .ascii }\n");
+        let written = std::fs::read_to_string(&p).unwrap();
+        assert!(written.ends_with(" .glyphs = .ascii }\n"), "{written}");
+        assert!(written.contains(".order = .{ .dir,") && !written.contains(".node"), "{written}");
         assert_eq!(preset_config(&buta, "yok"), None, "buta refuses an unknown preset");
+    }
+
+    #[test]
+    fn language_modules_are_dropped_from_the_order() {
+        let zon = "// carpet: .order of a comment stays\n.{\n    .order = .{ .text, .dir, .git_branch, .python, .node, .rust, .go, .zig, .aws, .duration, .character },\n    .node = .{ .style = .{ .fg = \"#fff\" } },\n}\n";
+        let out = without_languages(zon);
+        assert!(out.contains(".order = .{ .text, .dir, .git_branch, .aws, .duration, .character },"), "{out}");
+        assert!(out.starts_with("// carpet: .order of a comment stays\n"));
+        // A module's own settings may stay: it is not computed without `.order`.
+        assert!(out.contains("    .node = .{ .style"));
+
+        let multi = ".{\n    .order = .{\n        .dir, // where\n        .java,\n        .character,\n    },\n}\n";
+        assert_eq!(without_languages(multi), ".{\n    .order = .{ .dir, .character },\n}\n");
+    }
+
+    #[test]
+    fn a_preset_without_an_order_gets_the_default_without_languages() {
+        let zon = "// ascii\n.{\n    .glyphs = .ascii,\n}\n";
+        let out = without_languages(zon);
+        assert_eq!(
+            out,
+            "// ascii\n.{\n    .order = .{ .dir, .git_branch, .git_status, .aws, .duration, .status, .jobs, .line_break, .character },\n    .glyphs = .ascii,\n}\n"
+        );
+        assert_eq!(without_languages("not zon"), "not zon");
+        for id in LANGUAGE_MODULES {
+            assert!(DEFAULT_ORDER.contains(&id), "{id} is in butaglyph's default order");
+        }
+    }
+
+    fn strip_ansi(s: &str) -> String {
+        let mut out = String::new();
+        let mut esc = false;
+        for c in s.chars() {
+            match (esc, c) {
+                (false, '\x1b') => esc = true,
+                (true, c) if c.is_ascii_alphabetic() => esc = false,
+                (true, _) => {}
+                (false, c) => out.push(c),
+            }
+        }
+        out
+    }
+
+    /// Every preset of the bundled buta still works and shows no language.
+    #[cfg(unix)]
+    #[test]
+    fn real_presets_without_languages_are_valid_for_buta() {
+        let Some(buta) = find() else { return };
+        let tmp = tempfile::tempdir().unwrap();
+        // A folder with a package.json and Cargo.toml would show node and rust.
+        std::fs::write(tmp.path().join("package.json"), "{}").unwrap();
+        std::fs::write(tmp.path().join("Cargo.toml"), "[package]\nname = \"x\"\nversion = \"0.1.0\"\n").unwrap();
+        let cwd = tmp.path().to_string_lossy().into_owned();
+        for p in parse_presets(&run(&buta, &["preset"]).unwrap()) {
+            let cfg = tmp.path().join(format!("{}.zon", p.name));
+            std::fs::write(&cfg, without_languages(&run(&buta, &["preset", &p.name]).unwrap())).unwrap();
+            let c = cfg.to_string_lossy().into_owned();
+            let out = std::process::Command::new(&buta)
+                .args(["prompt", "--cwd", &cwd])
+                .env("BUTA_CONFIG", &c)
+                .output()
+                .unwrap();
+            let text = String::from_utf8_lossy(&out.stdout);
+            let err = String::from_utf8_lossy(&out.stderr);
+            assert!(out.status.success() && err.is_empty(), "{}: {err}", p.name);
+            assert!(!text.is_empty(), "{}", p.name);
+            // No version like "v22.1.0" (node) or "v1.99.0" (rust): the folder
+            // name has none, so any would come from a language module.
+            let plain = strip_ansi(&text);
+            let has_version = plain.as_bytes().windows(2).any(|w| w[0] == b'v' && w[1].is_ascii_digit());
+            assert!(!has_version, "{}: {plain}", p.name);
+        }
     }
 }
