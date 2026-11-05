@@ -173,6 +173,8 @@ export const ru: Dict = {
   "settings.notifyFinished": "Когда занятая сессия завершает работу (не менее 10 с)",
   "settings.notifySubagent": "Когда завершается субагент",
   "settings.notifyContext": "Когда контекст сессии заполнится на",
+  "settings.notifyStalled": "Когда работающая сессия не проявляет активности",
+  "settings.minutes": "{n} мин",
   "settings.notifySound": "Звук уведомления (системный по умолчанию)",
   "settings.general": "Общие",
   "settings.window": "Окно",

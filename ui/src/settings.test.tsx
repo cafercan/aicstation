@@ -5,7 +5,7 @@ import type { Settings } from "./api";
 const A = "0b2f6a40-1111-4c3e-9d2a-5f1e2d3c4b5a";
 
 const DEFAULTS: Settings = {
-  notifyWaiting: true, notifyFinished: true, notifySubagent: false, notifyContext: true, contextThreshold: 85, notifySound: false,
+  notifyWaiting: true, notifyFinished: true, notifySubagent: false, notifyContext: true, contextThreshold: 85, notifyStalled: false, stalledMinutes: 10, notifySound: false,
   closeToTray: true, trayNoticeShown: false, lang: "tr",
   shell: "auto", prompt: "own", promptPreset: "",
 };
@@ -111,6 +111,19 @@ test("bağlam uyarısı: eşik seçilir; uyarı kapalıyken seçim devre dışı
   fireEvent.click(screen.getByRole("checkbox", { name: label }));
   await waitFor(() => expect(h.stored.notifyContext).toBe(false));
   expect((screen.getByRole("combobox", { name: label }) as HTMLSelectElement).disabled).toBe(true);
+});
+
+test("sessiz oturum uyarısı: varsayılan kapalı; açılıp süre seçilir", async () => {
+  await loadSettings();
+  render(<SettingsPage />);
+  const label = "Çalışan bir oturum şu süre boyunca hiç ilerlemezse";
+  const select = screen.getByRole("combobox", { name: label }) as HTMLSelectElement;
+  expect(select.disabled).toBe(true);
+  expect(select.selectedOptions[0].textContent).toBe("10 dk");
+  fireEvent.click(screen.getByRole("checkbox", { name: label }));
+  await waitFor(() => expect(h.stored.notifyStalled).toBe(true));
+  fireEvent.change(screen.getByRole("combobox", { name: label }), { target: { value: "30" } });
+  await waitFor(() => expect(h.stored.stalledMinutes).toBe(30));
 });
 
 test("kabuk: kurulu kabuklar listelenir, seçim kaydedilir", async () => {

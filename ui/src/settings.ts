@@ -8,7 +8,8 @@ import { getLang } from "./i18n";
 import { createStore } from "./prefs";
 
 export type Toggle =
-  | "notifyWaiting" | "notifyFinished" | "notifySubagent" | "notifyContext" | "notifySound" | "closeToTray";
+  | "notifyWaiting" | "notifyFinished" | "notifySubagent" | "notifyContext" | "notifyStalled" | "notifySound"
+  | "closeToTray";
 
 const store = createStore<Settings | null>(null);
 export const useSettings = store.use;
@@ -55,7 +56,7 @@ export async function setChoice(key: Choice, value: string): Promise<void> {
 }
 
 /** Numeric settings (alert thresholds). */
-export type NumberSetting = "contextThreshold";
+export type NumberSetting = "contextThreshold" | "stalledMinutes";
 
 /** Sets one number; rejects with the backend's error code (state rolled back). */
 export async function setNumber(key: NumberSetting, value: number): Promise<void> {

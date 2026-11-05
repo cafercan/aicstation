@@ -162,6 +162,8 @@ export const en: Dict = {
   "settings.notifyFinished": "When a busy session finishes its work (at least 10 s)",
   "settings.notifySubagent": "When a subagent finishes",
   "settings.notifyContext": "When a session's context reaches",
+  "settings.notifyStalled": "When a busy session shows no activity for",
+  "settings.minutes": "{n} min",
   "settings.notifySound": "Notification sound (system default)",
   "settings.general": "General",
   "settings.window": "Window",

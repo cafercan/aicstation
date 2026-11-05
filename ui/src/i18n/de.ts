@@ -165,6 +165,8 @@ export const de: Dict = {
   "settings.notifyFinished": "Wenn eine laufende Sitzung fertig ist (mind. 10 s)",
   "settings.notifySubagent": "Wenn ein Subagent fertig ist",
   "settings.notifyContext": "Wenn der Kontext einer Sitzung diesen Wert erreicht",
+  "settings.notifyStalled": "Wenn eine laufende Sitzung so lange keine Aktivität zeigt",
+  "settings.minutes": "{n} Min.",
   "settings.notifySound": "Benachrichtigungston (Systemstandard)",
   "settings.general": "Allgemein",
   "settings.window": "Fenster",

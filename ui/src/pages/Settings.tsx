@@ -23,6 +23,8 @@ const NOTIFY: [Toggle, Key][] = [
 
 /** Context percents offered for the context alert (settings.rs CONTEXT_THRESHOLDS). */
 export const CONTEXT_STEPS = [50, 60, 70, 75, 80, 85, 90, 95, 99];
+/** Quiet minutes offered for the stalled-session alert (settings.rs STALLED_MINUTES). */
+export const STALLED_STEPS = [5, 10, 15, 20, 30, 45, 60, 90, 120];
 
 /** Notification and window toggles, stored by the backend in settings.json. */
 export default function SettingsPage() {
@@ -104,6 +106,8 @@ export default function SettingsPage() {
         <legend>{t("settings.notifications")}</legend>
         {NOTIFY.map(([key, label]) => row(key, label))}
         {thresholdRow("notifyContext", "settings.notifyContext", "contextThreshold", CONTEXT_STEPS, (n) => `${n}%`)}
+        {thresholdRow("notifyStalled", "settings.notifyStalled", "stalledMinutes", STALLED_STEPS,
+          (n) => t("settings.minutes", { n }))}
         {row("notifySound", "settings.notifySound")}
       </fieldset>
       <fieldset>

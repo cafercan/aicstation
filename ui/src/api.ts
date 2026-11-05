@@ -199,6 +199,10 @@ export interface Settings {
   notifyContext: boolean;
   /** 50–99. */
   contextThreshold: number;
+  /** A busy session shows no activity for `stalledMinutes`. */
+  notifyStalled: boolean;
+  /** 2–120. */
+  stalledMinutes: number;
   notifySound: boolean;
   closeToTray: boolean;
   /** Shell id of the embedded terminals ("auto" = platform default). */

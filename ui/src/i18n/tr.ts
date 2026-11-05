@@ -172,6 +172,8 @@ export const tr = {
   "settings.notifyFinished": "Çalışan bir oturum işini bitirince (en az 10 sn)",
   "settings.notifySubagent": "Bir alt ajan bitince",
   "settings.notifyContext": "Bir oturumun bağlamı şu orana ulaşınca",
+  "settings.notifyStalled": "Çalışan bir oturum şu süre boyunca hiç ilerlemezse",
+  "settings.minutes": "{n} dk",
   "settings.notifySound": "Bildirim sesi (sistemin varsayılan sesi)",
   "settings.general": "Genel",
   "settings.window": "Pencere",

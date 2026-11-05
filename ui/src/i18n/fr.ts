@@ -165,6 +165,8 @@ export const fr: Dict = {
   "settings.notifyFinished": "Quand une session occupée termine son travail (au moins 10 s)",
   "settings.notifySubagent": "Quand un sous-agent termine",
   "settings.notifyContext": "Quand le contexte d'une session atteint",
+  "settings.notifyStalled": "Quand une session en cours ne montre aucune activité pendant",
+  "settings.minutes": "{n} min",
   "settings.notifySound": "Son de notification (par défaut du système)",
   "settings.general": "Général",
   "settings.window": "Fenêtre",
