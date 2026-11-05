@@ -87,4 +87,32 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+        # The checksums go up as SHA256SUMS-windows.txt; the sums job merges
+        # them with Linux's into SHA256SUMS.txt.
+        run: |
+          cp dist/SHA256SUMS.txt "$RUNNER_TEMP/SHA256SUMS-windows.txt"
+          gh release upload "$TAG" dist/*-setup.exe "$RUNNER_TEMP/SHA256SUMS-windows.txt" --repo "$GITHUB_REPOSITORY" --clobber
+
+  # C Launcher reads only SHA256SUMS.txt and refuses a file it does not list,
+  # so it must cover every platform's packages. Both release workflows run
+  # this after attaching their own files; the last one to run sees them all.
+  sums:
+    needs: installer
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release-sums-${{ github.event.release.tag_name }}
+      cancel-in-progress: false
+    steps:
+      - name: SHA256SUMS.txt covers every package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          d="$(mktemp -d)"
+          gh release download "$TAG" --pattern 'SHA256SUMS-*.txt' --dir "$d" --repo "$GITHUB_REPOSITORY"
+          cat "$d"/SHA256SUMS-*.txt | sort -k2 -u > "$RUNNER_TEMP/SHA256SUMS.txt"
+          cat "$RUNNER_TEMP/SHA256SUMS.txt"
+          gh release upload "$TAG" "$RUNNER_TEMP/SHA256SUMS.txt" --repo "$GITHUB_REPOSITORY" --clobber

@@ -140,3 +140,27 @@ jobs:
           pacman -S --noconfirm --needed github-cli
           gh release upload "$TAG" dist/*.pkg.tar.zst dist/PKGBUILD dist/SHA256SUMS-arch.txt \
             --repo "$GITHUB_REPOSITORY" --clobber
+
+  # C Launcher reads only SHA256SUMS.txt and refuses a file it does not list,
+  # so it must cover every platform's packages. Both release workflows run
+  # this after attaching their own files; the last one to run sees them all.
+  sums:
+    needs: [packages, arch]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release-sums-${{ github.event.release.tag_name }}
+      cancel-in-progress: false
+    steps:
+      - name: SHA256SUMS.txt covers every package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          d="$(mktemp -d)"
+          gh release download "$TAG" --pattern 'SHA256SUMS-*.txt' --dir "$d" --repo "$GITHUB_REPOSITORY"
+          cat "$d"/SHA256SUMS-*.txt | sort -k2 -u > "$RUNNER_TEMP/SHA256SUMS.txt"
+          cat "$RUNNER_TEMP/SHA256SUMS.txt"
+          gh release upload "$TAG" "$RUNNER_TEMP/SHA256SUMS.txt" --repo "$GITHUB_REPOSITORY" --clobber
