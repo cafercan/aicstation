@@ -1,15 +1,18 @@
 //! Incremental per-session statistics built from transcript entries.
-use crate::model::{ToolCall, ToolState, Usage};
+use crate::model::{ChangedFile, ToolCall, ToolState, Usage};
 use crate::pricing;
 use crate::transcript::Entry;
 use chrono::{DateTime, Local, NaiveDate, Utc};
-use std::collections::{BTreeMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 /// Maximum number of tool calls kept in memory.
 pub const MAX_TOOL_CALLS: usize = 50;
 /// Assistant message ids remembered for usage dedupe. Lines sharing an id are
 /// adjacent in a transcript, so a recent window is enough.
 pub const MAX_SEEN_IDS: usize = 1024;
+/// Changed files remembered per transcript; past it the least recently
+/// changed one is forgotten.
+pub const MAX_CHANGED_FILES: usize = 500;
 
 #[derive(Debug, Clone, Default, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -32,6 +35,10 @@ pub struct SessionStats {
     pub tool_call_count: u64,
     pub first_at: Option<DateTime<Utc>>,
     pub last_at: Option<DateTime<Utc>>,
+    /// Files changed by successful editing tool calls, by full path. Sent to
+    /// the UI only as the merged list of a session detail.
+    #[serde(skip)]
+    pub changed_files: HashMap<String, ChangedFile>,
     #[serde(skip)]
     seen_ids: HashSet<String>,
     /// Insertion order of `seen_ids`; the oldest id is forgotten first.
@@ -53,6 +60,21 @@ impl SessionStats {
             }
         }
         true
+    }
+
+    fn record_change(&mut self, path: &str, at: DateTime<Utc>) {
+        if let Some(f) = self.changed_files.get_mut(path) {
+            f.edits = f.edits.saturating_add(1);
+            f.last_at = f.last_at.max(at);
+            return;
+        }
+        if self.changed_files.len() >= MAX_CHANGED_FILES {
+            let oldest = self.changed_files.values().min_by_key(|f| f.last_at).map(|f| f.path.clone());
+            if let Some(p) = oldest {
+                self.changed_files.remove(&p);
+            }
+        }
+        self.changed_files.insert(path.to_string(), ChangedFile { path: path.to_string(), edits: 1, last_at: at });
     }
 
     fn touch(&mut self, at: DateTime<Utc>) {
@@ -109,8 +131,16 @@ impl SessionStats {
             }
             Entry::ToolResult { tool_use_id, is_error, at } => {
                 self.touch(*at);
+                let mut changed = None;
                 if let Some(c) = self.tool_calls.iter_mut().find(|c| &c.id == tool_use_id) {
+                    // Only the first result of a call counts as a change.
+                    if c.state == ToolState::Running && !is_error {
+                        changed = c.edit_path.clone();
+                    }
                     c.state = if *is_error { ToolState::Error } else { ToolState::Ok };
+                }
+                if let Some(p) = changed {
+                    self.record_change(&p, *at);
                 }
             }
             Entry::Title(t) => self.title = Some(t.clone()),
@@ -173,7 +203,43 @@ mod tests {
         }
     }
     fn tool(id: &str) -> ToolCall {
-        ToolCall { id: id.into(), name: "Bash".into(), target: "x".into(), at: at(10, 0), state: ToolState::Running }
+        ToolCall { id: id.into(), name: "Bash".into(), target: "x".into(), at: at(10, 0), state: ToolState::Running, edit_path: None }
+    }
+    fn edit(id: &str, path: &str) -> ToolCall {
+        ToolCall { name: "Edit".into(), edit_path: Some(path.into()), ..tool(id) }
+    }
+    fn result(id: &str, is_error: bool, t: DateTime<Utc>) -> Entry {
+        Entry::ToolResult { tool_use_id: id.into(), is_error, at: t }
+    }
+
+    #[test]
+    fn changed_files_count_successful_edits_once() {
+        let mut s = SessionStats::default();
+        let calls = vec![edit("A", "/w/a.rs"), edit("B", "/w/a.rs"), edit("C", "/w/b.rs"), tool("D")];
+        s.apply(&asst("m", "claude-opus-5-5", None, usage(1, 1, 0, 0), calls, at(10, 0)));
+        assert!(s.changed_files.is_empty(), "nothing changed before the results");
+        s.apply(&result("A", false, at(10, 1)));
+        s.apply(&result("A", false, at(10, 9))); // a repeated result is not a second edit
+        s.apply(&result("B", false, at(10, 2)));
+        s.apply(&result("C", true, at(10, 3))); // a failed edit changed nothing
+        s.apply(&result("D", false, at(10, 4))); // Bash: not an editing tool
+        assert_eq!(s.changed_files.len(), 1);
+        let a = &s.changed_files["/w/a.rs"];
+        assert_eq!((a.edits, a.last_at), (2, at(10, 2)));
+    }
+
+    #[test]
+    fn changed_files_are_bounded() {
+        let mut s = SessionStats::default();
+        for i in 0..(MAX_CHANGED_FILES + 5) {
+            let id = format!("t{i}");
+            let t = at(10, 0) + chrono::Duration::seconds(i as i64);
+            s.apply(&asst(&format!("m{i}"), "claude-opus-5-5", None, usage(1, 1, 0, 0), vec![edit(&id, &format!("/w/{i}"))], t));
+            s.apply(&result(&id, false, t));
+        }
+        assert_eq!(s.changed_files.len(), MAX_CHANGED_FILES);
+        assert!(!s.changed_files.contains_key("/w/0"), "the oldest is forgotten first");
+        assert!(s.changed_files.contains_key(&format!("/w/{}", MAX_CHANGED_FILES + 4)));
     }
 
     #[test]

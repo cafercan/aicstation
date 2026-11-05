@@ -63,6 +63,23 @@ pub struct ToolCall {
     pub target: String,
     pub at: DateTime<Utc>,
     pub state: ToolState,
+    /// Full path of the file an editing tool (see [`EDIT_TOOLS`]) changes.
+    /// Kept for the changed-files list; not sent to the UI.
+    #[serde(skip)]
+    pub edit_path: Option<String>,
+}
+
+/// Tools that change the file named in their input.
+pub const EDIT_TOOLS: [&str; 4] = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
+
+/// A file a session changed: successful editing tool calls on one path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangedFile {
+    pub path: String,
+    /// Successful editing tool calls on the file.
+    pub edits: u32,
+    pub last_at: DateTime<Utc>,
 }
 
 #[cfg(test)]

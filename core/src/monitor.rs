@@ -2,7 +2,7 @@
 use crate::host::HostKind;
 use crate::agents::{AgentCache, AgentKind, AgentNode, AgentState, AgentTree};
 use crate::locate::Locator;
-use crate::model::{ToolCall, Usage};
+use crate::model::{ChangedFile, ToolCall, Usage};
 use crate::registry::{read_live_sessions, LiveSession, ProcessProbe, SessionStatus};
 use crate::stats::SessionStats;
 use crate::transcript::{ReadEvent, TranscriptReader};
@@ -67,6 +67,8 @@ pub struct SessionDetail {
     pub tool_call_count: u64,
     pub tree: AgentTree,
     pub main_tool_calls: Vec<ToolCall>,
+    /// Files changed by the session and its agents, most recent first.
+    pub changed_files: Vec<ChangedFile>,
 }
 
 struct SessionState {
@@ -146,6 +148,33 @@ fn agent_tokens(nodes: &[AgentNode], out: &mut Usage) {
         }
         agent_tokens(&n.children, out);
     }
+}
+
+/// Changed files of the main transcript and every agent, merged by path,
+/// most recently changed first.
+fn changed_files(stats: &SessionStats, tree: &AgentTree) -> Vec<ChangedFile> {
+    fn add(into: &mut HashMap<String, ChangedFile>, from: &SessionStats) {
+        for f in from.changed_files.values() {
+            into.entry(f.path.clone())
+                .and_modify(|e| {
+                    e.edits = e.edits.saturating_add(f.edits);
+                    e.last_at = e.last_at.max(f.last_at);
+                })
+                .or_insert_with(|| f.clone());
+        }
+    }
+    fn walk(into: &mut HashMap<String, ChangedFile>, nodes: &[AgentNode]) {
+        for n in nodes {
+            add(into, &n.stats);
+            walk(into, &n.children);
+        }
+    }
+    let mut all = HashMap::new();
+    add(&mut all, stats);
+    walk(&mut all, &tree.roots);
+    let mut v: Vec<ChangedFile> = all.into_values().collect();
+    v.sort_by(|a, b| b.last_at.cmp(&a.last_at).then_with(|| a.path.cmp(&b.path)));
+    v
 }
 
 fn running_agents(nodes: &[AgentNode]) -> u32 {
@@ -391,6 +420,7 @@ impl Monitor {
             tokens: stats.tokens,
             tool_call_count: stats.tool_call_count,
             main_tool_calls: stats.tool_calls.iter().cloned().collect(),
+            changed_files: changed_files(stats, &tree),
             tree,
         })
     }
@@ -407,6 +437,7 @@ impl Monitor {
                 tokens: st.stats.tokens,
                 tool_call_count: st.stats.tool_call_count,
                 main_tool_calls: st.stats.tool_calls.iter().cloned().collect(),
+                changed_files: changed_files(&st.stats, &st.tree),
                 tree: st.tree.clone(),
             },
             None => SessionDetail {
@@ -415,6 +446,7 @@ impl Monitor {
                 tokens: Usage::default(),
                 tool_call_count: 0,
                 main_tool_calls: Vec::new(),
+                changed_files: Vec::new(),
                 tree: AgentTree::default(),
             },
         }
@@ -469,6 +501,7 @@ impl ClosedJob {
             tokens: stats.tokens,
             tool_call_count: stats.tool_call_count,
             main_tool_calls: stats.tool_calls.iter().cloned().collect(),
+            changed_files: changed_files(&stats, &tree),
             tree,
         })
     }
@@ -870,5 +903,30 @@ mod tests {
         assert_eq!(d.tree.finished, 1);
         assert!(d.tree.roots.iter().all(|n| n.state == AgentState::Finished));
         assert!(e.mon().detail(&id(77), &FakeProbe, now()).is_none());
+    }
+
+    fn edit_lines(mid: &str, tool: &str, path: &str, ts: &str) -> String {
+        let call = format!(
+            r#"{{"type":"assistant","timestamp":"{ts}","message":{{"id":"{mid}","content":[{{"type":"tool_use","id":"{mid}-t","name":"{tool}","input":{{"file_path":"{path}"}}}}]}}}}"#
+        );
+        let result = format!(
+            r#"{{"type":"user","timestamp":"{ts}","message":{{"content":[{{"type":"tool_result","tool_use_id":"{mid}-t"}}]}}}}"#
+        );
+        format!("{call}\n{result}")
+    }
+
+    #[test]
+    fn detail_merges_changed_files_of_session_and_agents() {
+        let e = Env::new();
+        let sid = id(10);
+        let t = e.transcript(&sid);
+        e.append(&t, &edit_lines("m1", "Edit", "/w/a.rs", "2026-11-02T07:00:00Z"));
+        e.append(&t, &edit_lines("m2", "Write", "/w/b.rs", "2026-11-02T07:05:00Z"));
+        let sub = e.dir.path().join("projects/proj-a").join(&sid).join("subagents");
+        fs::create_dir_all(&sub).unwrap();
+        e.append(&sub.join("agent-a1.jsonl"), &edit_lines("s1", "Edit", "/w/a.rs", "2026-11-02T07:09:00Z"));
+        let d = e.mon().detail(&sid, &FakeProbe, now()).unwrap();
+        let got: Vec<(&str, u32)> = d.changed_files.iter().map(|f| (f.path.as_str(), f.edits)).collect();
+        assert_eq!(got, [("/w/a.rs", 2), ("/w/b.rs", 1)], "merged by path, most recent first");
     }
 }

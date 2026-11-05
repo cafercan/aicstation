@@ -1,5 +1,5 @@
 //! JSONL transcript line parsing and an incremental, read-only reader.
-use crate::model::{cap_display, cap_path, ToolCall, ToolState, Usage};
+use crate::model::{cap_display, cap_path, ToolCall, ToolState, Usage, EDIT_TOOLS};
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 use std::fs::File;
@@ -103,12 +103,19 @@ fn tool_uses_of(msg: &Value, at: DateTime<Utc>) -> Vec<ToolCall> {
         .filter(|b| str_of(b, "type") == Some("tool_use"))
         .filter_map(|b| {
             let name = str_of(b, "name")?;
+            let input = b.get("input").unwrap_or(&Value::Null);
+            let edit_path = EDIT_TOOLS
+                .contains(&name)
+                .then(|| str_of(input, "file_path").or_else(|| str_of(input, "notebook_path")))
+                .flatten()
+                .and_then(cap_path);
             Some(ToolCall {
                 id: str_of(b, "id")?.to_string(),
                 name: name.to_string(),
-                target: tool_target(name, b.get("input").unwrap_or(&Value::Null)),
+                target: tool_target(name, input),
                 at,
                 state: ToolState::Running,
+                edit_path,
             })
         })
         .collect()
@@ -579,6 +586,25 @@ kısa
         assert!(parse_line("{not json").is_empty());
         assert!(parse_line(r#"{"type":"api-request-blob","x":1}"#).is_empty());
         assert!(parse_line("").is_empty());
+    }
+
+    #[test]
+    fn edit_tools_keep_the_full_path() {
+        let line = |name: &str, input: &str| {
+            format!(
+                r#"{{"type":"assistant","timestamp":"2026-06-10T10:00:00Z","message":{{"id":"m","content":[{{"type":"tool_use","id":"t","name":"{name}","input":{input}}}]}}}}"#
+            )
+        };
+        let path_of = |l: String| match &parse_line(&l)[0] {
+            Entry::Assistant { tool_uses, .. } => tool_uses[0].edit_path.clone(),
+            e => panic!("{e:?}"),
+        };
+        assert_eq!(path_of(line("Edit", r#"{"file_path":"/w/src/a.rs"}"#)).as_deref(), Some("/w/src/a.rs"));
+        assert_eq!(path_of(line("NotebookEdit", r#"{"notebook_path":"/w/n.ipynb"}"#)).as_deref(), Some("/w/n.ipynb"));
+        // Reading a file changes nothing.
+        assert_eq!(path_of(line("Read", r#"{"file_path":"/w/src/a.rs"}"#)), None);
+        let long = format!(r#"{{"file_path":"/{}"}}"#, "a".repeat(300));
+        assert_eq!(path_of(line("Write", &long)), None, "an overlong path is dropped");
     }
 
     #[test]
