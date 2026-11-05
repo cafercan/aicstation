@@ -22,6 +22,9 @@ pub struct HistorySummary {
     #[serde(default)]
     pub first_cwd: Option<String>,
     pub model: Option<String>,
+    /// Last recorded git branch.
+    #[serde(default)]
+    pub git_branch: Option<String>,
     pub first_at_ms: u64,
     pub last_at_ms: u64,
     pub agents_total: u32,
@@ -48,8 +51,9 @@ pub struct HistoryRow {
 }
 
 /// On-disk cache schema. A cache of any other version (or the bare array of
-/// version 1, which had no first cwd) is ignored and rebuilt (version 3 added the token totals).
-pub const CACHE_VERSION: u32 = 3;
+/// version 1, which had no first cwd) is ignored and rebuilt (version 3 added
+/// the token totals, version 4 the git branch).
+pub const CACHE_VERSION: u32 = 4;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -165,6 +169,7 @@ fn summarize(path: &Path, locator: &mut Locator, id: &str) -> io::Result<History
         cwd: stats.cwd.clone(),
         first_cwd: stats.first_cwd.clone(),
         model: stats.model.clone(),
+        git_branch: stats.git_branch.clone(),
         first_at_ms: stats.first_at.map_or(0, |t| t.timestamp_millis().max(0) as u64),
         last_at_ms: stats.last_at.map_or(0, |t| t.timestamp_millis().max(0) as u64),
         agents_total,
@@ -452,6 +457,18 @@ mod tests {
         let s = idx.rows(&HashSet::new())[0].summary.clone().unwrap();
         assert_eq!(s.first_cwd.as_deref(), Some(r"C:\demo\proj-x"));
         assert_eq!(s.cwd.as_deref(), Some(r"C:\demo\proj-x\sub"));
+        assert_eq!(s.git_branch, None);
+    }
+
+    #[test]
+    fn summary_keeps_the_last_git_branch() {
+        let t = tempfile::tempdir().unwrap();
+        let on = |b: &str, m: &str| line(now(), m, 1).replace(r#""cwd":"#, &format!(r#""gitBranch":"{b}","cwd":"#));
+        put(t.path(), "C--demo-proj-x", ID_A, &(on("main", "m1") + "\n" + &on("feat/x", "m2") + "\n"), 10);
+        let mut idx = load(t.path(), &t.path().join("c.json"));
+        while idx.step(Duration::from_secs(5)) {}
+        let s = idx.rows(&HashSet::new())[0].summary.clone().unwrap();
+        assert_eq!(s.git_branch.as_deref(), Some("feat/x"));
     }
 
     #[test]
