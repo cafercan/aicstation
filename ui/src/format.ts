@@ -152,6 +152,14 @@ export function fmtContext(pct: number | null): string {
 }
 
 /** Last component of a Windows or POSIX folder path ("" if none). */
+/** `path` relative to `cwd` when it lies inside it (either separator), otherwise unchanged. */
+export function relPath(path: string, cwd: string): string {
+  const base = cwd.replace(/[\\/]+$/, "");
+  if (base === "" || path.length <= base.length + 1 || !path.startsWith(base)) return path;
+  const sep = path[base.length];
+  return sep === "/" || sep === "\\" ? path.slice(base.length + 1) : path;
+}
+
 export function folderName(cwd: string): string {
   return cwd.split(/[\\/]/).filter((s) => s !== "").pop() ?? "";
 }

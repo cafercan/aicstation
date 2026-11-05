@@ -103,6 +103,9 @@ export const ru: Dict = {
   "detail.workflow": "Рабочий процесс {id}",
   "detail.phase": "Этап {name}",
   "detail.agent": "агент",
+  "detail.changedFiles": "ИЗМЕНЁННЫЕ ФАЙЛЫ · {n}",
+  "detail.noChanges": "файлы не изменялись",
+  "detail.edits": { one: "{n} правка", few: "{n} правки", many: "{n} правок", other: "{n} правки" },
   "goto.failed": "Не удалось перейти на вкладку: {err}",
 
   "term.resumeTitle": "Продолжение: {id}",

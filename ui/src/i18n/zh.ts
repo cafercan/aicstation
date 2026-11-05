@@ -97,6 +97,9 @@ export const zh: Dict = {
   "detail.workflow": "工作流 {id}",
   "detail.phase": "阶段 {name}",
   "detail.agent": "智能体",
+  "detail.changedFiles": "已更改的文件 · {n}",
+  "detail.noChanges": "没有文件更改",
+  "detail.edits": { one: "{n} 次编辑", other: "{n} 次编辑" },
   "goto.failed": "无法转到标签页：{err}",
 
   "term.resumeTitle": "恢复：{id}",

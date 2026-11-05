@@ -97,6 +97,9 @@ export const az: Dict = {
   "detail.workflow": "Workflow {id}",
   "detail.phase": "Mərhələ {name}",
   "detail.agent": "agent",
+  "detail.changedFiles": "DƏYİŞƏN FAYLLAR · {n}",
+  "detail.noChanges": "fayl dəyişikliyi yoxdur",
+  "detail.edits": { one: "1 düzəliş", other: "{n} düzəliş" },
   "goto.failed": "Vərəqə keçmək olmadı: {err}",
 
   "term.resumeTitle": "Davam: {id}",

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getSessionDetail, onSnapshot, openFolder, type AgentNode, type SessionDetail, type ToolCall } from "../api";
 import {
-  fmtBreakdown, fmtContext, fmtElapsed, fmtEstCost, fmtTokens, statusColor, statusKind, statusLabel, usageSum,
+  fmtBreakdown, fmtContext, fmtElapsed, fmtEstCost, fmtTokens, relPath, statusColor, statusKind, statusLabel, usageSum,
 } from "../format";
 import SessionMark from "../components/SessionMark";
 import { terminalForPid } from "../terminal/store";
@@ -145,6 +145,7 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal, live 
   const selNode = sel === MAIN ? null : findNode(tree.roots, sel);
   // The backend keeps calls oldest first; newest goes on top, like the agent tree.
   const calls = [...(selNode ? selNode.stats.toolCalls : detail.mainToolCalls)].reverse();
+  const files = detail.changedFiles ?? [];
   const caption = selNode ? nodeLabel(selNode) : tx("detail.mainCaption");
   const kind = statusKind(card.status, card.pid);
   const target = kind === "closed" ? null : gotoTarget(card, terminalForPid(card.parentPid));
@@ -231,6 +232,17 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal, live 
             </div>
           ))}
         </div>
+      </div>
+      <div className="files">
+        <div className="cap">{tx("detail.changedFiles", { n: files.length })}</div>
+        {files.length === 0 && <div className="x">{tx("detail.noChanges")}</div>}
+        {files.map((f) => (
+          <div key={f.path} className="file" data-testid="changed-file" title={f.path}>
+            <span className="x">{hhmmss(f.lastAt)}</span>{" "}
+            <span className="fp">{relPath(f.path, card.cwd)}</span>{" "}
+            <span className="x">{tx("detail.edits", { n: f.edits })}</span>
+          </div>
+        ))}
       </div>
     </div>
   );
