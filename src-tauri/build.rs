@@ -25,6 +25,8 @@ const COMMANDS: &[&str] = &[
     "hide_to_tray",
     "search_history",
     "cancel_search",
+    "claude_status",
+    "set_usage_bridge",
 ];
 
 fn main() {
