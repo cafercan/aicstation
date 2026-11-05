@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { butaglyphInfo, listShells, openButaglyphEditor, setUsageBridge, type ButaglyphInfo } from "../api";
-import { refreshClaudeStatus, useClaudeStatus } from "../terminal/claudeBar";
+import { refreshClaudeStatus, useClaudeStatus } from "../terminal/claudeBarData";
 import { errorText, useT, type Key } from "../i18n";
 import { isWindows } from "../platform";
 import GeneralPrefs from "../components/GeneralPrefs";
