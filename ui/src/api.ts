@@ -65,6 +65,8 @@ export interface HistorySummary {
   name: string;
   cwd: string | null;
   model: string | null;
+  /** Last recorded git branch (absent in old fixtures). */
+  gitBranch?: string | null;
   firstAtMs: number;
   lastAtMs: number;
   agentsTotal: number;

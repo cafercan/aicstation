@@ -220,7 +220,7 @@ test("kısayol yardımı: Ctrl+Shift+/ açar, çevrili liste, Esc kapatır; pale
 test("Ctrl+Shift+F geçerli sayfanın arama kutusuna odaklanır", async () => {
   await boot();
   chord("F", "KeyF");
-  expect(document.activeElement).toBe(screen.getByLabelText("Ara: ad, klasör, model"));
+  expect(document.activeElement).toBe(screen.getByLabelText("Ara: ad, klasör, model, branch"));
 });
 
 test("komut paleti Ayarlar'ı da açar", async () => {

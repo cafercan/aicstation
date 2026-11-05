@@ -142,6 +142,12 @@ select {
 }
 .card .path .cwd { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card .path .model { flex: none; }
+.branch {
+  flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom;
+  display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 8px; font-size: 10.5px;
+  color: var(--cyan); background: var(--hover);
+}
+.card .path .branch { margin-left: 0; }
 .card .path .model::before { content: "· "; }
 .card .agents { display: flex; gap: 14px; align-items: center; }
 .card .astats { font-size: 12px; line-height: 1.7; }

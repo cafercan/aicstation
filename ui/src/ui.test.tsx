@@ -89,6 +89,14 @@ test("bağlam yüzdesi 100'ü aşmaz", () => {
   expect(screen.getByText("bağlam 100%")).toBeTruthy();
 });
 
+test("kart git branch rozetini gösterir; branch yoksa rozet yok", () => {
+  const { container, unmount } = render(<SessionCardView card={card({ gitBranch: "feat/adc" })} now={0} onOpen={() => {}} />);
+  expect(container.querySelector(".branch")?.textContent).toBe("⎇ feat/adc");
+  unmount();
+  const r = render(<SessionCardView card={card({ gitBranch: null })} now={0} onOpen={() => {}} />);
+  expect(r.container.querySelector(".branch")).toBeNull();
+});
+
 test("kart klavyeden Enter ve Boşluk ile açılır", () => {
   const onOpen = vi.fn();
   render(<SessionCardView card={card()} now={0} onOpen={onOpen} />);

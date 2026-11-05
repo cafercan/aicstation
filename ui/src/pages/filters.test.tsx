@@ -59,7 +59,7 @@ beforeEach(() => {
 test("Dashboard: arama kutusu ad/klasör/model süzer (Türkçe İ/ı duyarsız), boşsa 'uyan yok'", () => {
   const cards = [card("Işık", {}), card("web", { cwd: "D:\\İş\\web" }), card("cli", { model: "Sonnet 5.5" })];
   render(<Dashboard snapshot={snap(cards)} history={null} now={0} onOpen={() => {}} />);
-  const box = screen.getByLabelText("Ara: ad, klasör, model");
+  const box = screen.getByLabelText("Ara: ad, klasör, model, branch");
   fireEvent.change(box, { target: { value: "is" } });
   expect(screen.getByText("Işık")).toBeTruthy();
   expect(screen.getByText("web")).toBeTruthy();
@@ -93,7 +93,7 @@ test("Dashboard: durum çipleri bağımsız açılıp kapanır; süzgeç sayfa d
 test("Ctrl+Shift+F hedefi: sayfanın arama kutusuna odaklanır", () => {
   render(<Dashboard snapshot={snap([])} history={null} now={0} onOpen={() => {}} />);
   expect(focusSearch()).toBe(true);
-  expect(document.activeElement).toBe(screen.getByLabelText("Ara: ad, klasör, model"));
+  expect(document.activeElement).toBe(screen.getByLabelText("Ara: ad, klasör, model, branch"));
 });
 
 test("Geçmiş: metin süzgeci ve token sayısına göre sıralama", async () => {
@@ -104,9 +104,9 @@ test("Geçmiş: metin süzgeci ve token sayısına göre sıralama", async () =>
   expect(names()).toEqual(["ad-a", "ad-b", "ad-c"]);
   fireEvent.change(screen.getByLabelText("Sırala"), { target: { value: "tokens" } });
   expect(names()).toEqual(["ad-c", "ad-a", "ad-b"]);
-  fireEvent.change(screen.getByLabelText("Ara: ad, klasör, model"), { target: { value: "ISTANBUL" } });
+  fireEvent.change(screen.getByLabelText("Ara: ad, klasör, model, branch"), { target: { value: "ISTANBUL" } });
   expect(names()).toEqual(["ad-a"]);
-  fireEvent.change(screen.getByLabelText("Ara: ad, klasör, model"), { target: { value: "zzz" } });
+  fireEvent.change(screen.getByLabelText("Ara: ad, klasör, model, branch"), { target: { value: "zzz" } });
   expect(screen.getByText("Filtreye uyan kayıt yok.")).toBeTruthy();
 });
 

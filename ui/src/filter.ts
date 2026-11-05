@@ -30,10 +30,10 @@ export function matchesQuery(query: string, fields: (string | null | undefined)[
 export const STATUS_CHIPS = ["busy", "waiting", "idle", "shell"] as const satisfies readonly StatusKind[];
 export type StatusChip = (typeof STATUS_CHIPS)[number];
 
-/** Cards matching the text (name / folder / model) and, when any chip is on, one of the chips. */
+/** Cards matching the text (name / folder / model / git branch) and, when any chip is on, one of the chips. */
 export function filterSessions(cards: SessionCard[], query: string, chips: ReadonlySet<string>): SessionCard[] {
   return cards.filter((c) =>
-    (chips.size === 0 || chips.has(statusKind(c.status, c.pid))) && matchesQuery(query, [c.name, c.cwd, c.model]));
+    (chips.size === 0 || chips.has(statusKind(c.status, c.pid))) && matchesQuery(query, [c.name, c.cwd, c.model, c.gitBranch]));
 }
 
 export type HistorySort = "date" | "tokens";
@@ -54,7 +54,7 @@ export function filterHistory(rows: HistoryRow[], f: HistoryFilter): HistoryRow[
     const day = localDateKey(r.modifiedMs);
     if (f.from && day < f.from) return false;
     if (f.to && day > f.to) return false;
-    return matchesQuery(f.query, [r.summary?.name ?? r.name, rowCwd(r), r.summary?.model]);
+    return matchesQuery(f.query, [r.summary?.name ?? r.name, rowCwd(r), r.summary?.model, r.summary?.gitBranch]);
   });
   const tokens = (r: HistoryRow) => (r.summary ? usageSum(r.summary.tokens) : -1);
   return out.sort((a, b) =>
