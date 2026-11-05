@@ -217,6 +217,8 @@ export interface Settings {
   promptPreset: string;
   /** Owned by the backend; a value sent here is ignored. */
   trayNoticeShown: boolean;
+  /** Usage limits bridge was turned on by default once (owned by Rust). */
+  usageBridgeOffered: boolean;
   /** UI language, for the texts the backend shows (toasts, tray). */
   lang: string;
 }

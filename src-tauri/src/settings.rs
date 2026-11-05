@@ -63,6 +63,10 @@ pub struct Settings {
     /// The one-time "still running in the tray" toast was shown. Owned by
     /// Rust: a value sent by the UI is ignored.
     pub tray_notice_shown: bool,
+    /// "Show Claude usage limits" was turned on once by default. After
+    /// that it stays as the user leaves it. Owned by Rust like
+    /// `tray_notice_shown`.
+    pub usage_bridge_offered: bool,
     pub lang: String,
     /// One of [`SHELLS`].
     pub shell: String,
@@ -87,6 +91,7 @@ impl Default for Settings {
             notify_sound: false,
             close_to_tray: true,
             tray_notice_shown: false,
+            usage_bridge_offered: false,
             lang: "tr".into(),
             shell: "auto".into(),
             prompt: "own".into(),
@@ -151,6 +156,7 @@ pub fn from_json(v: &Value) -> Settings {
         notify_sound: flag("notifySound", d.notify_sound),
         close_to_tray: flag("closeToTray", d.close_to_tray),
         tray_notice_shown: flag("trayNoticeShown", d.tray_notice_shown),
+        usage_bridge_offered: flag("usageBridgeOffered", d.usage_bridge_offered),
         lang: pick("lang", &|l| LANGS.contains(&l), d.lang),
         shell: pick("shell", &|v| SHELLS.contains(&v), d.shell),
         prompt: pick("prompt", &|v| PROMPTS.contains(&v), d.prompt),
@@ -217,6 +223,7 @@ impl SettingsStore {
         s.validate()?;
         let mut cur = self.current.lock().unwrap_or_else(|e| e.into_inner());
         s.tray_notice_shown = cur.tray_notice_shown;
+        s.usage_bridge_offered = cur.usage_bridge_offered;
         save(&self.path, &s).map_err(|e| errors::with(errors::SETTINGS_SAVE_FAILED, e))?;
         *cur = s.clone();
         Ok(s)
@@ -235,6 +242,15 @@ impl SettingsStore {
         }
         true
     }
+
+    /// Records that the usage limits bridge was turned on by default.
+    pub fn mark_usage_bridge_offered(&self) {
+        let mut cur = self.current.lock().unwrap_or_else(|e| e.into_inner());
+        cur.usage_bridge_offered = true;
+        if let Err(e) = save(&self.path, &cur) {
+            eprintln!("ayarlar kaydedilemedi: {e}");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -245,7 +261,7 @@ mod tests {
     fn defaults_match_the_brief() {
         let s = Settings::default();
         assert!(s.notify_waiting && s.notify_finished && s.close_to_tray);
-        assert!(!s.notify_subagent && !s.notify_sound && !s.tray_notice_shown);
+        assert!(!s.notify_subagent && !s.notify_sound && !s.tray_notice_shown && !s.usage_bridge_offered);
         assert_eq!(s.lang, "tr");
     }
 
@@ -411,5 +427,17 @@ mod tests {
         let reopened = SettingsStore::open(p);
         assert!(reopened.get().tray_notice_shown && reopened.get().notify_sound);
         assert!(!reopened.take_tray_notice(), "remembered across runs");
+    }
+
+    #[test]
+    fn the_usage_bridge_default_is_applied_once_and_the_ui_cannot_reset_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join("settings.json");
+        let store = SettingsStore::open(p.clone());
+        assert!(!store.get().usage_bridge_offered);
+        store.mark_usage_bridge_offered();
+        let out = store.set_from_ui(Settings { usage_bridge_offered: false, ..Settings::default() }).unwrap();
+        assert!(out.usage_bridge_offered);
+        assert!(SettingsStore::open(p).get().usage_bridge_offered, "remembered across runs");
     }
 }

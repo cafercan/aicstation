@@ -16,7 +16,7 @@ const invoke = vi.hoisted(() => vi.fn(async (cmd: string): Promise<unknown> => {
   if (cmd === "get_settings" || cmd === "set_settings") {
     return {
       notifyWaiting: true, notifyFinished: true, notifySubagent: false, notifyContext: true, contextThreshold: 85, notifyStalled: false, stalledMinutes: 10, notifyBudget: false, dailyBudgetUsd: 20, notifySound: true, closeToTray: false,
-      trayNoticeShown: false, lang: "tr", shell: "auto", prompt: "own", promptPreset: "",
+      trayNoticeShown: false, usageBridgeOffered: false, lang: "tr", shell: "auto", prompt: "own", promptPreset: "",
     };
   }
   if (cmd === "set_focus_context") return null;

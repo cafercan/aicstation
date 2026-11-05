@@ -6,7 +6,7 @@ const A = "0b2f6a40-1111-4c3e-9d2a-5f1e2d3c4b5a";
 
 const DEFAULTS: Settings = {
   notifyWaiting: true, notifyFinished: true, notifySubagent: false, notifyContext: true, contextThreshold: 85, notifyStalled: false, stalledMinutes: 10, notifyBudget: false, dailyBudgetUsd: 20, notifySound: false,
-  closeToTray: true, trayNoticeShown: false, lang: "tr",
+  closeToTray: true, trayNoticeShown: false, usageBridgeOffered: false, lang: "tr",
   shell: "auto", prompt: "own", promptPreset: "",
 };
 
