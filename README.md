@@ -264,17 +264,25 @@ Download `AICStation-v*-windows-x64-setup.exe` from the
 - `LICENSE`, `THIRD_PARTY_NOTICES.md` and butaglyph (`buta.exe`) are
   installed next to the app.
 
-On Linux (x64, glibc 2.34+: Ubuntu 22.04, Debian 12, Fedora 35 or newer),
-download one of these from the same page:
+On Linux (x64, glibc 2.34+: Ubuntu 22.04, Debian 12, Fedora 35 or newer;
+rolling distros such as Arch and openSUSE Tumbleweed), download one of these
+from the same page:
 
 - `AICStation-v*-linux-amd64.deb` (Debian, Ubuntu):
   `sudo apt install ./AICStation-v*-linux-amd64.deb`
 - `AICStation-v*-linux-x86_64.rpm` (Fedora, openSUSE):
-  `sudo dnf install ./AICStation-v*-linux-x86_64.rpm`
+  `sudo dnf install ./AICStation-v*-linux-x86_64.rpm`, or on openSUSE
+  `sudo zypper install ./AICStation-v*-linux-x86_64.rpm`. Its dependencies
+  are named by library, so both find them.
+- `AICStation-v*-linux-x86_64.pkg.tar.zst` (Arch, Manjaro, EndeavourOS):
+  `sudo pacman -U ./AICStation-v*-linux-x86_64.pkg.tar.zst`. The `PKGBUILD`
+  it was built with is attached too (package `aicstation-bin`, for the AUR or
+  `makepkg -si`). It ships butaglyph as `/usr/bin/buta`, so it replaces a
+  separately installed `butaglyph` package.
 - `AICStation-v*-linux-x86_64.AppImage` (any distro): make it executable
   (`chmod +x`) and run it.
 
-`SHA256SUMS-linux.txt` lists their checksums. The .deb and .rpm also install
+`SHA256SUMS-linux.txt` and `SHA256SUMS-arch.txt` list their checksums. The .deb and .rpm also install
 butaglyph as `/usr/bin/buta`, so the `buta` command works in any terminal.
 
 ## Usage tips
@@ -320,6 +328,7 @@ librsvg2-dev libxdo-dev libssl-dev`), then:
 npm ci && npm --prefix ui ci
 npm run tauri dev        # development mode
 npm run bundle:linux     # dist/AICStation-v<version>-linux-*: .deb, .rpm, AppImage
+npm run bundle:arch      # then, on Arch: .pkg.tar.zst and PKGBUILD from that .deb
 ```
 
 Tests and checks:
@@ -361,7 +370,8 @@ the tests and a release build on Linux.
 | `core/` | `station-core`: Rust library that locates and parses Claude Code's local files, tracks live sessions, builds the agent tree, and computes context usage and cost |
 | `src-tauri/` | `aicstation`: the Tauri app with IPC commands, terminals (PTY), history index, notifications, tray and platform integration (Windows, Linux) |
 | `ui/` | React + TypeScript front end (Vite), xterm.js terminals, i18n dictionaries, themes |
-| `scripts/` | `gen-notices.mjs`, which generates the third-party notices |
+| `scripts/` | `gen-notices.mjs`, which generates the third-party notices; the Windows and Linux package builds |
+| `packaging/arch/` | `PKGBUILD.in`, the Arch package recipe that `scripts/build-arch.sh` fills in |
 | `assets/` | Logo source |
 
 ## Roadmap
@@ -445,8 +455,9 @@ biçimler değişebilir.
 `AICStation-v*-windows-x64-setup.exe` dosyasını indirip çalıştırın. Kurulum
 kullanıcı bazlıdır, yönetici yetkisi gerekmez; kurulum dosyası henüz imzalı
 değildir. Gereksinimler: Windows 10/11 x64,
-WebView2, Claude Code. Linux (x64, glibc 2.34+) için aynı sayfada `.deb`,
-`.rpm` ve AppImage paketleri var.
+WebView2, Claude Code. Linux (x64, glibc 2.34+) için aynı sayfada `.deb`
+(Debian, Ubuntu), `.rpm` (Fedora, openSUSE), `.pkg.tar.zst` (Arch:
+`sudo pacman -U ./AICStation-v*-linux-x86_64.pkg.tar.zst`) ve AppImage paketleri var.
 
 Kaynaktan derleme, testler ve katkı için yukarıdaki İngilizce bölümlere
 bakın. Lisans: [MIT](LICENSE).
