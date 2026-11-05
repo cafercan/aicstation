@@ -136,7 +136,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
         run: |
+          # The container has no git; --repo lets gh work without it.
           pacman -S --noconfirm --needed github-cli
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           gh release upload "$TAG" dist/*.pkg.tar.zst dist/PKGBUILD dist/SHA256SUMS-arch.txt \
             --repo "$GITHUB_REPOSITORY" --clobber
