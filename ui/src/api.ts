@@ -270,3 +270,35 @@ export const searchHistory = (query: string, generation: number) =>
 
 /** Stops the running content search (page left or search cleared). */
 export const cancelSearch = () => invoke<void>("cancel_search");
+
+/** One usage window of the status line: percent used and when it resets. */
+export interface UsageWindow { usedPct: number; resetsAtMs: number | null }
+
+export interface UsageLimits {
+  fiveHour: UsageWindow | null;
+  sevenDay: UsageWindow | null;
+  updatedMs: number;
+}
+
+/** What one session's status line knows (statusline.rs SessionLine). */
+export interface SessionLine {
+  effort: string | null;
+  linesAdded: number | null;
+  linesRemoved: number | null;
+  updatedMs: number;
+}
+
+export interface ClaudeStatus {
+  /** AI C-Station is Claude Code's status line (Settings: show usage limits). */
+  bridge: boolean;
+  limits: UsageLimits | null;
+  sessions: Record<string, SessionLine>;
+  /** `effortLevel` of Claude Code's settings.json. */
+  defaultEffort: string | null;
+}
+
+export const claudeStatus = () => invoke<ClaudeStatus>("claude_status");
+/** Turns the status line bridge on or off; resolves with whether it is on. */
+export const setUsageBridge = (on: boolean) => invoke<boolean>("set_usage_bridge", { on });
+/** Modified tracked files in the folder; null when unknown (not a repo, no git). */
+export const gitDirty = (cwd: string) => invoke<boolean | null>("git_dirty", { cwd });

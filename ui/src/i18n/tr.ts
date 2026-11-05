@@ -58,6 +58,18 @@ export const tr = {
   "sb.agents": "{n} ajan",
   "sb.noAgents": "ajan yok",
   "sb.context": "bağlam {pct}",
+  "cbar.label": "Bu terminaldeki Claude Code",
+  "cbar.fiveHour": "5s",
+  "cbar.sevenDay": "7g",
+  "cbar.fiveHourTitle": "5 saatlik limit: %{pct} kaldı, {reset} sonra sıfırlanır",
+  "cbar.sevenDayTitle": "Haftalık limit: %{pct} kaldı, {reset} sonra sıfırlanır",
+  "cbar.minutes": "{n}dk",
+  "cbar.hours": "{n}sa",
+  "cbar.hoursMinutes": "{h}sa{m}",
+  "cbar.days": "{n}g",
+  "cbar.tokens": "{n} token",
+  "cbar.dirty": "kaydedilmemiş değişiklikler",
+  "cbar.lines": "bu oturumda eklenen / silinen satırlar",
 
   // App shell
   "app.terminalMissing": "Terminal bulunamadı.",
