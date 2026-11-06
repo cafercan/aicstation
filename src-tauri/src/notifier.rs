@@ -95,6 +95,24 @@ impl Notifier {
     }
 }
 
+/// The window came to the front: the user is looking at the app, so its
+/// notifications are closed (they would otherwise pile up in the system's
+/// notification list and in Ubuntu Dock's counter).
+pub fn on_main_focus(app: &AppHandle, focused: bool) {
+    if focused {
+        app.state::<Toaster>().withdraw(None);
+    }
+}
+
+/// The UI changed what it shows: close the notifications about the sessions
+/// now on screen, if the window is in front.
+pub fn withdraw_shown(app: &AppHandle) {
+    let shown = app.state::<Notifier>().focused_sessions(app);
+    if !shown.is_empty() {
+        app.state::<Toaster>().withdraw(Some(&shown));
+    }
+}
+
 /// After each snapshot: toasts for new alerts, then the tray.
 pub fn after_snapshot(app: &AppHandle, snap: &Snapshot) {
     let settings = app.state::<SettingsStore>().get();
@@ -113,7 +131,7 @@ pub fn after_snapshot(app: &AppHandle, snap: &Snapshot) {
         let toast = Toast::new(&title, body.as_deref(), settings.notify_sound);
         let handle = app.clone();
         let id = a.session_id.clone();
-        toaster.show(&toast, move || tray::navigate(&handle, Some(id.clone())));
+        toaster.show(&toast, Some(&a.session_id), move || tray::navigate(&handle, Some(id.clone())));
     }
     if settings.notify_budget {
         let (day, cost) = app.state::<AppState>().today_cost();
@@ -121,7 +139,7 @@ pub fn after_snapshot(app: &AppHandle, snap: &Snapshot) {
         if notifier.budget.lock().unwrap_or_else(|e| e.into_inner()).observe(day, cost, limit) {
             let toast = Toast::new(&budget_text(&settings.lang, settings.daily_budget_usd), None, settings.notify_sound);
             let handle = app.clone();
-            toaster.show(&toast, move || tray::navigate(&handle, None));
+            toaster.show(&toast, None, move || tray::navigate(&handle, None));
         }
     }
     tray::update(app, snap, &settings.lang);
@@ -137,7 +155,7 @@ pub fn hide_to_tray(app: &AppHandle) -> Result<(), String> {
         let s = store.get();
         let toast = Toast::new(texts(&s.lang).tray_notice, None, s.notify_sound);
         let handle = app.clone();
-        app.state::<Toaster>().show(&toast, move || tray::show_main(&handle));
+        app.state::<Toaster>().show(&toast, None, move || tray::show_main(&handle));
     }
     Ok(())
 }

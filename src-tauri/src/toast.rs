@@ -6,7 +6,7 @@
 //! identifier is registered once under
 //! `HKCU\Software\Classes\AppUserModelId\<id>` (display name + icon) and set
 //! as the process's explicit AUMID. Linux: the freedesktop notification
-//! service over D-Bus (notify-rust). Clicking a notification runs `on_click`.
+//! service over D-Bus (zbus). Clicking a notification runs `on_click`.
 
 /// Longest title / body put in a toast, in characters.
 const MAX_TEXT: usize = 200;
@@ -155,16 +155,33 @@ mod win {
 
         /// Shows a toast; errors are logged, never raised (a notification
         /// must not disturb the snapshot thread).
-        pub fn show(&self, toast: &super::Toast, on_click: impl Fn() + Send + 'static) {
-            if let Err(e) = self.try_show(&toast.xml(), on_click) {
+        /// `tag` is the session the toast is about (its group, for
+        /// [`Self::withdraw`]); None for app-wide notices.
+        pub fn show(&self, toast: &super::Toast, tag: Option<&str>, on_click: impl Fn() + Send + 'static) {
+            if let Err(e) = self.try_show(&toast.xml(), tag, on_click) {
                 eprintln!("bildirim gösterilemedi: {e}");
             }
         }
 
-        fn try_show(&self, xml: &str, on_click: impl Fn() + Send + 'static) -> windows::core::Result<()> {
+        /// Removes the toasts about `sessions` from Action Center, or all of
+        /// the app's toasts when `None`. Best effort.
+        pub fn withdraw(&self, sessions: Option<&[String]>) {
+            let r = ToastNotificationManager::History().and_then(|h| match sessions {
+                None => h.ClearWithId(&self.aumid),
+                Some(ids) => ids.iter().try_for_each(|id| h.RemoveGroupWithId(&HSTRING::from(id.as_str()), &self.aumid)),
+            });
+            if let Err(e) = r {
+                eprintln!("bildirim kapatılamadı: {e}");
+            }
+        }
+
+        fn try_show(&self, xml: &str, tag: Option<&str>, on_click: impl Fn() + Send + 'static) -> windows::core::Result<()> {
             let doc = XmlDocument::new()?;
             doc.LoadXml(&HSTRING::from(xml))?;
             let toast = ToastNotification::CreateToastNotification(&doc)?;
+            if let Some(tag) = tag {
+                toast.SetGroup(&HSTRING::from(tag))?;
+            }
             toast.Activated(&TypedEventHandler::new(
                 move |_: Ref<ToastNotification>, _: Ref<IInspectable>| {
                     on_click();
@@ -185,69 +202,223 @@ mod win {
 #[cfg(target_os = "linux")]
 pub use linux::Toaster;
 
+/// Linux: the freedesktop notification service, spoken to directly over one
+/// D-Bus connection kept for the app's lifetime.
+///
+/// GNOME ties all of an app's notifications to the connection that sent the
+/// first one and drops them when it goes away, so one connection serves every
+/// notification. Notifications stay in the message tray (and in Ubuntu
+/// Dock's counter) until closed, so the app closes them itself once the user
+/// has looked: see [`Toaster::withdraw`].
 #[cfg(target_os = "linux")]
 mod linux {
-    use notify_rust::{Hint, Notification, Timeout};
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex, MutexGuard};
+    use zbus::blocking::{Connection, MessageIterator};
+    use zbus::zvariant::Value;
+    use zbus::MatchRule;
 
-    /// Notifications whose click is still awaited, each on its own thread.
-    /// Beyond this many, new ones are shown without a click action.
-    const MAX_WAITING: usize = 20;
+    const SERVICE: &str = "org.freedesktop.Notifications";
+    const PATH: &str = "/org/freedesktop/Notifications";
+
+    /// The installed .desktop file (named after productName by the bundler):
+    /// lets the server match notifications to the app when the window is hidden.
+    const DESKTOP_ENTRY: &str = "AICStation";
+
+    /// Notifications kept open at most; showing one more closes the oldest.
+    const MAX_OPEN: usize = 20;
+
+    /// A notification still on the server (banner or message tray).
+    pub(super) struct Open {
+        pub id: u32,
+        /// Session it is about; `None` for app-wide notices.
+        pub tag: Option<String>,
+        pub on_click: Box<dyn Fn() + Send>,
+    }
+
+    type OpenList = Arc<Mutex<Vec<Open>>>;
+
+    fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+        m.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Removes the entry for `id`.
+    fn take(open: &OpenList, id: u32) -> Option<Open> {
+        let mut open = lock(open);
+        let i = open.iter().position(|o| o.id == id)?;
+        Some(open.remove(i))
+    }
+
+    /// Removes the entries about `sessions` (all of them when `None`) and
+    /// returns their ids.
+    pub(super) fn split_off(open: &mut Vec<Open>, sessions: Option<&[String]>) -> Vec<u32> {
+        let hit = |o: &Open| sessions.is_none_or(|s| o.tag.as_ref().is_some_and(|t| s.contains(t)));
+        let ids = open.iter().filter(|o| hit(o)).map(|o| o.id).collect();
+        open.retain(|o| !hit(o));
+        ids
+    }
+
+    /// Removes the oldest entries beyond [`MAX_OPEN`] and returns their ids.
+    pub(super) fn overflow(open: &mut Vec<Open>) -> Vec<u32> {
+        let n = open.len().saturating_sub(MAX_OPEN);
+        open.drain(..n).map(|o| o.id).collect()
+    }
+
+    fn close(conn: &Connection, ids: &[u32]) {
+        for &id in ids {
+            if let Err(e) = conn.call_method(Some(SERVICE), PATH, Some(SERVICE), "CloseNotification", &(id,)) {
+                eprintln!("bildirim kapatılamadı: {e}");
+            }
+        }
+    }
+
+    /// Clicks run their notification's `on_click`; a notification closed
+    /// by the user or the server is forgotten.
+    fn listen(signals: MessageIterator, open: OpenList) {
+        for msg in signals.flatten() {
+            let header = msg.header();
+            match header.member().map(|m| m.as_str()) {
+                Some("ActionInvoked") => {
+                    if let Ok((id, action)) = msg.body().deserialize::<(u32, String)>() {
+                        if action == "default" {
+                            if let Some(o) = take(&open, id) {
+                                (o.on_click)();
+                            }
+                        }
+                    }
+                }
+                Some("NotificationClosed") => {
+                    if let Ok((id, _reason)) = msg.body().deserialize::<(u32, u32)>() {
+                        take(&open, id);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
 
     pub struct Toaster {
         app_name: String,
-        icon: Option<String>,
-        waiting: Arc<AtomicUsize>,
+        icon: String,
+        /// Connected on first use; dropped after a failed call, so the next
+        /// notification reconnects.
+        conn: Mutex<Option<Connection>>,
+        open: OpenList,
     }
 
     impl Toaster {
         pub fn new(_app_id: &str, display_name: &str, icon: Option<&std::path::Path>) -> Self {
             Self {
                 app_name: display_name.to_string(),
-                icon: icon.and_then(|p| p.to_str()).map(str::to_string),
-                waiting: Arc::new(AtomicUsize::new(0)),
+                icon: icon.and_then(|p| p.to_str()).unwrap_or_default().to_string(),
+                conn: Mutex::new(None),
+                open: Arc::default(),
             }
         }
 
-        /// Shows a notification; errors are logged, never raised. The body
-        /// is escaped (servers may read it as markup), the summary is not.
-        pub fn show(&self, toast: &super::Toast, on_click: impl Fn() + Send + 'static) {
-            let mut n = Notification::new();
-            n.appname(&self.app_name).summary(&super::plain_text(&toast.title)).timeout(Timeout::Default);
-            if let Some(b) = &toast.body {
-                n.body(&super::xml_text(b));
+        /// The connection, with the signal listener subscribed before it is
+        /// handed out (no click can arrive unheard).
+        fn connection(&self) -> zbus::Result<Connection> {
+            let mut slot = lock(&self.conn);
+            if let Some(c) = slot.as_ref() {
+                return Ok(c.clone());
             }
-            if let Some(i) = &self.icon {
-                n.icon(i);
+            let conn = Connection::session()?;
+            let rule = MatchRule::builder()
+                .msg_type(zbus::message::Type::Signal)
+                .sender(SERVICE)?
+                .path(PATH)?
+                .interface(SERVICE)?
+                .build();
+            let signals = MessageIterator::for_match_rule(rule, &conn, None)?;
+            let open = Arc::clone(&self.open);
+            std::thread::spawn(move || listen(signals, open));
+            *slot = Some(conn.clone());
+            Ok(conn)
+        }
+
+        /// Shows a notification about session `tag` (None: app-wide);
+        /// errors are logged, never raised. The body is escaped (servers may
+        /// read it as markup), the summary is not.
+        pub fn show(&self, toast: &super::Toast, tag: Option<&str>, on_click: impl Fn() + Send + 'static) {
+            if let Err(e) = self.try_show(toast, tag, Box::new(on_click)) {
+                *lock(&self.conn) = None;
+                eprintln!("bildirim gösterilemedi: {e}");
             }
-            n.hint(if toast.sound { Hint::SoundName("message-new-instant".into()) } else { Hint::SuppressSound(true) });
-            let wait = self.waiting.fetch_add(1, Ordering::SeqCst) < MAX_WAITING;
-            if wait {
-                n.action("default", "");
+        }
+
+        fn try_show(&self, toast: &super::Toast, tag: Option<&str>, on_click: Box<dyn Fn() + Send>) -> zbus::Result<()> {
+            let conn = self.connection()?;
+            let body = toast.body.as_deref().map(super::xml_text).unwrap_or_default();
+            let mut hints: HashMap<&str, Value> = HashMap::new();
+            hints.insert("desktop-entry", Value::from(DESKTOP_ENTRY));
+            if toast.sound {
+                hints.insert("sound-name", Value::from("message-new-instant"));
             } else {
-                self.waiting.fetch_sub(1, Ordering::SeqCst);
+                hints.insert("suppress-sound", Value::from(true));
             }
-            match n.show() {
-                Ok(handle) if wait => {
-                    let waiting = Arc::clone(&self.waiting);
-                    std::thread::spawn(move || {
-                        handle.wait_for_action(|a| {
-                            if a == "default" {
-                                on_click();
-                            }
-                        });
-                        waiting.fetch_sub(1, Ordering::SeqCst);
-                    });
-                }
-                Ok(_) => {}
-                Err(e) => {
-                    if wait {
-                        self.waiting.fetch_sub(1, Ordering::SeqCst);
-                    }
-                    eprintln!("bildirim gösterilemedi: {e}");
-                }
+            let args = (
+                self.app_name.as_str(),
+                0u32, // replaces_id: a new notification
+                self.icon.as_str(),
+                super::plain_text(&toast.title),
+                body,
+                vec!["default", ""],
+                hints,
+                -1i32, // expire_timeout: the server's default
+            );
+            let id: u32 = conn.call_method(Some(SERVICE), PATH, Some(SERVICE), "Notify", &args)?.body().deserialize()?;
+            let evicted = {
+                let mut open = lock(&self.open);
+                open.push(Open { id, tag: tag.map(str::to_string), on_click });
+                overflow(&mut open)
+            };
+            close(&conn, &evicted);
+            Ok(())
+        }
+
+        /// Closes the notifications about `sessions`, or all of them when
+        /// `None`, on a thread of its own (callers may be on the UI thread).
+        pub fn withdraw(&self, sessions: Option<&[String]>) {
+            let ids = split_off(&mut lock(&self.open), sessions);
+            if ids.is_empty() {
+                return;
             }
+            let Some(conn) = lock(&self.conn).clone() else { return };
+            std::thread::spawn(move || close(&conn, &ids));
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        fn open(id: u32, tag: Option<&str>) -> Open {
+            Open { id, tag: tag.map(str::to_string), on_click: Box::new(|| {}) }
+        }
+
+        fn ids(v: &[Open]) -> Vec<u32> {
+            v.iter().map(|o| o.id).collect()
+        }
+
+        #[test]
+        fn withdraw_picks_the_sessions_or_everything() {
+            let mut v = vec![open(1, Some("a")), open(2, None), open(3, Some("b")), open(4, Some("a"))];
+            assert_eq!(split_off(&mut v, Some(&["a".to_string()])), vec![1, 4]);
+            assert_eq!(ids(&v), vec![2, 3]);
+            assert_eq!(split_off(&mut v, Some(&[])), Vec::<u32>::new());
+            assert_eq!(split_off(&mut v, None), vec![2, 3]);
+            assert!(v.is_empty());
+        }
+
+        #[test]
+        fn the_oldest_beyond_the_cap_are_closed() {
+            let mut v: Vec<Open> = (1..=MAX_OPEN as u32).map(|i| open(i, None)).collect();
+            assert!(overflow(&mut v).is_empty());
+            v.push(open(100, None));
+            assert_eq!(overflow(&mut v), vec![1]);
+            assert_eq!(v.len(), MAX_OPEN);
+            assert_eq!(v.last().map(|o| o.id), Some(100));
         }
     }
 }
@@ -261,7 +432,8 @@ impl Toaster {
     pub fn new(_aumid: &str, _display_name: &str, _icon: Option<&std::path::Path>) -> Self {
         Toaster
     }
-    pub fn show(&self, _toast: &Toast, _on_click: impl Fn() + Send + 'static) {}
+    pub fn show(&self, _toast: &Toast, _tag: Option<&str>, _on_click: impl Fn() + Send + 'static) {}
+    pub fn withdraw(&self, _sessions: Option<&[String]>) {}
 }
 
 #[cfg(test)]

@@ -334,6 +334,7 @@ fn main() {
         .on_window_event(|w, ev| {
             if let (tauri::WindowEvent::Focused(f), "main") = (ev, w.label()) {
                 tray::on_main_focus(w.app_handle(), *f);
+                notifier::on_main_focus(w.app_handle(), *f);
             }
         })
         .invoke_handler(tauri::generate_handler![

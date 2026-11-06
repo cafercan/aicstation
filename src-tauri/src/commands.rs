@@ -1265,11 +1265,18 @@ pub fn set_settings(store: tauri::State<'_, SettingsStore>, settings: Settings) 
 
 /// The sessions the UI shows (the detail view's session, or the Claude
 /// sessions in the visible terminal panes; at most two, empty for any other
-/// view); their notifications are held back while the window is focused.
-/// Each id is validated; more than two are refused.
+/// view); their notifications are held back while the window is focused,
+/// and the ones already shown are closed. Each id is validated; more than
+/// two are refused.
 #[tauri::command(async)]
-pub fn set_focus_context(notifier: tauri::State<'_, Notifier>, session_ids: Vec<String>) -> Result<(), String> {
-    notifier.set_focus(session_ids)
+pub fn set_focus_context(
+    app: tauri::AppHandle,
+    notifier: tauri::State<'_, Notifier>,
+    session_ids: Vec<String>,
+) -> Result<(), String> {
+    notifier.set_focus(session_ids)?;
+    crate::notifier::withdraw_shown(&app);
+    Ok(())
 }
 
 /// Window close with "minimize to tray" on: hides the window (terminals and
