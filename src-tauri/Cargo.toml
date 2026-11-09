@@ -14,7 +14,7 @@ station-core = { path = "../core" }
 tauri = { version = "2", features = ["tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-notify = "6"
+notify = "8"
 chrono = "0.4"
 portable-pty = "0.9"
 dirs = "7"
