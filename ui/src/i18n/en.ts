@@ -111,6 +111,20 @@ export const en: Dict = {
   "detail.edits": { one: "1 edit", other: "{n} edits" },
   "goto.failed": "Could not go to tab: {err}",
 
+  // Session view tabs and the Terminal tab placeholder
+  "tabs.terminal": "Terminal",
+  "tabs.info": "Info",
+  "place.externalHost": "This session runs outside the app, in Windows Terminal.",
+  "place.otherHost": "This session runs outside the app, in another terminal or tool.",
+  "place.closed": "This session is closed. You can resume it in an app terminal.",
+  "place.resume": "▶ Resume",
+  "place.move": "Move to app",
+  "place.moveConfirm": "End the Claude process outside the app and continue this session here? Command-line options given outside are not carried over; the app's settings are used. Background shell commands started by Claude may be stopped.",
+  "place.reason.busy": "The session is working; it can be moved once it is idle.",
+  "place.reason.waiting": "The session is waiting for approval; it can be moved once it is idle.",
+  "place.reason.agents": { one: "1 agent is running; the session can be moved when it finishes.", other: "{n} agents are running; the session can be moved when they finish." },
+  "place.reason.notMovable": "Only an interactive Claude session started in a terminal can be moved (not SDK, -p or IDE sessions).",
+
   "term.resumeTitle": "Resume: {id}",
   "term.confirmClose": {
     one: "The terminal has 1 open Claude session ({names}). Close it anyway?",

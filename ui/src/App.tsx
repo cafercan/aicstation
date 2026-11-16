@@ -4,11 +4,13 @@ import {
   getHistory, getSnapshot, hideToTray, onNavigate, onSnapshot, onTrayQuit, openSystemTerminal, setFocusContext,
   type HistoryView, type Snapshot,
 } from "./api";
-import Sidebar, { type View } from "./components/Sidebar";
+import SessionTabs from "./components/SessionTabs";
+import Sidebar, { type SessionTab, type View } from "./components/Sidebar";
 import StatusBar from "./components/StatusBar";
 import Dashboard from "./pages/Dashboard";
 import History from "./pages/History";
 import SessionDetailPage from "./pages/SessionDetail";
+import SessionTerminalPlaceholder from "./pages/SessionTerminalPlaceholder";
 import SettingsPage from "./pages/Settings";
 import { currentSettings, loadSettings, pushLang } from "./settings";
 import { statusKind } from "./format";
@@ -19,13 +21,15 @@ import {
   terminalForPid, terminalName,
   useTerminals,
 } from "./terminal/store";
-import { openSessionView, viewAfterClose } from "./sessionView";
+import { openSessionView, resolveView, tabBarFor, viewAfterClose } from "./sessionView";
 import "./app.css";
 import "./features.css";
 import { splitAfterClose, type Split } from "./terminal/split";
 import { Overlays, TerminalArea, termOf, useShortcuts, useSplitCleanup, type Overlay } from "./workspace";
 
 const EMPTY: Snapshot = { sessions: [], runningAgents: 0, waitingCount: 0 };
+/** How long a Resume / Move terminal waits for the registry to list its session. */
+const PENDING_MS = 15_000;
 
 /** Claude sessions inside the shown terminals, in pane order, without repeats (at most two). */
 function focusSessions(ids: number[], terminals: ReturnType<typeof useTerminals>, sessions: Snapshot["sessions"]): string[] {
@@ -103,7 +107,7 @@ export default function App() {
     return () => { alive = false; unlisten?.(); };
   }, []);
 
-  // Tray menu and toast clicks open a session's detail or the dashboard.
+  // Tray menu and toast clicks open a session's view or the dashboard.
   useEffect(() => {
     let alive = true;
     let unlisten: (() => void) | undefined;
@@ -113,12 +117,45 @@ export default function App() {
     return () => { alive = false; unlisten?.(); };
   }, []);
 
+  // Terminals started by Resume / Move to app (terminal id -> session id)
+  // until the registry lists a session in them: the session view's Terminal
+  // tab goes to them meanwhile instead of offering Resume again.
+  const [pending, setPending] = useState<ReadonlyMap<number, string>>(() => new Map());
+  const pendingTimers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  useEffect(() => () => pendingTimers.current.forEach(clearTimeout), []);
+  const dropPending = useCallback((id: number) => setPending((m) => {
+    if (!m.has(id)) return m;
+    const next = new Map(m);
+    next.delete(id);
+    return next;
+  }), []);
+  const addPending = useCallback((id: number, sessionId: string) => {
+    setPending((m) => new Map(m).set(id, sessionId));
+    const timer = setTimeout(() => { pendingTimers.current.delete(timer); dropPending(id); }, PENDING_MS);
+    pendingTimers.current.add(timer);
+  }, [dropPending]);
+  useEffect(() => {
+    for (const id of pending.keys()) {
+      const entry = terminals.find((x) => x.id === id);
+      if (!entry || sessionsIn(entry, snapshot.sessions).length > 0) dropPending(id);
+    }
+  }, [pending, terminals, snapshot.sessions, dropPending]);
+
+  // The session view follows its terminal (new session id, Claude exited, terminal closed).
+  useEffect(() => {
+    setView((v) => resolveView(v, terminals, snapshot.sessions, pending));
+  }, [view, terminals, snapshot.sessions, pending]);
+
   const onNew = useCallback(() => {
     openTerminal().then((t) => setView({ terminal: t.id })).catch(() => {});
   }, []);
   /** Rejections reach the page, which shows them inline. */
   const onResume = useCallback((sessionId: string, name: string) =>
-    openResumeTerminal(sessionId, name).then((t) => setView({ terminal: t.id })), []);
+    openResumeTerminal(sessionId, name).then((t) => { addPending(t.id, sessionId); setView({ terminal: t.id }); }), [addPending]);
+  const onAdopted = useCallback((id: number, sessionId: string) => {
+    addPending(id, sessionId);
+    setView({ terminal: id });
+  }, [addPending]);
   /** Card click and History open: the app terminal hosting the session, else its Info tab. */
   const openSession = useCallback((id: string) =>
     setView(openSessionView(id, snapRef.current.sessions, terminalForPid)), []);
@@ -164,6 +201,10 @@ export default function App() {
       onTerminal={(id) => setView({ terminal: id })} />;
   } else if (view === "settings") {
     page = <SettingsPage />;
+  } else if ("session" in view && view.tab === "terminal" && view.terminal === undefined) {
+    page = <SessionTerminalPlaceholder key={view.session} sessionId={view.session}
+      card={snapshot.sessions.find((s) => s.sessionId === view.session)} onResume={onResume} onAdopted={onAdopted}
+      onTerminal={(id) => setView({ terminal: id })} />;
   } else if ("session" in view) {
     page = <SessionDetailPage key={view.session} sessionId={view.session}
       live={snapshot.sessions.some((s) => s.sessionId === view.session)} onResume={onResume}
@@ -177,15 +218,27 @@ export default function App() {
     );
   }
 
+  // Terminal | Info: follows the active pane in a split; Info leaves the split as it is.
+  const bar = tabBarFor(view, terminals, snapshot.sessions);
+  const selectTab = (tab: SessionTab) => {
+    if (!bar) return;
+    const term = bar.terminal;
+    if (tab === "info") setView(term !== undefined ? { session: bar.sessionId, tab, terminal: term } : { session: bar.sessionId, tab });
+    else setView(term !== undefined ? { terminal: term } : { session: bar.sessionId, tab });
+  };
+
   return (
     <div className="app">
       <div className="body">
         <Sidebar view={view} terminals={sideTerms} onSelect={setView} onNew={onNew} onClose={onClose}
           onOpenWt={openSystemTerminal} />
-        <main className="main">
-          {page}
-          <TerminalArea {...area} />
-        </main>
+        <div className="main-col">
+          {bar && <SessionTabs active={bar.active} onSelect={selectTab} />}
+          <main className="main">
+            {page}
+            <TerminalArea {...area} />
+          </main>
+        </div>
       </div>
       <StatusBar sessions={snapshot.sessions} selectedId={selectedId} />
       <Overlays {...shortcuts} />

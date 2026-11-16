@@ -114,6 +114,20 @@ export const fr: Dict = {
   "detail.edits": { one: "1 modification", other: "{n} modifications" },
   "goto.failed": "Impossible d'aller à l'onglet : {err}",
 
+  // Session view tabs and the Terminal tab placeholder
+  "tabs.terminal": "Terminal",
+  "tabs.info": "Infos",
+  "place.externalHost": "Cette session s'exécute hors de l'application, dans Windows Terminal.",
+  "place.otherHost": "Cette session s'exécute hors de l'application, dans un autre terminal ou outil.",
+  "place.closed": "Cette session est fermée. Vous pouvez la reprendre dans un terminal de l'application.",
+  "place.resume": "▶ Reprendre",
+  "place.move": "Déplacer dans l'application",
+  "place.moveConfirm": "Terminer le processus Claude hors de l'application et poursuivre cette session ici ? Les options de ligne de commande données à l'extérieur ne sont pas reprises ; les réglages de l'application s'appliquent. Les commandes shell lancées en arrière-plan par Claude peuvent être arrêtées.",
+  "place.reason.busy": "La session travaille ; elle pourra être déplacée une fois inactive.",
+  "place.reason.waiting": "La session attend une approbation ; elle pourra être déplacée une fois inactive.",
+  "place.reason.agents": { one: "{n} agent en cours ; la session pourra être déplacée quand il aura fini.", other: "{n} agents en cours ; la session pourra être déplacée quand ils auront fini." },
+  "place.reason.notMovable": "Seule une session Claude interactive lancée dans un terminal peut être déplacée (pas les sessions SDK, -p ou IDE).",
+
   "term.resumeTitle": "Reprise : {id}",
   "term.confirmClose": {
     one: "Le terminal contient {n} session Claude ouverte ({names}). Fermer quand même ?",

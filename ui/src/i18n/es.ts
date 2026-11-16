@@ -114,6 +114,20 @@ export const es: Dict = {
   "detail.edits": { one: "1 edición", other: "{n} ediciones" },
   "goto.failed": "No se pudo ir a la pestaña: {err}",
 
+  // Session view tabs and the Terminal tab placeholder
+  "tabs.terminal": "Terminal",
+  "tabs.info": "Info",
+  "place.externalHost": "Esta sesión se ejecuta fuera de la aplicación, en Windows Terminal.",
+  "place.otherHost": "Esta sesión se ejecuta fuera de la aplicación, en otro terminal o herramienta.",
+  "place.closed": "Esta sesión está cerrada. Puede reanudarla en un terminal de la aplicación.",
+  "place.resume": "▶ Reanudar",
+  "place.move": "Mover a la aplicación",
+  "place.moveConfirm": "¿Terminar el proceso de Claude fuera de la aplicación y continuar esta sesión aquí? Las opciones de línea de comandos dadas fuera no se conservan; se usa la configuración de la aplicación. Los comandos de shell en segundo plano iniciados por Claude pueden detenerse.",
+  "place.reason.busy": "La sesión está trabajando; podrá moverse cuando esté inactiva.",
+  "place.reason.waiting": "La sesión espera una aprobación; podrá moverse cuando esté inactiva.",
+  "place.reason.agents": { one: "1 agente en ejecución; la sesión podrá moverse cuando termine.", other: "{n} agentes en ejecución; la sesión podrá moverse cuando terminen." },
+  "place.reason.notMovable": "Solo se puede mover una sesión interactiva de Claude iniciada en un terminal (no sesiones de SDK, -p o IDE).",
+
   "term.resumeTitle": "Reanudar: {id}",
   "term.confirmClose": {
     one: "El terminal tiene 1 sesión de Claude abierta ({names}). ¿Cerrarlo de todos modos?",

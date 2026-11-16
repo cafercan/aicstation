@@ -114,6 +114,20 @@ export const de: Dict = {
   "detail.edits": { one: "1 Änderung", other: "{n} Änderungen" },
   "goto.failed": "Wechsel zum Tab fehlgeschlagen: {err}",
 
+  // Session view tabs and the Terminal tab placeholder
+  "tabs.terminal": "Terminal",
+  "tabs.info": "Info",
+  "place.externalHost": "Diese Sitzung läuft außerhalb der App, in Windows Terminal.",
+  "place.otherHost": "Diese Sitzung läuft außerhalb der App, in einem anderen Terminal oder Werkzeug.",
+  "place.closed": "Diese Sitzung ist geschlossen. Sie können sie in einem App-Terminal fortsetzen.",
+  "place.resume": "▶ Fortsetzen",
+  "place.move": "In die App verschieben",
+  "place.moveConfirm": "Den Claude-Prozess außerhalb der App beenden und diese Sitzung hier fortsetzen? Außerhalb angegebene Befehlszeilenoptionen werden nicht übernommen; es gelten die Einstellungen der App. Von Claude gestartete Shell-Befehle im Hintergrund können beendet werden.",
+  "place.reason.busy": "Die Sitzung arbeitet; sie kann verschoben werden, sobald sie untätig ist.",
+  "place.reason.waiting": "Die Sitzung wartet auf eine Freigabe; sie kann verschoben werden, sobald sie untätig ist.",
+  "place.reason.agents": { one: "1 Agent läuft; die Sitzung kann verschoben werden, wenn er fertig ist.", other: "{n} Agenten laufen; die Sitzung kann verschoben werden, wenn sie fertig sind." },
+  "place.reason.notMovable": "Nur eine interaktive, in einem Terminal gestartete Claude-Sitzung kann verschoben werden (keine SDK-, -p- oder IDE-Sitzungen).",
+
   "term.resumeTitle": "Fortsetzen: {id}",
   "term.confirmClose": {
     one: "Im Terminal ist 1 Claude-Sitzung offen ({names}). Trotzdem schließen?",

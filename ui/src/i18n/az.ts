@@ -114,6 +114,20 @@ export const az: Dict = {
   "detail.edits": { one: "1 düzəliş", other: "{n} düzəliş" },
   "goto.failed": "Vərəqə keçmək olmadı: {err}",
 
+  // Session view tabs and the Terminal tab placeholder
+  "tabs.terminal": "Terminal",
+  "tabs.info": "Məlumat",
+  "place.externalHost": "Bu sessiya tətbiqdən kənarda, Windows Terminal-da işləyir.",
+  "place.otherHost": "Bu sessiya tətbiqdən kənarda, başqa terminalda və ya alətdə işləyir.",
+  "place.closed": "Bu sessiya bağlıdır. Onu tətbiq terminalında davam etdirə bilərsiniz.",
+  "place.resume": "▶ Davam et",
+  "place.move": "Tətbiqə köçür",
+  "place.moveConfirm": "Tətbiqdən kənardakı Claude prosesi dayandırılsın və bu sessiya burada davam etdirilsin? Kənarda verilmiş komanda sətri seçimləri köçürülmür; tətbiqin ayarları istifadə olunur. Claude-un başlatdığı arxa fon shell əmrləri dayana bilər.",
+  "place.reason.busy": "Sessiya işləyir; boş olduqda köçürülə bilər.",
+  "place.reason.waiting": "Sessiya təsdiq gözləyir; boş olduqda köçürülə bilər.",
+  "place.reason.agents": "{n} agent işləyir; bitdikdən sonra köçürülə bilər.",
+  "place.reason.notMovable": "Yalnız terminalda başladılmış interaktiv Claude sessiyası köçürülə bilər (SDK, -p və IDE sessiyaları yox).",
+
   "term.resumeTitle": "Davam: {id}",
   "term.confirmClose": "Terminalda {n} açıq Claude sessiyası var ({names}). Yenə də bağlansın?",
   "search.label": "Terminalda axtar",

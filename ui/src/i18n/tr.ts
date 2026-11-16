@@ -121,6 +121,20 @@ export const tr = {
   "detail.edits": "{n} düzenleme",
   "goto.failed": "Sekmeye gidilemedi: {err}",
 
+  // Session view tabs and the Terminal tab placeholder
+  "tabs.terminal": "Terminal",
+  "tabs.info": "Bilgi",
+  "place.externalHost": "Bu oturum uygulamanın dışında, Windows Terminal'de çalışıyor.",
+  "place.otherHost": "Bu oturum uygulamanın dışında, başka bir terminalde ya da araçta çalışıyor.",
+  "place.closed": "Bu oturum kapalı. Bir uygulama terminalinde devam ettirebilirsiniz.",
+  "place.resume": "▶ Devam et",
+  "place.move": "Uygulamaya taşı",
+  "place.moveConfirm": "Uygulama dışındaki Claude işlemi sonlandırılıp bu oturuma burada devam edilsin mi? Dışarıda verilen komut satırı seçenekleri taşınmaz; uygulamanın ayarları kullanılır. Claude'un başlattığı arka plan kabuk komutları durabilir.",
+  "place.reason.busy": "Oturum çalışıyor; boşta olduğunda taşınabilir.",
+  "place.reason.waiting": "Oturum onay bekliyor; boşta olduğunda taşınabilir.",
+  "place.reason.agents": "{n} ajan çalışıyor; bitince taşınabilir.",
+  "place.reason.notMovable": "Yalnızca bir terminalde başlatılmış etkileşimli Claude oturumu taşınabilir (SDK, -p ve IDE oturumları taşınamaz).",
+
   // Embedded terminal
   "term.resumeTitle": "Devam: {id}",
   "term.confirmClose": "Terminalde açık {n} Claude oturumu var ({names}). Yine de kapatılsın mı?",

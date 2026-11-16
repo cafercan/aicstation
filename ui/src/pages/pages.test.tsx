@@ -16,11 +16,16 @@ vi.mock("@tauri-apps/api/event", () => ({
   }),
 }));
 const terminalForPid = vi.fn((_p: number | null | undefined): number | undefined => undefined);
-vi.mock("../terminal/store", () => ({ terminalForPid: (p: number | null) => terminalForPid(p) }));
+const openAdoptTerminal = vi.fn();
+vi.mock("../terminal/store", () => ({
+  terminalForPid: (p: number | null) => terminalForPid(p),
+  openAdoptTerminal: (...a: unknown[]) => openAdoptTerminal(...a),
+}));
 
 import { setLang } from "../i18n";
 import SessionDetailPage from "./SessionDetail";
 import History from "./History";
+import SessionTerminalPlaceholder from "./SessionTerminalPlaceholder";
 import { resetUiState } from "../testing/reset";
 
 const usage = { input: 1000, output: 500, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 };
@@ -66,6 +71,7 @@ beforeEach(() => {
   invoke.mockReset();
   terminalForPid.mockReset();
   terminalForPid.mockReturnValue(undefined);
+  openAdoptTerminal.mockReset();
   snapshotCb = null;
   snapIds = [];
 });
@@ -491,4 +497,105 @@ test("ayrıntı: token sayısı başlık KPI'ı (ipucunda dört tür), ~$ ikinci
   render(<SessionDetailPage sessionId="s1" onBack={() => {}} />);
   const kpi2 = (await screen.findByText("token")).closest(".kpi")!;
   expect(kpi2.querySelector(".est")).toBeNull();
+});
+
+// Terminal tab placeholder (session view, cases 2 and 3)
+
+const outside = (over: Partial<SessionDetail["card"]> = {}): SessionDetail["card"] =>
+  ({ ...detail().card, hostKind: "windowsTerminal", status: "idle", movable: true, agentsRunning: 0, ...over });
+const placeholder = (p: Partial<Parameters<typeof SessionTerminalPlaceholder>[0]> = {}) => (
+  <SessionTerminalPlaceholder card={outside()} sessionId="s1" onTerminal={() => {}} onAdopted={() => {}}
+    onResume={async () => {}} {...p} />
+);
+const moveButton = () => screen.getByRole("button", { name: "Uygulamaya taşı" }) as HTMLButtonElement;
+
+test("yer tutucu: Windows Terminal oturumunda nerede çalıştığı, Sekmeye git ve Uygulamaya taşı", async () => {
+  invoke.mockResolvedValue(null);
+  render(placeholder());
+  expect(screen.getByText("Bu oturum uygulamanın dışında, Windows Terminal'de çalışıyor.")).toBeTruthy();
+  expect(moveButton().disabled).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Sekmeye git" }));
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith("focus_session_tab", { sessionId: "s1" }));
+});
+
+test("yer tutucu: başka hostta Sekmeye git yok; taşınamayan oturumda düğme nedeniyle devre dışı", () => {
+  render(placeholder({ card: outside({ hostKind: "other", movable: false }) }));
+  expect(screen.getByText("Bu oturum uygulamanın dışında, başka bir terminalde ya da araçta çalışıyor.")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Sekmeye git" })).toBeNull();
+  expect(moveButton().disabled).toBe(true);
+  expect(screen.getByText(/Yalnızca bir terminalde başlatılmış etkileşimli Claude oturumu taşınabilir/)).toBeTruthy();
+});
+
+test("Uygulamaya taşı: oturum çalışırken devre dışı ve nedeni yazılı (meşgul, onay, ajanlar)", () => {
+  const { rerender } = render(placeholder({ card: outside({ status: "busy" }) }));
+  expect(moveButton().disabled).toBe(true);
+  expect(screen.getByText("Oturum çalışıyor; boşta olduğunda taşınabilir.")).toBeTruthy();
+  rerender(placeholder({ card: outside({ status: "waiting" }) }));
+  expect(moveButton().disabled).toBe(true);
+  expect(screen.getByText("Oturum onay bekliyor; boşta olduğunda taşınabilir.")).toBeTruthy();
+  rerender(placeholder({ card: outside({ agentsRunning: 2 }) }));
+  expect(moveButton().disabled).toBe(true);
+  expect(screen.getByText("2 ajan çalışıyor; bitince taşınabilir.")).toBeTruthy();
+});
+
+test("Uygulamaya taşı önce onay ister; iptalde hiçbir şey yapılmaz, onayda bir kez taşınır", async () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  const onAdopted = vi.fn();
+  openAdoptTerminal.mockResolvedValue({ id: 9 });
+  render(placeholder({ onAdopted }));
+  fireEvent.click(moveButton());
+  expect(confirm).toHaveBeenCalledWith(expect.stringContaining("komut satırı seçenekleri taşınmaz"));
+  expect(confirm.mock.calls[0][0]).toContain("arka plan kabuk komutları durabilir");
+  expect(openAdoptTerminal).not.toHaveBeenCalled();
+  confirm.mockReturnValue(true);
+  fireEvent.click(moveButton());
+  await waitFor(() => expect(onAdopted).toHaveBeenCalledWith(9, "s1"));
+  expect(openAdoptTerminal).toHaveBeenCalledTimes(1);
+  expect(openAdoptTerminal).toHaveBeenCalledWith("s1", "demo");
+  confirm.mockRestore();
+});
+
+test("Uygulamaya taşı istek sürerken devre dışı, ikinci tık yeni istek açmaz", async () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  openAdoptTerminal.mockReturnValue(new Promise(() => {}));
+  render(placeholder());
+  fireEvent.click(moveButton());
+  await waitFor(() => expect(moveButton().disabled).toBe(true));
+  fireEvent.click(moveButton());
+  expect(openAdoptTerminal).toHaveBeenCalledTimes(1);
+  confirm.mockRestore();
+});
+
+test("Uygulamaya taşı hatası çevrilip satır içinde gösterilir, düğme yeniden açılır", async () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  openAdoptTerminal.mockRejectedValue("adopt_busy");
+  const onAdopted = vi.fn();
+  render(placeholder({ onAdopted }));
+  fireEvent.click(moveButton());
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("Oturum çalışıyor; boşta olduğunda taşınabilir");
+  expect(moveButton().disabled).toBe(false);
+  expect(onAdopted).not.toHaveBeenCalled();
+  confirm.mockRestore();
+});
+
+test("kapalı oturumun Terminal sekmesi ▶ Devam et sunar; hata ve devam ettiren terminale Sekmeye git", async () => {
+  const onResume = vi.fn().mockRejectedValueOnce("session_resume_terminal_open:4").mockResolvedValue(undefined);
+  const onTerminal = vi.fn();
+  render(placeholder({ card: undefined, onResume, onTerminal }));
+  expect(screen.getByText("Bu oturum kapalı. Bir uygulama terminalinde devam ettirebilirsiniz.")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Uygulamaya taşı" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "▶ Devam et" }));
+  expect(onResume).toHaveBeenCalledWith("s1", "");
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("Bu oturum, onu devam ettiren terminalde hâlâ açık");
+  fireEvent.click(within(alert).getByRole("button", { name: "Sekmeye git" }));
+  expect(onTerminal).toHaveBeenCalledWith(4);
+});
+
+test("pid 0 kartı kapalı sayılır: ▶ Devam et adıyla çağrılır", () => {
+  const onResume = vi.fn(async () => {});
+  render(placeholder({ card: outside({ pid: 0 }), onResume }));
+  fireEvent.click(screen.getByRole("button", { name: "▶ Devam et" }));
+  expect(onResume).toHaveBeenCalledWith("s1", "demo");
 });

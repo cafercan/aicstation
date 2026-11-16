@@ -114,6 +114,20 @@ export const zh: Dict = {
   "detail.edits": { one: "{n} 次编辑", other: "{n} 次编辑" },
   "goto.failed": "无法转到标签页：{err}",
 
+  // Session view tabs and the Terminal tab placeholder
+  "tabs.terminal": "终端",
+  "tabs.info": "信息",
+  "place.externalHost": "此会话在应用外的 Windows Terminal 中运行。",
+  "place.otherHost": "此会话在应用外的其他终端或工具中运行。",
+  "place.closed": "此会话已关闭。可以在应用终端中恢复它。",
+  "place.resume": "▶ 恢复",
+  "place.move": "移到应用中",
+  "place.moveConfirm": "结束应用外的 Claude 进程并在此处继续此会话？在外部指定的命令行选项不会保留，将使用应用的设置。Claude 启动的后台 shell 命令可能会被停止。",
+  "place.reason.busy": "会话正在工作；空闲后才能移动。",
+  "place.reason.waiting": "会话正在等待批准；空闲后才能移动。",
+  "place.reason.agents": "{n} 个智能体运行中；完成后才能移动。",
+  "place.reason.notMovable": "只有在终端中启动的交互式 Claude 会话可以移动（SDK、-p 和 IDE 会话不行）。",
+
   "term.resumeTitle": "恢复：{id}",
   "term.confirmClose": "该终端中有 {n} 个打开的 Claude 会话（{names}）。仍要关闭吗？",
   "search.label": "在终端中搜索",
