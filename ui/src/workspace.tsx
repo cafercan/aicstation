@@ -17,7 +17,8 @@ import { sessionsIn, type TerminalEntry } from "./terminal/store";
 
 export type Overlay = "palette" | "help" | null;
 
-export const termOf = (v: View): number | null => (typeof v === "object" && "terminal" in v ? v.terminal : null);
+/** The terminal id of a plain terminal view; a session view is not one. */
+export const termOf = (v: View): number | null => (typeof v === "object" && !("session" in v) ? v.terminal : null);
 
 /** Switches to terminal `id` unless it already is the view (no re-render loop on focus events). */
 export const showTerminal = (setView: Dispatch<SetStateAction<View>>, id: number) =>
@@ -178,7 +179,7 @@ export function paletteItems(c: ShortcutCtx): PaletteItem[] {
   actions.push({ key: "a-settings", label: t("nav.settings"), kind: "action", run: () => c.setView("settings") });
   const sessions: PaletteItem[] = c.sessions.map((s) => ({
     key: `s-${s.sessionId}`, label: s.name, detail: s.cwd, kind: "session" as const,
-    run: () => c.setView({ session: s.sessionId }),
+    run: () => c.setView({ session: s.sessionId, tab: "info" }),
   }));
   const terms: PaletteItem[] = c.terminals.map((x, i) => ({
     key: `t-${x.id}`, label: c.labels.get(x.id) ?? "", detail: i < 9 ? `Ctrl+Alt+${i + 1}` : undefined,

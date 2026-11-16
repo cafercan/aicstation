@@ -5,11 +5,18 @@ import { createStore, readPref, writePref } from "../prefs";
 import { isWindows } from "../platform";
 import SessionMark from "./SessionMark";
 
+/** Tabs of the session view. */
+export type SessionTab = "terminal" | "info";
+
+/**
+ * `{ session }` is the session view; `terminal` is the app terminal it is
+ * shown with, which the view follows (sessionView.ts resolveView).
+ */
 export type View =
   | "dashboard"
   | "history"
   | "settings"
-  | { session: string }
+  | { session: string; tab: SessionTab; terminal?: number }
   | { terminal: number };
 
 export interface SidebarTerminal {

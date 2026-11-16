@@ -16,13 +16,14 @@ import { useLang, useT } from "./i18n";
 import { useTheme } from "./theme";
 import {
   allTerminalIds, closeTerminal, confirmClose, killOrphans, openResumeTerminal, openTerminal, sessionsIn,
-  terminalName,
+  terminalForPid, terminalName,
   useTerminals,
 } from "./terminal/store";
+import { openSessionView } from "./sessionView";
 import "./app.css";
 import "./features.css";
 import { splitAfterClose, type Split } from "./terminal/split";
-import { Overlays, TerminalArea, useShortcuts, useSplitCleanup, type Overlay } from "./workspace";
+import { Overlays, TerminalArea, termOf, useShortcuts, useSplitCleanup, type Overlay } from "./workspace";
 
 const EMPTY: Snapshot = { sessions: [], runningAgents: 0, waitingCount: 0 };
 
@@ -106,7 +107,7 @@ export default function App() {
   useEffect(() => {
     let alive = true;
     let unlisten: (() => void) | undefined;
-    onNavigate((id) => setView(id ? { session: id } : "dashboard"))
+    onNavigate((id) => setView(id ? openSessionView(id, snapRef.current.sessions, terminalForPid) : "dashboard"))
       .then((u) => { if (alive) unlisten = u; else u(); })
       .catch(() => {});
     return () => { alive = false; unlisten?.(); };
@@ -118,6 +119,9 @@ export default function App() {
   /** Rejections reach the page, which shows them inline. */
   const onResume = useCallback((sessionId: string, name: string) =>
     openResumeTerminal(sessionId, name).then((t) => setView({ terminal: t.id })), []);
+  /** Card click and History open: the app terminal hosting the session, else its Info tab. */
+  const openSession = useCallback((id: string) =>
+    setView(openSessionView(id, snapRef.current.sessions, terminalForPid)), []);
   const onClose = useCallback((id: number) => {
     if (!confirmClose([id], snapRef.current.sessions)) return;
     // Closing a split pane leaves the other pane on screen.
@@ -126,7 +130,7 @@ export default function App() {
     void closeTerminal(id);
   }, []);
 
-  const termId = typeof view === "object" && "terminal" in view ? view.terminal : null;
+  const termId = termOf(view);
   const splitShown = split !== null && (termId === split.left || termId === split.right);
   const sideTerms = terminals.map((t) => {
     const inside = sessionsIn(t, snapshot.sessions)[0];
@@ -154,9 +158,9 @@ export default function App() {
   let page;
   if (view === "dashboard") {
     page = <Dashboard snapshot={snapshot} history={history} now={now}
-      onOpen={(id) => setView({ session: id })} onTerminal={(id) => setView({ terminal: id })} />;
+      onOpen={openSession} onTerminal={(id) => setView({ terminal: id })} />;
   } else if (view === "history") {
-    page = <History onOpen={(id) => setView({ session: id })} onResume={onResume}
+    page = <History onOpen={openSession} onResume={onResume}
       onTerminal={(id) => setView({ terminal: id })} />;
   } else if (view === "settings") {
     page = <SettingsPage />;
