@@ -13,7 +13,8 @@ import { t } from "./i18n";
 import { focusSearch } from "./shortcuts/bus";
 import { KEYMAP, cycle, matchChord, type Binding } from "./shortcuts/keymap";
 import { inSplit, openSplit, paneLayout, splitAfterClose, type Split } from "./terminal/split";
-import { sessionsIn, type TerminalEntry } from "./terminal/store";
+import { openSessionView } from "./sessionView";
+import { sessionsIn, terminalForPid, type TerminalEntry } from "./terminal/store";
 
 export type Overlay = "palette" | "help" | null;
 
@@ -179,7 +180,8 @@ export function paletteItems(c: ShortcutCtx): PaletteItem[] {
   actions.push({ key: "a-settings", label: t("nav.settings"), kind: "action", run: () => c.setView("settings") });
   const sessions: PaletteItem[] = c.sessions.map((s) => ({
     key: `s-${s.sessionId}`, label: s.name, detail: s.cwd, kind: "session" as const,
-    run: () => c.setView({ session: s.sessionId, tab: "info" }),
+    // Same rule as a card click: its app terminal if it runs in one, else Info.
+    run: () => c.setView(openSessionView(s.sessionId, c.sessions, terminalForPid)),
   }));
   const terms: PaletteItem[] = c.terminals.map((x, i) => ({
     key: `t-${x.id}`, label: c.labels.get(x.id) ?? "", detail: i < 9 ? `Ctrl+Alt+${i + 1}` : undefined,

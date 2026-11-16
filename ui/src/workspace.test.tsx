@@ -33,13 +33,16 @@ const fake = vi.hoisted(() => {
   let next = 1;
   /** Claude session inside each terminal (by terminal id). */
   const inside = new Map<number, unknown>();
+  /** Terminal holding a Claude process with this parent pid. */
+  const holder = new Map<number, number>();
   const ls = new Set<() => void>();
   const emit = () => ls.forEach((l) => l());
   return {
     get: () => list,
     subscribe: (l: () => void) => { ls.add(l); return () => { ls.delete(l); }; },
     inside,
-    reset: () => { list = []; next = 1; inside.clear(); emit(); },
+    holder,
+    reset: () => { list = []; next = 1; inside.clear(); holder.clear(); emit(); },
     open: async () => { const e = { id: next, pid: 100 + next, n: next }; next++; list = [...list, e]; emit(); return e; },
     close: async (id: number) => { list = list.filter((e) => e.id !== id); emit(); },
   };
@@ -56,7 +59,7 @@ vi.mock("./terminal/store", async () => {
     killOrphans: async () => {},
     sessionsIn: (t: { id: number }) => (fake.inside.has(t.id) ? [fake.inside.get(t.id)] : []),
     terminalName: (t: { n: number }) => `PowerShell ${t.n}`,
-    terminalForPid: () => undefined,
+    terminalForPid: (pp: number | null | undefined) => (pp == null ? undefined : fake.holder.get(pp)),
   };
 });
 vi.mock("./pages/TerminalView", () => ({
@@ -67,6 +70,8 @@ vi.mock("./pages/TerminalView", () => ({
 }));
 
 import App from "./App";
+import { paletteItems, type ShortcutCtx } from "./workspace";
+import type { SessionCard } from "./api";
 
 beforeEach(() => { fake.reset(); });
 
@@ -273,4 +278,19 @@ test("bölünmüş terminalde odak bağlamı iki görünür bölmenin oturumlar�
   // Back to the dashboard: nothing on screen.
   chord("D", "KeyD");
   await waitFor(() => expect(focus().slice(-1)[0]).toEqual({ sessionIds: [] }));
+});
+
+test("paletteki oturum, kart tıklamasıyla aynı yere açılır: uygulama terminali varsa o, yoksa Bilgi", () => {
+  fake.holder.set(77, 4);
+  const card = (sessionId: string, pid: number, parentPid: number | null) =>
+    ({ sessionId, pid, parentPid, name: sessionId, cwd: "C:\p" }) as unknown as SessionCard;
+  const setView = vi.fn();
+  const items = paletteItems({
+    terminals: [], sessions: [card("s-1", 5, 77), card("s-2", 6, 88)], labels: new Map(), termId: null, split: null,
+    setSplit: vi.fn(), setView, newTerminal: vi.fn(), overlay: null, setOverlay: vi.fn(), onNew: vi.fn(), onClose: vi.fn(),
+  } as ShortcutCtx);
+  items.find((i) => i.key === "s-s-1")!.run();
+  expect(setView).toHaveBeenLastCalledWith({ terminal: 4 });
+  items.find((i) => i.key === "s-s-2")!.run();
+  expect(setView).toHaveBeenLastCalledWith({ session: "s-2", tab: "info" });
 });
