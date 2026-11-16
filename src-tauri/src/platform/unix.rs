@@ -3,7 +3,6 @@
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use station_core::registry::ProcessProbe;
 
 /// Well-known system bin directories, tried before PATH so a program is not
 /// picked up from a user-writable PATH entry first.
@@ -111,6 +110,10 @@ pub fn terminate_verified(pid: u32, proc_start: u64) -> Result<(), String> {
         }
         std::thread::sleep(Duration::from_millis(50));
     }
+    // Re-verify right before SIGKILL: the pid may have been recycled since the last check.
+    if gone() {
+        return Ok(());
+    }
     send(libc::SIGKILL);
     std::thread::sleep(Duration::from_millis(100));
     if gone() { Ok(()) } else { Err(ADOPT_KILL_FAILED.into()) }
@@ -129,10 +132,12 @@ fn is_zombie(pid: u32) -> bool {
 mod tests {
     use super::*;
 
+    #[cfg(target_os = "linux")]
     fn long_child() -> std::process::Child {
         Command::new("sleep").arg("30").spawn().unwrap()
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn terminate_kills_matching_process() {
         let mut child = long_child();
@@ -145,6 +150,7 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn terminate_refuses_wrong_start_time() {
         let mut child = long_child();
