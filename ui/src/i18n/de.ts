@@ -163,7 +163,7 @@ export const de: Dict = {
   "err.adopt_embedded": "Diese Sitzung läuft bereits in einem Terminal der App",
   "err.adopt_in_progress": "Diese Sitzung wird bereits in die App verschoben",
   "err.adopt_timeout": "Der Claude-Prozess außerhalb der App wurde beendet, ist aber noch nicht geschlossen. Setzen Sie die Sitzung fort, sobald sie als geschlossen angezeigt wird.",
-  "err.adopt_resume_failed": "Der Claude-Prozess außerhalb der App wurde beendet, aber die Sitzung konnte hier nicht geöffnet werden. Setzen Sie sie über den Tab „Terminal“ fort.",
+  "err.adopt_resume_failed": "Der Claude-Prozess außerhalb der App wurde beendet, aber die Sitzung konnte hier nicht geöffnet werden ({detail}). Setzen Sie sie über den Tab „Terminal“ fort.",
   "err.resume_folder_mismatch": "Fortsetzen im Projektordner der Sitzung nicht möglich",
   "err.folder_unknown": "Unbekannter Ordner",
   "err.folder_network": "Netzwerkpfade werden nicht unterstützt",

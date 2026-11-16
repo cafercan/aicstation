@@ -160,7 +160,7 @@ export const az: Dict = {
   "err.adopt_embedded": "Bu sessiya artıq tətbiq terminalında işləyir",
   "err.adopt_in_progress": "Bu sessiya artıq tətbiqə köçürülür",
   "err.adopt_timeout": "Tətbiqdən kənardakı Claude prosesi dayandırıldı, lakin hələ bağlanmayıb. Sessiya bağlı görünəndə onu davam etdirin.",
-  "err.adopt_resume_failed": "Tətbiqdən kənardakı Claude prosesi dayandırıldı, lakin sessiya burada açıla bilmədi. Onu Terminal tabından davam etdirin.",
+  "err.adopt_resume_failed": "Tətbiqdən kənardakı Claude prosesi dayandırıldı, lakin sessiya burada açıla bilmədi ({detail}). Onu Terminal tabından davam etdirin.",
   "err.resume_folder_mismatch": "Sessiyanın layihə qovluğunda davam etmək olmur",
   "err.folder_unknown": "Naməlum qovluq",
   "err.folder_network": "Şəbəkə yolları dəstəklənmir",

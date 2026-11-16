@@ -170,7 +170,7 @@ export const tr = {
   "err.adopt_embedded": "Bu oturum zaten bir uygulama terminalinde çalışıyor",
   "err.adopt_in_progress": "Bu oturum zaten uygulamaya taşınıyor",
   "err.adopt_timeout": "Uygulama dışındaki Claude işlemi sonlandırıldı ama henüz kapanmadı. Oturum kapalı görününce devam ettirin.",
-  "err.adopt_resume_failed": "Uygulama dışındaki Claude işlemi sonlandırıldı ama oturum burada açılamadı. Terminal sekmesinden devam ettirin.",
+  "err.adopt_resume_failed": "Uygulama dışındaki Claude işlemi sonlandırıldı ama oturum burada açılamadı ({detail}). Terminal sekmesinden devam ettirin.",
   "err.resume_folder_mismatch": "Oturumun proje klasöründe devam edilemiyor",
   "err.folder_unknown": "Bilinmeyen klasör",
   "err.folder_network": "Ağ yolları desteklenmiyor",

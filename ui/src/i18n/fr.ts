@@ -163,7 +163,7 @@ export const fr: Dict = {
   "err.adopt_embedded": "Cette session s'exécute déjà dans un terminal de l'application",
   "err.adopt_in_progress": "Cette session est déjà en cours de déplacement vers l'application",
   "err.adopt_timeout": "Le processus Claude extérieur à l'application a été arrêté mais ne s'est pas encore fermé. Reprenez la session une fois qu'elle apparaît comme fermée.",
-  "err.adopt_resume_failed": "Le processus Claude extérieur à l'application a été arrêté, mais la session n'a pas pu être ouverte ici. Reprenez-la depuis l'onglet Terminal.",
+  "err.adopt_resume_failed": "Le processus Claude extérieur à l'application a été arrêté, mais la session n'a pas pu être ouverte ici ({detail}). Reprenez-la depuis l'onglet Terminal.",
   "err.resume_folder_mismatch": "Impossible de reprendre dans le dossier de projet de la session",
   "err.folder_unknown": "Dossier inconnu",
   "err.folder_network": "Les chemins réseau ne sont pas pris en charge",

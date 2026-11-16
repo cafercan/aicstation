@@ -160,7 +160,7 @@ export const en: Dict = {
   "err.adopt_embedded": "This session already runs in an app terminal",
   "err.adopt_in_progress": "This session is already being moved to the app",
   "err.adopt_timeout": "The outside Claude process was ended but has not closed yet. Resume the session once it shows as closed.",
-  "err.adopt_resume_failed": "The outside Claude process was ended, but the session could not be opened here. Resume it from the Terminal tab.",
+  "err.adopt_resume_failed": "The outside Claude process was ended, but the session could not be opened here ({detail}). Resume it from the Terminal tab.",
   "err.resume_folder_mismatch": "Cannot resume in the session's project folder",
   "err.folder_unknown": "Unknown folder",
   "err.folder_network": "Network paths are not supported",

@@ -107,7 +107,7 @@ test("hata kodları çevrilir; bilinmeyen kod ve düz metin olduğu gibi kalır"
     .toBe("Klasör açılamadı: Erişim engellendi. (os error 5)");
   expect(errorText("tab_ambiguous", "az")).toBe(DICTS.az["err.tab_ambiguous"]);
   expect(errorText("adopt_resume_failed:pty_limit:32", "en")).toBe(
-    `${DICTS.en["err.adopt_resume_failed"]}: At most 32 terminals can be open`,
+    "The outside Claude process was ended, but the session could not be opened here (At most 32 terminals can be open). Resume it from the Terminal tab.",
   );
   expect(errorText("weird_code", "tr")).toBe("weird_code");
   expect(errorText("command pty_spawn not found", "tr")).toBe("command pty_spawn not found");
