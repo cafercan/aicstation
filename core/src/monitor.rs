@@ -46,6 +46,30 @@ pub struct SessionCard {
     pub git_branch: Option<String>,
     /// Where the Claude process runs (decides "Sekmeye git"); Other when closed.
     pub host_kind: HostKind,
+    /// Registry kind interactive + entrypoint cli: the session can be moved into the app.
+    pub movable: bool,
+    /// Agents currently running (own + nested), same scope as the snapshot total.
+    pub agents_running: u32,
+}
+
+/// What a move into the app needs, taken from the live session.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdoptSource {
+    pub pid: u32,
+    pub proc_start: u64,
+    /// First recorded cwd of the transcript (resume folder).
+    pub first_cwd: String,
+    /// Name of the folder holding the transcript.
+    pub project_dir: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdoptRefusal {
+    NotLive,
+    NotMovable,
+    Busy,
+    Waiting,
+    AgentsRunning,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -244,6 +268,8 @@ fn make_card(
             .max(dt_ms(stats.last_at).unwrap_or(0)),
         git_branch: stats.git_branch.clone(),
         host_kind,
+        movable: live.is_some_and(|l| l.movable),
+        agents_running: running_agents(&tree.roots),
     }
 }
 
@@ -402,6 +428,43 @@ impl Monitor {
         }
     }
 
+    /// Checks that a live session can be moved into the app and returns what the
+    /// move needs. Reads the registry fresh; idle means status idle and no running agent.
+    pub fn adopt_check(
+        &mut self,
+        session_id: &str,
+        probe: &dyn ProcessProbe,
+        now: SystemTime,
+    ) -> Result<AdoptSource, AdoptRefusal> {
+        let l = read_live_sessions(&self.claude_dir.join("sessions"), probe)
+            .into_iter()
+            .find(|l| l.session_id == session_id)
+            .ok_or(AdoptRefusal::NotLive)?;
+        if !l.movable {
+            return Err(AdoptRefusal::NotMovable);
+        }
+        match l.status {
+            SessionStatus::Idle => {}
+            SessionStatus::Waiting => return Err(AdoptRefusal::Waiting),
+            SessionStatus::Busy | SessionStatus::Other(_) => return Err(AdoptRefusal::Busy),
+        }
+        let tree = self.update_live(session_id, now);
+        if running_agents(&tree.roots) > 0 {
+            return Err(AdoptRefusal::AgentsRunning);
+        }
+        let first_cwd = self.states[session_id].stats.first_cwd.clone().filter(|c| !c.is_empty());
+        let project_dir = self
+            .locator
+            .transcript(session_id)
+            .and_then(|p| p.parent().and_then(|d| d.file_name()).map(|n| n.to_string_lossy().into_owned()));
+        match (first_cwd, project_dir) {
+            (Some(first_cwd), Some(project_dir)) => {
+                Ok(AdoptSource { pid: l.pid, proc_start: l.proc_start, first_cwd, project_dir })
+            }
+            _ => Err(AdoptRefusal::NotLive),
+        }
+    }
+
     /// Detail of a live session (cheap: incremental state). `None` if not live.
     pub fn live_detail(
         &mut self,
@@ -546,6 +609,13 @@ mod tests {
             let name = name.map(|n| format!(r#","name":"{n}""#)).unwrap_or_default();
             let j = format!(
                 r#"{{"pid":{pid},"sessionId":"{sid}","cwd":"C:\\work\\demo","startedAt":1000,"procStart":"{}","status":"{status}","statusUpdatedAt":{updated}{name}}}"#,
+                1000 + pid as u64
+            );
+            fs::write(self.dir.path().join("sessions").join(format!("{pid}.json")), j).unwrap();
+        }
+        fn reg_with(&self, pid: u32, sid: &str, status: &str, extra: &str) {
+            let j = format!(
+                r#"{{"pid":{pid},"sessionId":"{sid}","cwd":"C:\\work\\demo","startedAt":1000,"procStart":"{}","status":"{status}","statusUpdatedAt":10{extra}}}"#,
                 1000 + pid as u64
             );
             fs::write(self.dir.path().join("sessions").join(format!("{pid}.json")), j).unwrap();
@@ -928,5 +998,68 @@ mod tests {
         let d = e.mon().detail(&sid, &FakeProbe, now()).unwrap();
         let got: Vec<(&str, u32)> = d.changed_files.iter().map(|f| (f.path.as_str(), f.edits)).collect();
         assert_eq!(got, [("/w/a.rs", 2), ("/w/b.rs", 1)], "merged by path, most recent first");
+    }
+
+    const CLI: &str = r#","kind":"interactive","entrypoint":"cli""#;
+
+    fn adopt_env(status: &str, extra: &str) -> (Env, String, Monitor) {
+        let e = Env::new();
+        let sid = id(1);
+        e.reg_with(1, &sid, status, extra);
+        e.append(&e.transcript(&sid), &asst("m1", 5, "2026-11-02T07:00:00Z"));
+        let m = e.mon();
+        (e, sid, m)
+    }
+
+    #[test]
+    fn adopt_check_ok_for_idle_cli_session() {
+        let (_e, sid, mut m) = adopt_env("idle", CLI);
+        let src = m.adopt_check(&sid, &FakeProbe, now()).unwrap();
+        assert_eq!(src.pid, 1);
+        assert_eq!(src.proc_start, 1001);
+        assert_eq!(src.first_cwd, r"C:\work\demo");
+        assert_eq!(src.project_dir, "proj-a");
+    }
+
+    #[test]
+    fn adopt_check_refuses_busy() {
+        let (_e, sid, mut m) = adopt_env("busy", CLI);
+        assert_eq!(m.adopt_check(&sid, &FakeProbe, now()).unwrap_err(), AdoptRefusal::Busy);
+    }
+
+    #[test]
+    fn adopt_check_refuses_waiting() {
+        let (_e, sid, mut m) = adopt_env("waiting", CLI);
+        assert_eq!(m.adopt_check(&sid, &FakeProbe, now()).unwrap_err(), AdoptRefusal::Waiting);
+    }
+
+    fn running_agent(e: &Env, sid: &str) {
+        let sub = e.dir.path().join("projects/proj-a").join(sid).join("subagents");
+        fs::create_dir_all(&sub).unwrap();
+        e.append(&sub.join("agent-x.jsonl"), &asst("s1", 5, "2026-11-02T07:00:00Z"));
+    }
+
+    #[test]
+    fn adopt_check_refuses_running_agent() {
+        let (e, sid, mut m) = adopt_env("idle", CLI);
+        running_agent(&e, &sid);
+        let real_now = SystemTime::now();
+        assert_eq!(m.adopt_check(&sid, &FakeProbe, real_now).unwrap_err(), AdoptRefusal::AgentsRunning);
+    }
+
+    #[test]
+    fn adopt_check_refuses_non_cli() {
+        let (_e, sid, mut m) = adopt_env("idle", r#","kind":"interactive","entrypoint":"sdk-ts""#);
+        assert_eq!(m.adopt_check(&sid, &FakeProbe, now()).unwrap_err(), AdoptRefusal::NotMovable);
+        assert_eq!(m.adopt_check(&id(99), &FakeProbe, now()).unwrap_err(), AdoptRefusal::NotLive);
+    }
+
+    #[test]
+    fn card_reports_agents_running() {
+        let (e, sid, mut m) = adopt_env("idle", CLI);
+        running_agent(&e, &sid);
+        let snap = m.refresh(&FakeProbe, SystemTime::now());
+        assert_eq!(snap.sessions[0].agents_running, 1);
+        assert!(snap.sessions[0].movable);
     }
 }

@@ -33,6 +33,8 @@ pub struct LiveSession {
     pub started_at_ms: u64,
     pub status_updated_at_ms: u64,
     pub proc_start: u64,
+    /// Interactive terminal CLI session (registry kind + entrypoint); only these can be adopted.
+    pub movable: bool,
 }
 
 pub trait ProcessProbe {
@@ -58,6 +60,8 @@ struct RawSession {
     updated_at: Option<u64>,
     status_updated_at: Option<u64>,
     proc_start: Option<String>,
+    kind: Option<String>,
+    entrypoint: Option<String>,
 }
 
 fn parse_status(s: Option<String>) -> SessionStatus {
@@ -111,6 +115,7 @@ pub fn read_live_sessions(sessions_dir: &Path, probe: &dyn ProcessProbe) -> Vec<
             started_at_ms: started,
             status_updated_at_ms: raw.status_updated_at.or(raw.updated_at).unwrap_or(started),
             proc_start,
+            movable: raw.kind.as_deref() == Some("interactive") && raw.entrypoint.as_deref() == Some("cli"),
         });
     }
     out
@@ -164,6 +169,25 @@ mod tests {
         assert_eq!((a.started_at_ms, a.status_updated_at_ms, a.proc_start), (1000, 3000, 777));
         assert_eq!(v[1].status, SessionStatus::Waiting);
         assert_eq!(v[1].waiting_for.as_deref(), Some("input needed"));
+    }
+
+    #[test]
+    fn movable_only_for_interactive_cli() {
+        let d = tempfile::tempdir().unwrap();
+        fs::write(d.path().join("10.json"), json(10, "idle", "")).unwrap();
+        fs::write(
+            d.path().join("11.json"),
+            json(11, "idle", "").replace(r#""entrypoint":"cli""#, r#""entrypoint":"sdk-ts""#),
+        )
+        .unwrap();
+        let bare = json(12, "idle", "")
+            .replace(r#""kind":"interactive","#, "")
+            .replace(r#""entrypoint":"cli","#, "");
+        fs::write(d.path().join("12.json"), bare).unwrap();
+        let p = FakeProbe(HashMap::from([(10, 777), (11, 777), (12, 777)]));
+        let mut v = read_live_sessions(d.path(), &p);
+        v.sort_by_key(|s| s.pid);
+        assert_eq!(v.iter().map(|s| s.movable).collect::<Vec<_>>(), [true, false, false]);
     }
 
     #[test]
