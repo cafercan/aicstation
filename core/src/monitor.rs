@@ -474,11 +474,11 @@ impl Monitor {
         if agent_may_run(&tree.roots, now) {
             return Err(AdoptRefusal::AgentsRunning);
         }
-        let first_cwd = self.states[session_id].stats.first_cwd.clone().filter(|c| !c.is_empty());
-        let project_dir = self
-            .locator
-            .transcript(session_id)
-            .and_then(|p| p.parent().and_then(|d| d.file_name()).map(|n| n.to_string_lossy().into_owned()));
+        let project_dir = self.locator.transcript(session_id).and_then(|p| crate::history::project_dir_of(&p));
+        let first_cwd = project_dir
+            .as_deref()
+            .and_then(|d| self.states[session_id].stats.resume_cwd(d))
+            .filter(|c| !c.is_empty());
         match (first_cwd, project_dir) {
             (Some(first_cwd), Some(project_dir)) => {
                 Ok(AdoptSource { pid: l.pid, proc_start: l.proc_start, first_cwd, project_dir })
@@ -568,6 +568,7 @@ impl ClosedJob {
     }
 
     pub fn run(self, session_id: &str, now: SystemTime) -> Option<SessionDetail> {
+        let project_dir = crate::history::project_dir_of(&self.path);
         let mut reader = TranscriptReader::new(self.path);
         let mut stats = SessionStats::default();
         reader
@@ -582,7 +583,7 @@ impl ClosedJob {
         };
         Some(SessionDetail {
             card: make_card(session_id, None, None, HostKind::Other, &stats, &tree),
-            first_cwd: stats.first_cwd.clone(),
+            first_cwd: project_dir.and_then(|d| stats.resume_cwd(&d)),
             tokens: stats.tokens,
             tool_call_count: stats.tool_call_count,
             main_tool_calls: stats.tool_calls.iter().cloned().collect(),

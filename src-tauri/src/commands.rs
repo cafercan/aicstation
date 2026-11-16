@@ -928,6 +928,9 @@ mod tests {
     const UNKNOWN_ID: &str = "eeeeeeee-2222-4333-8444-555555555555";
     const MULTI_ID: &str = "ffffffff-2222-4333-8444-555555555555";
     const MISMATCH_ID: &str = "abababab-2222-4333-8444-555555555555";
+    /// Started in the repository, then moved into a worktree (`claude -w`):
+    /// the transcript is under the worktree's project folder.
+    const WORKTREE_ID: &str = "cdcdcdcd-2222-4333-8444-555555555555";
 
     /// `<dir>/<id>.jsonl` with one user line per cwd, in order.
     fn write_session(dir: &Path, id: &str, cwds: &[&str]) {
@@ -963,6 +966,7 @@ mod tests {
         write_session(&demo, UNC_ID, &[r"\\sunucu\pay"]);
         write_session(&demo, REL_ID, &[r"bagil\yol"]);
         write_session(&demo, MISMATCH_ID, &[&w]);
+        write_session(&projects.join(station_core::locate::project_dir_name(&o)), WORKTREE_ID, &[&w, &o, &o]);
         (AppState::new(claude, tmp.join("c.json"), Box::new(probe)), work)
     }
 
@@ -1003,6 +1007,21 @@ mod tests {
         indexed(&state);
         let (_, dir) = state.resume_target(MULTI_ID).unwrap();
         same_dir(&dir, &work);
+    }
+
+    #[test]
+    fn resume_of_a_session_that_moved_into_a_worktree_runs_in_the_worktree() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, work) = resume_env(tmp.path());
+        indexed(&state);
+        let (_, dir) = state.resume_target(WORKTREE_ID).unwrap();
+        same_dir(&dir, &work.join("other"));
+        // Same answer through the closed detail (not indexed yet).
+        let tmp2 = tempfile::tempdir().unwrap();
+        let (state2, work2) = resume_env(tmp2.path());
+        state2.get_session_detail(WORKTREE_ID).unwrap();
+        let (_, dir2) = state2.resume_target(WORKTREE_ID).unwrap();
+        same_dir(&dir2, &work2.join("other"));
     }
 
     #[test]

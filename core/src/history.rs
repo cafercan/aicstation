@@ -18,7 +18,8 @@ pub struct HistorySummary {
     pub name: String,
     /// Last recorded cwd (display, folder filter).
     pub cwd: Option<String>,
-    /// First recorded cwd: the project folder a resume is bound to.
+    /// The folder a resume is bound to: the first recorded cwd that matches the
+    /// transcript's project folder (see `SessionStats::resume_cwd`).
     #[serde(default)]
     pub first_cwd: Option<String>,
     pub model: Option<String>,
@@ -52,8 +53,9 @@ pub struct HistoryRow {
 
 /// On-disk cache schema. A cache of any other version (or the bare array of
 /// version 1, which had no first cwd) is ignored and rebuilt (version 3 added
-/// the token totals, version 4 the git branch).
-pub const CACHE_VERSION: u32 = 4;
+/// the token totals, version 4 the git branch, version 5 a first cwd that
+/// matches the transcript's project folder).
+pub const CACHE_VERSION: u32 = 5;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -138,6 +140,11 @@ fn add_agent_totals(nodes: &[AgentNode], t: &mut Totals) {
     }
 }
 
+/// Name of the `projects/` folder a transcript sits in.
+pub fn project_dir_of(transcript: &Path) -> Option<String> {
+    transcript.parent().and_then(Path::file_name).map(|n| n.to_string_lossy().into_owned())
+}
+
 /// Stream one transcript line by line; never holds the whole file.
 fn summarize(path: &Path, locator: &mut Locator, id: &str) -> io::Result<HistorySummary> {
     let mut stats = SessionStats::default();
@@ -167,7 +174,7 @@ fn summarize(path: &Path, locator: &mut Locator, id: &str) -> io::Result<History
     Ok(HistorySummary {
         name,
         cwd: stats.cwd.clone(),
-        first_cwd: stats.first_cwd.clone(),
+        first_cwd: project_dir_of(path).and_then(|d| stats.resume_cwd(&d)).or_else(|| stats.first_cwd.clone()),
         model: stats.model.clone(),
         git_branch: stats.git_branch.clone(),
         first_at_ms: stats.first_at.map_or(0, |t| t.timestamp_millis().max(0) as u64),

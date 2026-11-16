@@ -13,6 +13,8 @@ pub const MAX_SEEN_IDS: usize = 1024;
 /// Changed files remembered per transcript; past it the least recently
 /// changed one is forgotten.
 pub const MAX_CHANGED_FILES: usize = 500;
+/// Distinct top-level cwds kept, in first-seen order, to find the resume folder.
+pub const MAX_CWDS: usize = 32;
 
 #[derive(Debug, Clone, Default, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -20,8 +22,12 @@ pub struct SessionStats {
     pub title: Option<String>,
     /// Last recorded top-level cwd (display).
     pub cwd: Option<String>,
-    /// First recorded top-level cwd: the session's project folder (resume).
+    /// First recorded top-level cwd.
     pub first_cwd: Option<String>,
+    /// Distinct top-level cwds in first-seen order (at most [`MAX_CWDS`]);
+    /// see [`SessionStats::resume_cwd`].
+    #[serde(skip)]
+    pub cwds: Vec<String>,
     pub git_branch: Option<String>,
     pub model: Option<String>,
     pub requested_model: Option<String>,
@@ -47,6 +53,20 @@ pub struct SessionStats {
 }
 
 impl SessionStats {
+    /// The folder `claude --resume` must run in: the first recorded cwd whose
+    /// Claude Code project-folder name is `project_dir` (the folder the
+    /// transcript sits in). Usually the first cwd; a session that moved into a
+    /// worktree (`claude -w`) is stored under the worktree's folder, so its
+    /// first cwd (the main repository) does not match. Falls back to the first
+    /// cwd, which the resume check then refuses with a clear error.
+    pub fn resume_cwd(&self, project_dir: &str) -> Option<String> {
+        self.cwds
+            .iter()
+            .find(|c| crate::locate::cwd_matches_project_dir(c, project_dir))
+            .cloned()
+            .or_else(|| self.first_cwd.clone())
+    }
+
     /// True the first time `id` is seen within the recent window.
     fn first_sight(&mut self, id: &str) -> bool {
         if self.seen_ids.contains(id) {
@@ -145,11 +165,14 @@ impl SessionStats {
             }
             Entry::Title(t) => self.title = Some(t.clone()),
             Entry::Meta { cwd, git_branch, at } => {
-                if cwd.is_some() {
+                if let Some(c) = cwd {
                     if self.first_cwd.is_none() {
-                        self.first_cwd = cwd.clone();
+                        self.first_cwd = Some(c.clone());
                     }
-                    self.cwd = cwd.clone();
+                    if self.cwds.len() < MAX_CWDS && !self.cwds.contains(c) {
+                        self.cwds.push(c.clone());
+                    }
+                    self.cwd = Some(c.clone());
                 }
                 if git_branch.is_some() {
                     self.git_branch = git_branch.clone();
@@ -281,6 +304,35 @@ mod tests {
         s.apply(&meta(r"C:\demo\proj\other"));
         assert_eq!(s.first_cwd.as_deref(), Some(r"C:\demo\proj"));
         assert_eq!(s.cwd.as_deref(), Some(r"C:\demo\proj\other"));
+    }
+
+    #[test]
+    fn resume_cwd_is_the_first_cwd_that_matches_the_transcript_folder() {
+        // `claude -w modul-testi` started in the repository, then moved into the
+        // worktree; Claude Code stores the transcript under the worktree's folder.
+        let mut s = SessionStats::default();
+        let meta = |c: &str| Entry::Meta { cwd: Some(c.into()), git_branch: None, at: None };
+        s.apply(&meta(r"C:\Users\u\IAR\GDP"));
+        s.apply(&meta("/c/Users/u/IAR/GDP/.claude/worktrees/modul-testi"));
+        s.apply(&meta(r"C:\Users\u\IAR\GDP\.claude\worktrees\modul-testi"));
+        s.apply(&meta(r"C:\Users\u\IAR\GDP\.claude\worktrees\modul-testi\Docs"));
+        let wt = "C--Users-u-IAR-GDP--claude-worktrees-modul-testi";
+        assert_eq!(s.resume_cwd(wt).as_deref(), Some(r"C:\Users\u\IAR\GDP\.claude\worktrees\modul-testi"));
+        // A plain session keeps its first cwd.
+        assert_eq!(s.resume_cwd("C--Users-u-IAR-GDP").as_deref(), Some(r"C:\Users\u\IAR\GDP"));
+        // No match: the first cwd, which the resume check refuses.
+        assert_eq!(s.resume_cwd("C--elsewhere").as_deref(), Some(r"C:\Users\u\IAR\GDP"));
+    }
+
+    #[test]
+    fn cwds_are_distinct_and_capped() {
+        let mut s = SessionStats::default();
+        for i in 0..(MAX_CWDS + 10) {
+            s.apply(&Entry::Meta { cwd: Some(format!(r"C:\d\{i}")), git_branch: None, at: None });
+            s.apply(&Entry::Meta { cwd: Some(r"C:\d\0".into()), git_branch: None, at: None });
+        }
+        assert_eq!(s.cwds.len(), MAX_CWDS);
+        assert_eq!(s.cwds[0], r"C:\d\0");
     }
 
     #[test]
