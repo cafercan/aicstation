@@ -9,21 +9,24 @@ interface BarProps {
   others: { id: number; label: string }[];
   onSplit: (right: number | "new") => void;
   onJoin: () => void;
+  /** Shown inside the session tab row instead of a row of its own. */
+  inline?: boolean;
 }
 
 /** Toolbar above the terminal area: "Böl" (pick the right pane) / "Birleştir". */
-export function TermBar({ splitShown, others, onSplit, onJoin }: BarProps) {
+export function TermBar({ splitShown, others, onSplit, onJoin, inline = false }: BarProps) {
   const t = useT();
+  const cls = inline ? "term-bar inline" : "term-bar";
   const [picking, setPicking] = useState(false);
   if (splitShown) {
     return (
-      <div className="term-bar">
+      <div className={cls}>
         <button type="button" className="btn" title="Ctrl+Shift+\" onClick={onJoin}>{t("split.join")}</button>
       </div>
     );
   }
   return (
-    <div className="term-bar">
+    <div className={cls}>
       {picking && (
         <select autoFocus aria-label={t("split.pick")} value=""
           onKeyDown={(e) => { if (e.key === "Escape") setPicking(false); }}

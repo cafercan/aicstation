@@ -137,6 +137,28 @@ test("sekmeye tıklamak Terminal ile Bilgi arasında geçer; Bilgi'de terminal s
   expect(screen.queryByText("Oturum bulunamadı.")).toBeNull();
 });
 
+test("Böl düğmesi oturumun sekme satırında durur; ayrı bir satır kalmaz", async () => {
+  fake.add(1, 50);
+  snap.sessions = [card({ sessionId: "s-app", name: "uygulama", parentPid: 50 })];
+  const { container } = render(<App />);
+  await waitFor(() => expect(container.querySelector(".grid .card")).toBeTruthy());
+  fireEvent.click(container.querySelector(".grid .card")!);
+  const row = screen.getByRole("tablist");
+  expect(row.querySelector(".term-bar.inline button")).toBeTruthy();
+  expect(container.querySelectorAll(".term-bar").length).toBe(1);
+  expect(container.querySelector(".term-area")!.className).toBe("term-area no-bar");
+  fireEvent.click(tab("Bilgi"));
+  expect(container.querySelector(".term-bar")).toBeNull();
+});
+
+test("Claude'suz kabuk terminalinde Böl kendi satırında kalır", async () => {
+  fake.add(1, 50);
+  const { container } = render(<App />);
+  fireEvent.click(container.querySelector(".side .item.sub")!);
+  expect(container.querySelector(".term-bar:not(.inline) button")).toBeTruthy();
+  expect(container.querySelector(".term-area")!.className).toBe("term-area");
+});
+
 test("Claude'suz kabuk terminalinde sekme çubuğu yok", async () => {
   fake.add(1, 50);
   const { container } = render(<App />);

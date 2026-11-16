@@ -25,7 +25,7 @@ import { openSessionView, resolveView, tabBarFor, viewAfterClose } from "./sessi
 import "./app.css";
 import "./features.css";
 import { splitAfterClose, type Split } from "./terminal/split";
-import { Overlays, TerminalArea, termOf, useShortcuts, useSplitCleanup, type Overlay } from "./workspace";
+import { AreaBar, Overlays, TerminalArea, terminalShown, termOf, useShortcuts, useSplitCleanup, type Overlay } from "./workspace";
 
 const EMPTY: Snapshot = { sessions: [], runningAgents: 0, waitingCount: 0 };
 /** How long a Resume / Move terminal waits for the registry to list its session. */
@@ -227,16 +227,20 @@ export default function App() {
     else setView(term !== undefined ? { terminal: term } : { session: bar.sessionId, tab });
   };
 
+  // The split controls share the tab row when both are on screen.
+  const barInTabs = bar !== null && terminalShown(area);
+
   return (
     <div className="app">
       <div className="body">
         <Sidebar view={view} terminals={sideTerms} onSelect={setView} onNew={onNew} onClose={onClose}
           onOpenWt={openSystemTerminal} />
         <div className="main-col">
-          {bar && <SessionTabs active={bar.active} onSelect={selectTab} />}
+          {bar && <SessionTabs active={bar.active} onSelect={selectTab}
+            extra={barInTabs ? <AreaBar {...area} inline /> : undefined} />}
           <main className="main">
             {page}
-            <TerminalArea {...area} />
+            <TerminalArea {...area} barInTabs={barInTabs} />
           </main>
         </div>
       </div>

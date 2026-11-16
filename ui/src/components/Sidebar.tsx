@@ -99,8 +99,8 @@ export default function Sidebar({ view, terminals, onSelect, onNew, onClose, onO
   const isDash = view === "dashboard" || (typeof view === "object" && "session" in view && viewTerm === undefined);
   return (
     <nav className="side">
-      <div className={isDash ? "item on" : "item"} onClick={() => onSelect("dashboard")}>{t("nav.dashboard")}</div>
-      <div className={view === "history" ? "item on" : "item"} onClick={() => onSelect("history")}>{t("nav.history")}</div>
+      <div className={isDash ? "item nav on" : "item nav"} onClick={() => onSelect("dashboard")}>{t("nav.dashboard")}</div>
+      <div className={view === "history" ? "item nav on" : "item nav"} onClick={() => onSelect("history")}>{t("nav.history")}</div>
       <div className="head">{t("nav.terminals")}</div>
       {terminals.map((term) => (
         <div key={term.id}

@@ -25,7 +25,7 @@ export const termOf = (v: View): number | null => (typeof v === "object" && !("s
 export const showTerminal = (setView: Dispatch<SetStateAction<View>>, id: number) =>
   setView((v) => (termOf(v) === id ? v : { terminal: id }));
 
-interface AreaProps {
+export interface AreaProps {
   terminals: TerminalEntry[];
   /** Live Claude sessions: each terminal running one shows its bar. */
   sessions: SessionCard[];
@@ -52,21 +52,35 @@ export function splitWith(p: AreaProps, right: number | "new"): void {
   else apply(right);
 }
 
-/** Toolbar, the visible terminal(s) and the divider. Every TerminalView stays mounted. */
-export function TerminalArea(p: AreaProps) {
+/** A terminal of the area is on screen. */
+export const terminalShown = (p: Pick<AreaProps, "terminals" | "termId">): boolean =>
+  p.termId !== null && p.terminals.some((x) => x.id === p.termId);
+
+/** "Böl" / "Birleştir" for the terminal on screen; `inline` puts it in the session tab row. */
+export function AreaBar({ inline = false, ...p }: AreaProps & { inline?: boolean }) {
   const { terminals, termId, split } = p;
-  const shown = termId !== null && terminals.some((x) => x.id === termId);
+  if (!terminalShown(p)) return null;
+  return (
+    <TermBar inline={inline} splitShown={paneLayout(split, termId).length === 2}
+      others={terminals.filter((x) => x.id !== termId).map((x) => ({ id: x.id, label: p.labels.get(x.id) ?? "" }))}
+      onSplit={(r) => splitWith(p, r)} onJoin={() => p.setSplit(null)} />
+  );
+}
+
+/**
+ * The visible terminal(s) and the divider. Every TerminalView stays mounted.
+ * `barInTabs`: the split controls sit in the session tab row, so the area has no bar row of its own.
+ */
+export function TerminalArea({ barInTabs = false, ...p }: AreaProps & { barInTabs?: boolean }) {
+  const { terminals, termId, split } = p;
+  const shown = terminalShown(p);
   const panes = shown ? paneLayout(split, termId) : [];
   const splitShown = panes.length === 2;
   const box = new Map(panes.map((x) => [x.id, x]));
   return (
     <>
-      {shown && (
-        <TermBar splitShown={splitShown}
-          others={terminals.filter((x) => x.id !== termId).map((x) => ({ id: x.id, label: p.labels.get(x.id) ?? "" }))}
-          onSplit={(r) => splitWith(p, r)} onJoin={() => p.setSplit(null)} />
-      )}
-      <div className="term-area" style={{ display: shown ? "block" : "none" }}>
+      {!barInTabs && <AreaBar {...p} />}
+      <div className={barInTabs ? "term-area no-bar" : "term-area"} style={{ display: shown ? "block" : "none" }}>
         {terminals.map((x) => {
           const b = box.get(x.id);
           return (
