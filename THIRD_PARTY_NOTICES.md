@@ -13,7 +13,7 @@ license(s) named in the "Used" column.
 
 | License | Packages |
 |---|---|
-| MIT | 227 |
+| MIT | 224 |
 | Apache-2.0 | 4 |
 | BSD-3-Clause | 4 |
 | Zlib | 2 |
@@ -21,7 +21,7 @@ license(s) named in the "Used" column.
 | CC0-1.0 | 1 |
 | MPL-2.0 | 5 |
 
-## Rust crates (245)
+## Rust crates (242)
 
 | Package | Version | Declared license | Used |
 |---|---|---|---|
@@ -81,7 +81,6 @@ license(s) named in the "Used" column.
 | fastrand | 2.5.0 | Apache-2.0 OR MIT | MIT |
 | fdeflate | 0.3.7 | MIT OR Apache-2.0 | MIT |
 | filedescriptor | 0.8.3 | MIT | MIT |
-| filetime | 0.2.29 | MIT/Apache-2.0 | MIT |
 | flate2 | 1.1.10 | MIT OR Apache-2.0 | MIT |
 | fnv | 1.0.7 | Apache-2.0 / MIT | MIT |
 | foldhash | 0.2.0 | Zlib | Zlib |
@@ -132,7 +131,8 @@ license(s) named in the "Used" column.
 | muda | 0.20.0 | Apache-2.0 OR MIT | MIT |
 | new_debug_unreachable | 1.0.6 | MIT | MIT |
 | nix | 0.28.0 | MIT | MIT |
-| notify | 6.1.1 | CC0-1.0 | CC0-1.0 |
+| notify | 8.2.2 | CC0-1.0 | CC0-1.0 |
+| notify-types | 2.3.1 | MIT OR Apache-2.0 | MIT |
 | num-conv | 0.2.2 | MIT OR Apache-2.0 | MIT |
 | num-traits | 0.2.19 | MIT OR Apache-2.0 | MIT |
 | once_cell | 1.21.4 | MIT OR Apache-2.0 | MIT |
@@ -242,7 +242,6 @@ license(s) named in the "Used" column.
 | winapi-util | 0.1.11 | Unlicense OR MIT | MIT |
 | window-vibrancy | 0.8.1 | Apache-2.0 OR MIT | MIT |
 | windows | 0.62.2 | MIT OR Apache-2.0 | MIT |
-| windows_x86_64_msvc | 0.48.5 | MIT OR Apache-2.0 | MIT |
 | windows-collections | 0.3.2 | MIT OR Apache-2.0 | MIT |
 | windows-core | 0.62.2 | MIT OR Apache-2.0 | MIT |
 | windows-future | 0.3.2 | MIT OR Apache-2.0 | MIT |
@@ -252,9 +251,7 @@ license(s) named in the "Used" column.
 | windows-numerics | 0.3.1 | MIT OR Apache-2.0 | MIT |
 | windows-result | 0.4.1 | MIT OR Apache-2.0 | MIT |
 | windows-strings | 0.5.1 | MIT OR Apache-2.0 | MIT |
-| windows-sys | 0.48.0 | MIT OR Apache-2.0 | MIT |
 | windows-sys | 0.61.2 | MIT OR Apache-2.0 | MIT |
-| windows-targets | 0.48.5 | MIT OR Apache-2.0 | MIT |
 | windows-threading | 0.2.1 | MIT OR Apache-2.0 | MIT |
 | windows-version | 0.1.7 | MIT OR Apache-2.0 | MIT |
 | winnow | 1.0.4 | MIT | MIT |
@@ -362,7 +359,6 @@ Packages:
 - fastrand 2.5.0 — Authors: Stjepan Glavina <stjepang@gmail.com>
 - fdeflate 0.3.7 — Authors: The image-rs Developers
 - filedescriptor 0.8.3 — Copyright (c) 2018 Wez Furlong
-- filetime 0.2.29 — Copyright (c) 2014 Alex Crichton
 - flate2 1.1.10 — Copyright (c) 2014-2026 Alex Crichton
 - fnv 1.0.7 — Copyright (c) 2017 Contributors
 - form_urlencoded 1.2.2 — Copyright (c) 2013-2016 The rust-url developers
@@ -404,6 +400,7 @@ Packages:
 - muda 0.20.0 — Copyright (c) 2022-2022 Tauri Programme within The Commons Conservancy
 - new_debug_unreachable 1.0.6 — Copyright (c) 2015 Jonathan Reem
 - nix 0.28.0 — Copyright (c) 2015 Carl Lerche + nix-rust Authors
+- notify-types 2.3.1 — Copyright 2023 Notify Contributors; Copyright (c) 2023 Notify Contributors
 - num-conv 0.2.2 — Copyright (c) Jacob Pratt
 - num-traits 0.2.19 — Copyright (c) 2014 The Rust Project Developers
 - once_cell 1.21.4 — Authors: Aleksey Kladov <aleksey.kladov@gmail.com>
@@ -507,7 +504,6 @@ Packages:
 - winapi-util 0.1.11 — Copyright (c) 2017 Andrew Gallant
 - window-vibrancy 0.8.1 — Copyright (c) 2020-2022 Tauri Programme within The Commons Conservancy
 - windows 0.62.2 — Copyright (c) Microsoft Corporation.
-- windows_x86_64_msvc 0.48.5 — Copyright (c) Microsoft Corporation.
 - windows-collections 0.3.2 — Copyright (c) Microsoft Corporation.
 - windows-core 0.62.2 — Copyright (c) Microsoft Corporation.
 - windows-future 0.3.2 — Copyright (c) Microsoft Corporation.
@@ -517,9 +513,7 @@ Packages:
 - windows-numerics 0.3.1 — Copyright (c) Microsoft Corporation.
 - windows-result 0.4.1 — Copyright (c) Microsoft Corporation.
 - windows-strings 0.5.1 — Copyright (c) Microsoft Corporation.
-- windows-sys 0.48.0 — Copyright (c) Microsoft Corporation.
 - windows-sys 0.61.2 — Copyright (c) Microsoft Corporation.
-- windows-targets 0.48.5 — Copyright (c) Microsoft Corporation.
 - windows-threading 0.2.1 — Copyright (c) Microsoft Corporation.
 - windows-version 0.1.7 — Copyright (c) Microsoft Corporation.
 - winnow 1.0.4
@@ -911,7 +905,7 @@ ICU 1.8.1 to ICU 57.1 © 1995-2016 International Business Machines Corporation a
 
 Packages:
 
-- notify 6.1.1 — Authors: Félix Saparelli <me@passcod.name>, Daniel Faust <hessijames@gmail.com>, Aron Heinecke <Ox0p54r36@t-online.de>
+- notify 8.2.2 — Authors: Félix Saparelli <me@passcod.name>, Daniel Faust <hessijames@gmail.com>, Aron Heinecke <Ox0p54r36@t-online.de>
 
 ```text
 Creative Commons CC0 1.0 Universal
