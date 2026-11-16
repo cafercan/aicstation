@@ -17,10 +17,11 @@ pub enum HostKind {
     Other,
 }
 
-/// Result of the ancestor walk; `WindowsTerminal` carries the host's pid.
+/// Result of the ancestor walk; `WindowsTerminal` carries the host's pid,
+/// `Embedded` the app's direct child on the chain (the terminal's shell).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Host {
-    Embedded,
+    Embedded(u32),
     WindowsTerminal(u32),
     Other,
 }
@@ -28,7 +29,7 @@ pub enum Host {
 impl Host {
     pub fn kind(self) -> HostKind {
         match self {
-            Host::Embedded => HostKind::Embedded,
+            Host::Embedded(_) => HostKind::Embedded,
             Host::WindowsTerminal(_) => HostKind::WindowsTerminal,
             Host::Other => HostKind::Other,
         }
@@ -80,7 +81,9 @@ fn is(exe: &str, name: &str) -> bool {
 }
 
 /// Walks `pid`'s ancestors (nearest first). The first of these decides:
-/// `self_pid` -> Embedded; `WindowsTerminal.exe` -> WindowsTerminal; a known
+/// `self_pid` -> Embedded (with the app's direct child on the chain, the
+/// terminal's shell, even when launchers such as cmd.exe or node.exe sit
+/// between it and Claude); `WindowsTerminal.exe` -> WindowsTerminal; a known
 /// other host, a missing row, a cycle or a parent created after its child
 /// (pid reuse: the real parent exited and its pid went to a newer process)
 /// -> Other. `created` gives a process's creation time when it can be read.
@@ -105,7 +108,7 @@ pub fn find_host(
             }
         }
         if parent == self_pid {
-            return Host::Embedded;
+            return Host::Embedded(child);
         }
         let Some(info) = table.get(&parent) else {
             return Host::Other;
@@ -203,7 +206,15 @@ mod tests {
     fn claude_in_embedded_terminal() {
         let t = table(&[(10, 9, "claude.exe"), (9, SELF, "powershell.exe"), (SELF, 8, "aicstation.exe"), (8, 4, "WindowsTerminal.exe")]);
         // Our own process wins even when the app itself was started from WT.
-        assert_eq!(find_host(10, SELF, &t, no_times), Host::Embedded);
+        assert_eq!(find_host(10, SELF, &t, no_times), Host::Embedded(9));
+    }
+
+    #[test]
+    fn claude_behind_a_launcher_in_embedded_terminal_names_the_terminal_shell() {
+        // npm's claude.cmd (cmd.exe -> node.exe) or a nested shell: the registry pid's
+        // parent is not the terminal's shell, but the app's direct child on the chain is.
+        let t = table(&[(10, 11, "node.exe"), (11, 9, "cmd.exe"), (9, SELF, "powershell.exe"), (SELF, 8, "aicstation.exe")]);
+        assert_eq!(find_host(10, SELF, &t, no_times), Host::Embedded(9));
     }
 
     #[test]

@@ -3,7 +3,7 @@
 //! same value read back here guards against pid reuse exactly as the
 //! creation FILETIME does on Windows. The process table (parent pid and
 //! `comm`) is cached for a short TTL, like the Toolhelp snapshot.
-use station_core::host::{find_host, HostKind, ProcInfo};
+use station_core::host::{find_host, Host, HostKind, ProcInfo};
 use station_core::registry::ProcessProbe;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -54,7 +54,7 @@ fn snapshot_procs() -> HashMap<u32, ProcInfo> {
 struct ProcCache {
     at: Instant,
     table: HashMap<u32, ProcInfo>,
-    hosts: HashMap<u32, HostKind>,
+    hosts: HashMap<u32, Host>,
 }
 
 pub struct LinuxProbe {
@@ -75,6 +75,20 @@ impl LinuxProbe {
     }
 }
 
+impl LinuxProbe {
+    /// Ancestor-walk result for `pid`, cached with the process table.
+    fn host(&self, pid: u32) -> Option<Host> {
+        self.with_procs(|c| {
+            if let Some(h) = c.hosts.get(&pid) {
+                return *h;
+            }
+            let h = find_host(pid, std::process::id(), &c.table, |p| read_stat(p).map(|s| s.starttime));
+            c.hosts.insert(pid, h);
+            h
+        })
+    }
+}
+
 impl ProcessProbe for LinuxProbe {
     fn start_filetime(&self, pid: u32) -> Option<u64> {
         read_stat(pid).map(|s| s.starttime)
@@ -85,15 +99,14 @@ impl ProcessProbe for LinuxProbe {
     }
 
     fn host_kind(&self, pid: u32) -> HostKind {
-        self.with_procs(|c| {
-            if let Some(k) = c.hosts.get(&pid) {
-                return *k;
-            }
-            let k = find_host(pid, std::process::id(), &c.table, |p| read_stat(p).map(|s| s.starttime)).kind();
-            c.hosts.insert(pid, k);
-            k
-        })
-        .unwrap_or_default()
+        self.host(pid).map_or_else(HostKind::default, Host::kind)
+    }
+
+    fn terminal_pid(&self, pid: u32) -> Option<u32> {
+        match self.host(pid)? {
+            Host::Embedded(shell) => Some(shell),
+            _ => None,
+        }
     }
 }
 

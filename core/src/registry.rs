@@ -44,6 +44,11 @@ pub trait ProcessProbe {
     fn host_kind(&self, _pid: u32) -> crate::host::HostKind {
         crate::host::HostKind::Other
     }
+    /// The shell of the app terminal `pid` runs in (the app's direct child on
+    /// its ancestor chain), when it runs in one. Probes that cannot tell say None.
+    fn terminal_pid(&self, _pid: u32) -> Option<u32> {
+        None
+    }
 }
 
 #[derive(Deserialize)]

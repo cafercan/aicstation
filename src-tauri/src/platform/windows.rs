@@ -69,7 +69,7 @@ const PARENT_MAP_TTL: Duration = Duration::from_millis(500);
 struct ProcCache {
     at: Instant,
     table: HashMap<u32, ProcInfo>,
-    hosts: HashMap<u32, HostKind>,
+    hosts: HashMap<u32, Host>,
 }
 
 pub struct WinProbe {
@@ -172,6 +172,20 @@ pub(super) fn terminate_verified(pid: u32, proc_start: u64) -> Result<(), String
     Ok(())
 }
 
+impl WinProbe {
+    /// Ancestor-walk result for `pid`, cached with the process table.
+    fn host(&self, pid: u32) -> Option<Host> {
+        self.with_procs(|c| {
+            if let Some(h) = c.hosts.get(&pid) {
+                return *h;
+            }
+            let h = host_of(pid, &c.table);
+            c.hosts.insert(pid, h);
+            h
+        })
+    }
+}
+
 impl ProcessProbe for WinProbe {
     fn start_filetime(&self, pid: u32) -> Option<u64> {
         unsafe {
@@ -188,15 +202,14 @@ impl ProcessProbe for WinProbe {
     }
 
     fn host_kind(&self, pid: u32) -> HostKind {
-        self.with_procs(|c| {
-            if let Some(k) = c.hosts.get(&pid) {
-                return *k;
-            }
-            let k = host_of(pid, &c.table).kind();
-            c.hosts.insert(pid, k);
-            k
-        })
-        .unwrap_or_default()
+        self.host(pid).map_or_else(HostKind::default, Host::kind)
+    }
+
+    fn terminal_pid(&self, pid: u32) -> Option<u32> {
+        match self.host(pid)? {
+            Host::Embedded(shell) => Some(shell),
+            _ => None,
+        }
     }
 }
 

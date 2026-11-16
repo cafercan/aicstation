@@ -25,6 +25,8 @@ pub const PUMP_BUDGET: u64 = 32 * 1024 * 1024;
 pub struct SessionCard {
     pub session_id: String,
     pub pid: u32,
+    /// The app terminal's shell when the session runs in one (matched against
+    /// the terminal's pid by the UI), otherwise the direct parent.
     pub parent_pid: Option<u32>,
     pub name: String,
     pub cwd: String,
@@ -425,7 +427,7 @@ impl Monitor {
                 waiting += 1;
             }
             let stats = &self.states[&l.session_id].stats;
-            cards.push(make_card(&l.session_id, Some(l), probe.parent_pid(l.pid), probe.host_kind(l.pid), stats, &tree));
+            cards.push(make_card(&l.session_id, Some(l), probe.terminal_pid(l.pid).or_else(|| probe.parent_pid(l.pid)), probe.host_kind(l.pid), stats, &tree));
         }
         cards.sort_by(|a, b| {
             status_rank(&a.status)
@@ -498,7 +500,7 @@ impl Monitor {
         let tree = self.update_live(session_id, now);
         let stats = &self.states[session_id].stats;
         Some(SessionDetail {
-            card: make_card(session_id, Some(&l), probe.parent_pid(l.pid), probe.host_kind(l.pid), stats, &tree),
+            card: make_card(session_id, Some(&l), probe.terminal_pid(l.pid).or_else(|| probe.parent_pid(l.pid)), probe.host_kind(l.pid), stats, &tree),
             first_cwd: stats.first_cwd.clone(),
             tokens: stats.tokens,
             tool_call_count: stats.tool_call_count,
@@ -741,6 +743,32 @@ mod tests {
         assert_eq!(snap.sessions[0].session_id, id(1));
         assert_eq!(snap.sessions[0].parent_pid, Some(2));
         assert_eq!(snap.sessions[0].host_kind, HostKind::Other, "default probe knows no host");
+    }
+
+    /// Claude behind a launcher in an app terminal: direct parent 50, terminal shell 40.
+    struct LauncherProbe;
+    impl ProcessProbe for LauncherProbe {
+        fn start_filetime(&self, pid: u32) -> Option<u64> {
+            Some(1000 + pid as u64)
+        }
+        fn parent_pid(&self, _pid: u32) -> Option<u32> {
+            Some(50)
+        }
+        fn host_kind(&self, _pid: u32) -> HostKind {
+            HostKind::Embedded
+        }
+        fn terminal_pid(&self, _pid: u32) -> Option<u32> {
+            Some(40)
+        }
+    }
+
+    #[test]
+    fn card_parent_pid_is_the_app_terminal_shell_when_a_launcher_sits_between() {
+        let e = Env::new();
+        e.reg(1, &id(1), "idle", 10, None);
+        let mut m = e.mon();
+        assert_eq!(m.refresh(&LauncherProbe, now()).sessions[0].parent_pid, Some(40));
+        assert_eq!(m.live_detail(&id(1), &LauncherProbe, now()).unwrap().card.parent_pid, Some(40));
     }
 
     struct WtProbe;
