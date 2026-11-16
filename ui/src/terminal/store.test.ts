@@ -35,7 +35,7 @@ vi.mock("@xterm/addon-clipboard", () => ({ ClipboardAddon: class { kind = "clipb
 
 import { ubuntuTheme, terminalFont, renderOptions } from "./theme";
 import {
-  confirmClose, getTerminals, killOrphans, openResumeTerminal, openTerminal, setFontSize, terminalForPid, terminalName,
+  confirmClose, getTerminals, killOrphans, openAdoptTerminal, openResumeTerminal, openTerminal, setFontSize, terminalForPid, terminalName,
 } from "./store";
 import { resetUiState } from "../testing/reset";
 import type { SessionCard } from "../api";
@@ -48,7 +48,7 @@ function card(over: Partial<SessionCard>): SessionCard {
   return {
     sessionId: "s", pid: 1, parentPid: null, name: "demo", cwd: "C:/x", status: "idle",
     waitingFor: null, model: null, contextPct: null, costUsd: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 }, agentsTotal: 0,
-    agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 0, gitBranch: null, hostKind: "other", ...over,
+    agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 0, gitBranch: null, hostKind: "other", movable: false, agentsRunning: 0, ...over,
   };
 }
 
@@ -264,4 +264,14 @@ test("devam terminali: ad yoksa \"Devam: <kısa id>\"; hata atılır ve terminal
   });
   await expect(openResumeTerminal("f00dcafe-0000-4000-8000-000000000001", "x")).rejects.toBe("session_live");
   expect(getTerminals().map((x) => x.id)).toEqual([12]);
+});
+
+test("openAdoptTerminal_invokes_adopt_session", async () => {
+  invoke.mockImplementation(async (cmd: string) => (cmd === "adopt_session" ? { id: 21, pid: 77 } : undefined));
+  const t = await openAdoptTerminal("f00dcafe-0000-4000-8000-000000000001", "projem");
+  const call = invoke.mock.calls.find((c) => c[0] === "adopt_session")!;
+  expect(Object.keys(call[1] as object).sort()).toEqual(["cols", "onExit", "onOutput", "rows", "sessionId"]);
+  expect(call[1]).toMatchObject({ sessionId: "f00dcafe-0000-4000-8000-000000000001", cols: 80, rows: 24 });
+  expect(terminalName(t, [])).toBe("projem");
+  expect(getTerminals().map((x) => x.id)).toEqual([21]);
 });

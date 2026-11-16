@@ -70,7 +70,7 @@ test("Claude bar: only under a terminal running a Claude session, and only while
     model: "claude-opus-5-5", contextPct: 10, costUsd: 0,
     tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 },
     agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 0,
-    gitBranch: null, hostKind: "embedded",
+    gitBranch: null, hostKind: "embedded", movable: false, agentsRunning: 0,
   } as const;
   const { container } = render(<>
     <TerminalView entry={entry(1)} visible pane={{ left: 0, width: 50 }} active session={session} />

@@ -5,7 +5,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { Terminal } from "@xterm/xterm";
 import { useSyncExternalStore } from "react";
-import { ptySpawnResume, type PtyInfo, type SessionCard } from "../api";
+import { adoptSession, ptySpawnResume, type PtyInfo, type SessionCard } from "../api";
 import { t, type Key, type Params } from "../i18n";
 import { onTestReset } from "../prefs";
 import { clampFontSize } from "./keys";
@@ -103,6 +103,14 @@ export function openTerminal(): Promise<TerminalEntry> {
 export function openResumeTerminal(sessionId: string, name?: string): Promise<TerminalEntry> {
   return startTerminal(
     (cols, rows, onOutput, onExit) => ptySpawnResume(sessionId, cols, rows, onOutput, onExit),
+    name ? { text: name } : { key: "term.resumeTitle", params: { id: sessionId.slice(0, 8) } },
+  );
+}
+
+/** Like `openResumeTerminal`, but first ends the idle external Claude (done by the backend). */
+export function openAdoptTerminal(sessionId: string, name?: string): Promise<TerminalEntry> {
+  return startTerminal(
+    (cols, rows, onOutput, onExit) => adoptSession(sessionId, cols, rows, onOutput, onExit),
     name ? { text: name } : { key: "term.resumeTitle", params: { id: sessionId.slice(0, 8) } },
   );
 }

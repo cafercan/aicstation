@@ -15,7 +15,7 @@ function card(over: Partial<SessionCard> = {}): SessionCard {
     sessionId: "s1", pid: 1, parentPid: null, name: "demo", cwd: "C:/x/demo",
     status: "busy", waitingFor: null, model: "Opus 5.5", contextPct: 62,
     costUsd: 1.2, tokens: { input: 1_000_000, output: 200_000, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 }, agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null,
-    startedAtMs: 0, lastActivityMs: 0, gitBranch: "main", hostKind: "other", ...over,
+    startedAtMs: 0, lastActivityMs: 0, gitBranch: "main", hostKind: "other", movable: false, agentsRunning: 0, ...over,
   };
 }
 

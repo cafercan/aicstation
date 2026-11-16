@@ -51,6 +51,10 @@ export interface SessionCard {
   gitBranch: string | null;
   /** Where the Claude process runs; "other" for closed sessions. */
   hostKind: HostKind;
+  /** Interactive CLI session that can be moved into an app terminal. */
+  movable: boolean;
+  /** Agents of this session currently running. */
+  agentsRunning: number;
 }
 
 export type HostKind = "embedded" | "windowsTerminal" | "other";
@@ -168,6 +172,10 @@ export interface PtyInfo { id: number; pid: number }
 export const ptySpawnResume = (
   sessionId: string, cols: number, rows: number, onOutput: Channel<number[]>, onExit: Channel<number>,
 ) => invoke<PtyInfo>("pty_spawn_resume", { sessionId, cols, rows, onOutput, onExit });
+/** Ends the idle external Claude and resumes the session in an app terminal; only the id is sent. */
+export const adoptSession = (
+  sessionId: string, cols: number, rows: number, onOutput: Channel<number[]>, onExit: Channel<number>,
+) => invoke<PtyInfo>("adopt_session", { sessionId, cols, rows, onOutput, onExit });
 /**
  * Brings the session's Windows Terminal tab forward. Only the id is sent;
  * resolves to a note when the window was focused but no tab was selected.
