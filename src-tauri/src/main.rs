@@ -344,6 +344,7 @@ fn main() {
             commands::open_folder,
             commands::pty_spawn,
             commands::pty_spawn_resume,
+            commands::adopt_session,
             commands::pty_write,
             commands::pty_resize,
             commands::pty_kill,

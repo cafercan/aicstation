@@ -13,6 +13,7 @@
     "allow-open-folder",
     "allow-pty-spawn",
     "allow-pty-spawn-resume",
+    "allow-adopt-session",
     "allow-pty-write",
     "allow-pty-resize",
     "allow-pty-kill",

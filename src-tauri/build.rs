@@ -9,6 +9,7 @@ const COMMANDS: &[&str] = &[
     "open_folder",
     "pty_spawn",
     "pty_spawn_resume",
+    "adopt_session",
     "pty_write",
     "pty_resize",
     "pty_kill",

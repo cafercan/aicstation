@@ -69,6 +69,21 @@ pub const SETTINGS_SAVE_FAILED: &str = "settings_save_failed";
 /// Content search query is not 2..=200 characters (or has control characters).
 pub const SEARCH_QUERY_INVALID: &str = "search_query_invalid";
 
+/// Moving a session into the app ("adopt"): the session is not an
+/// interactive terminal CLI session.
+pub const ADOPT_NOT_MOVABLE: &str = "adopt_not_movable";
+/// The session is working (or in an unknown state); only an idle one moves.
+pub const ADOPT_BUSY: &str = "adopt_busy";
+/// The session waits for the user (permission prompt, question).
+pub const ADOPT_WAITING: &str = "adopt_waiting";
+/// The session has agents running.
+pub const ADOPT_AGENTS_RUNNING: &str = "adopt_agents_running";
+/// The session already runs in an app terminal.
+pub const ADOPT_EMBEDDED: &str = "adopt_embedded";
+/// A move of this session is already under way.
+pub const ADOPT_IN_PROGRESS: &str = "adopt_in_progress";
+/// The ended session did not leave the registry in time.
+pub const ADOPT_TIMEOUT: &str = "adopt_timeout";
 /// The process outside the app could not be terminated (adopting a session).
 pub const ADOPT_KILL_FAILED: &str = "adopt_kill_failed";
 
@@ -86,6 +101,7 @@ pub const ALL: &[&str] = &[
     TERMINAL_NOT_FOUND, TERMINAL_OPEN_FAILED, SHELL_NOT_FOUND, BUTAGLYPH_NOT_FOUND, BUTAGLYPH_FAILED,
     TAB_NOT_FOUND, TAB_AMBIGUOUS, TAB_NO_MATCH, TAB_SELECT_FAILED,
     SETTINGS_INVALID, SETTINGS_SAVE_FAILED, SEARCH_QUERY_INVALID,
+    ADOPT_NOT_MOVABLE, ADOPT_BUSY, ADOPT_WAITING, ADOPT_AGENTS_RUNNING, ADOPT_EMBEDDED, ADOPT_IN_PROGRESS, ADOPT_TIMEOUT,
     ADOPT_KILL_FAILED,
 ];
 

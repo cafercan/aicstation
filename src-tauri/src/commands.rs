@@ -3,8 +3,9 @@
 //! without a webview. All arguments from the UI are untrusted.
 use crate::errors;
 use station_core::history::{cost_on_rows, HistoryIndex, HistoryRow};
+use station_core::host::HostKind;
 use station_core::locate::{cwd_matches_project_dir, is_session_id, Locator};
-use station_core::monitor::{ClosedKey, Monitor, SessionDetail, Snapshot};
+use station_core::monitor::{AdoptRefusal, AdoptSource, ClosedKey, Monitor, SessionDetail, Snapshot};
 use station_core::registry::ProcessProbe;
 use station_core::search::{search_transcripts_limited, validate_query, Limits, SearchOutcome};
 use serde::Serialize;
@@ -18,6 +19,10 @@ const MAX_ID_LEN: usize = 64;
 /// A cached snapshot older than this is recomputed by `get_snapshot` (guards
 /// against a stalled background thread).
 const SNAPSHOT_MAX_AGE: Duration = Duration::from_secs(3);
+/// How often `wait_not_live` re-reads the registry.
+const ADOPT_POLL: Duration = Duration::from_millis(200);
+/// How long `adopt_session` waits for the ended session to leave the registry.
+const ADOPT_WAIT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -80,6 +85,44 @@ pub struct AppState {
     /// Generation of the latest content search; a running search whose
     /// generation differs stops at its next line.
     search_gen: AtomicU32,
+    /// Session ids with a move into the app under way (`adopt_session`).
+    adopting: Mutex<HashSet<String>>,
+}
+
+/// Holds a session id in `AppState::adopting`; dropping it releases the id.
+pub struct AdoptGuard<'a> {
+    state: &'a AppState,
+    session_id: String,
+}
+
+impl Drop for AdoptGuard<'_> {
+    fn drop(&mut self) {
+        lock(&self.state.adopting).remove(&self.session_id);
+    }
+}
+
+/// Error code for a refused move.
+fn adopt_refusal_code(r: AdoptRefusal) -> &'static str {
+    match r {
+        AdoptRefusal::NotLive => errors::SESSION_NOT_LIVE,
+        AdoptRefusal::NotMovable => errors::ADOPT_NOT_MOVABLE,
+        AdoptRefusal::Busy => errors::ADOPT_BUSY,
+        AdoptRefusal::Waiting => errors::ADOPT_WAITING,
+        AdoptRefusal::AgentsRunning => errors::ADOPT_AGENTS_RUNNING,
+    }
+}
+
+/// The folder a session resumes in: its first recorded cwd, which must be an
+/// absolute, local, existing directory whose Claude Code project-folder name
+/// is `project_dir` (the folder the transcript sits in). Anything else is
+/// `resume_folder_mismatch[:<folder code>]`.
+fn checked_resume_dir(first_cwd: &str, project_dir: &str) -> Result<PathBuf, String> {
+    let dir = validate_open_folder(first_cwd, &[first_cwd.to_string()])
+        .map_err(|e| errors::with(errors::RESUME_FOLDER_MISMATCH, e))?;
+    if !cwd_matches_project_dir(first_cwd, project_dir) {
+        return Err(errors::RESUME_FOLDER_MISMATCH.into());
+    }
+    Ok(dir)
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -106,6 +149,7 @@ impl AppState {
             history_dirty: AtomicBool::new(false),
             closed_cache: Mutex::new(None),
             search_gen: AtomicU32::new(0),
+            adopting: Mutex::new(HashSet::new()),
         };
         state.publish_history();
         state
@@ -319,12 +363,54 @@ impl AppState {
             return Err(errors::SESSION_LIVE.into());
         }
         let src = self.resume_source(session_id).ok_or(errors::SESSION_UNKNOWN)?;
-        let dir = validate_open_folder(&src.first_cwd, std::slice::from_ref(&src.first_cwd))
-            .map_err(|e| errors::with(errors::RESUME_FOLDER_MISMATCH, e))?;
-        if !cwd_matches_project_dir(&src.first_cwd, &src.project_dir) {
-            return Err(errors::RESUME_FOLDER_MISMATCH.into());
-        }
+        let dir = checked_resume_dir(&src.first_cwd, &src.project_dir)?;
         Ok((session_id.to_string(), dir))
+    }
+
+    /// Session id, resume folder and process of a live session that may be
+    /// moved into the app: an interactive terminal CLI session, idle with no
+    /// agent running (read fresh from the registry and transcript, never from
+    /// the cached snapshot), not already in an app terminal, whose first
+    /// recorded cwd passes the same folder checks as `resume_target`. The
+    /// folder is taken now, before the process is ended.
+    pub fn adopt_target(&self, session_id: &str) -> Result<(String, PathBuf, AdoptSource), String> {
+        if !is_session_id(session_id) {
+            return Err(errors::SESSION_INVALID.into());
+        }
+        let src = lock(&self.monitor)
+            .adopt_check(session_id, self.probe.as_ref(), SystemTime::now())
+            .map_err(adopt_refusal_code)?;
+        if self.probe.host_kind(src.pid) == HostKind::Embedded {
+            return Err(errors::ADOPT_EMBEDDED.into());
+        }
+        let dir = checked_resume_dir(&src.first_cwd, &src.project_dir)?;
+        Ok((session_id.to_string(), dir, src))
+    }
+
+    /// Marks a move of `session_id` as under way until the guard is dropped;
+    /// a second move of the same session meanwhile is `adopt_in_progress`.
+    pub fn begin_adopt(&self, session_id: &str) -> Result<AdoptGuard<'_>, String> {
+        if !lock(&self.adopting).insert(session_id.to_string()) {
+            return Err(errors::ADOPT_IN_PROGRESS.into());
+        }
+        Ok(AdoptGuard { state: self, session_id: session_id.to_string() })
+    }
+
+    /// Re-reads the registry every 200 ms until `session_id` is no longer
+    /// live (the ended process may linger briefly: `TerminateProcess` is
+    /// asynchronous). `adopt_timeout` once `timeout` has passed.
+    pub fn wait_not_live(&self, session_id: &str, timeout: Duration) -> Result<(), String> {
+        let start = Instant::now();
+        loop {
+            if !self.refresh().sessions.iter().any(|s| s.session_id == session_id) {
+                return Ok(());
+            }
+            let left = timeout.saturating_sub(start.elapsed());
+            if left.is_zero() {
+                return Err(errors::ADOPT_TIMEOUT.into());
+            }
+            std::thread::sleep(left.min(ADOPT_POLL));
+        }
     }
 
     /// Pid and name of a live session for "Sekmeye git", both from the
@@ -1103,6 +1189,143 @@ mod tests {
         let next = state.search_history("satır 5", 8).unwrap();
         assert!(!next.cancelled && !next.hits.is_empty());
     }
+
+    const ADOPT_ID: &str = "12121212-2222-4333-8444-555555555555";
+
+    /// FakeProbe whose processes all run in an app terminal.
+    struct EmbeddedProbe(FakeProbe);
+    impl ProcessProbe for EmbeddedProbe {
+        fn start_filetime(&self, pid: u32) -> Option<u64> {
+            self.0.start_filetime(pid)
+        }
+        fn parent_pid(&self, pid: u32) -> Option<u32> {
+            self.0.parent_pid(pid)
+        }
+        fn host_kind(&self, _pid: u32) -> station_core::host::HostKind {
+            station_core::host::HostKind::Embedded
+        }
+    }
+
+    /// Live ADOPT_ID (pid 5151, interactive CLI, `status`) whose first cwd is
+    /// the existing `work` folder. `in_project`: the transcript sits in
+    /// `work`'s project folder (else in `C--demo`). Returns (claude dir, work,
+    /// registry file).
+    fn adopt_files(tmp: &Path, status: &str, in_project: bool) -> (PathBuf, PathBuf, PathBuf) {
+        let claude = tmp.join("claude");
+        let sessions = claude.join("sessions");
+        fs::create_dir_all(&sessions).unwrap();
+        let work = tmp.join("is klasoru");
+        fs::create_dir_all(&work).unwrap();
+        let w = work.to_string_lossy().into_owned();
+        let folder = if in_project { station_core::locate::project_dir_name(&w) } else { "C--demo".into() };
+        write_session(&claude.join("projects").join(folder), ADOPT_ID, &[&w]);
+        let reg = sessions.join("5151.json");
+        write_registry(&reg, &w, status);
+        (claude, work, reg)
+    }
+
+    fn write_registry(reg: &Path, cwd: &str, status: &str) {
+        let cwd = serde_json::to_string(cwd).unwrap();
+        fs::write(
+            reg,
+            format!(
+                r#"{{"pid":5151,"sessionId":"{ADOPT_ID}","cwd":{cwd},"procStart":"888","status":"{status}","kind":"interactive","entrypoint":"cli"}}"#
+            ),
+        )
+        .unwrap();
+    }
+
+    fn adopt_probe() -> FakeProbe {
+        FakeProbe(HashMap::from([(5151, 888)]))
+    }
+
+    #[test]
+    fn adopt_target_ok_for_idle_cli() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, work, _) = adopt_files(tmp.path(), "idle", true);
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(adopt_probe()));
+        let (id, dir, src) = state.adopt_target(ADOPT_ID).unwrap();
+        assert_eq!(id, ADOPT_ID);
+        same_dir(&dir, &work);
+        assert_eq!((src.pid, src.proc_start), (5151, 888));
+        assert_eq!(state.adopt_target("../x").unwrap_err(), errors::SESSION_INVALID);
+        assert_eq!(state.adopt_target(CLOSED_ID).unwrap_err(), errors::SESSION_NOT_LIVE);
+    }
+
+    #[test]
+    fn adopt_refuses_when_status_turned_busy() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, work, reg) = adopt_files(tmp.path(), "idle", true);
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(adopt_probe()));
+        assert_eq!(state.get_snapshot().sessions[0].status, station_core::registry::SessionStatus::Idle);
+        // The cached snapshot still says idle; the registry no longer does.
+        write_registry(&reg, &work.to_string_lossy(), "busy");
+        assert_eq!(state.adopt_target(ADOPT_ID).unwrap_err(), errors::ADOPT_BUSY);
+        write_registry(&reg, &work.to_string_lossy(), "waiting");
+        assert_eq!(state.adopt_target(ADOPT_ID).unwrap_err(), errors::ADOPT_WAITING);
+    }
+
+    #[test]
+    fn adopt_target_refuses_non_cli() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, _, reg) = adopt_files(tmp.path(), "idle", true);
+        let text = fs::read_to_string(&reg).unwrap().replace(r#""entrypoint":"cli""#, r#""entrypoint":"sdk-ts""#);
+        fs::write(&reg, text).unwrap();
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(adopt_probe()));
+        assert_eq!(state.adopt_target(ADOPT_ID).unwrap_err(), errors::ADOPT_NOT_MOVABLE);
+    }
+
+    #[test]
+    fn adopt_target_refuses_embedded() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, _, _) = adopt_files(tmp.path(), "idle", true);
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(EmbeddedProbe(adopt_probe())));
+        assert_eq!(state.adopt_target(ADOPT_ID).unwrap_err(), errors::ADOPT_EMBEDDED);
+    }
+
+    #[test]
+    fn adopt_target_refuses_folder_outside_project() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, _, _) = adopt_files(tmp.path(), "idle", false);
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(adopt_probe()));
+        assert_eq!(state.adopt_target(ADOPT_ID).unwrap_err(), errors::RESUME_FOLDER_MISMATCH);
+    }
+
+    #[test]
+    fn adopt_refuses_concurrent_move() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, _, _) = adopt_files(tmp.path(), "idle", true);
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(adopt_probe()));
+        let guard = state.begin_adopt(ADOPT_ID).unwrap();
+        assert_eq!(state.begin_adopt(ADOPT_ID).err().unwrap(), errors::ADOPT_IN_PROGRESS);
+        // Another session is not blocked.
+        assert!(state.begin_adopt(OK_ID).is_ok());
+        drop(guard);
+        assert!(state.begin_adopt(ADOPT_ID).is_ok(), "released on drop");
+    }
+
+    #[test]
+    fn wait_not_live_times_out() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, _, _) = adopt_files(tmp.path(), "idle", true);
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(adopt_probe()));
+        let t = Instant::now();
+        assert_eq!(state.wait_not_live(ADOPT_ID, Duration::from_millis(300)).unwrap_err(), errors::ADOPT_TIMEOUT);
+        assert!(t.elapsed() >= Duration::from_millis(300));
+        // A session that is not live returns at once.
+        assert!(state.wait_not_live(CLOSED_ID, Duration::from_millis(300)).is_ok());
+    }
+
+    #[test]
+    fn wait_not_live_returns_once_the_process_is_gone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, _, reg) = adopt_files(tmp.path(), "idle", true);
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(adopt_probe()));
+        assert_eq!(state.get_snapshot().sessions.len(), 1);
+        // Claude Code removes its registry file on exit.
+        fs::remove_file(&reg).unwrap();
+        assert!(state.wait_not_live(ADOPT_ID, Duration::from_secs(10)).is_ok());
+    }
 }
 
 // ---- terminals (ConPTY) ----------------------------------------------------
@@ -1165,6 +1388,43 @@ pub fn pty_spawn_resume(
     state.spawn_resume(
         &chosen_launch(&settings, Some(&id))?,
         &cwd,
+        &id,
+        cols,
+        rows,
+        move |b| on_output.send(b.to_vec()).is_ok(),
+        move |code| {
+            let _ = on_exit.send(code);
+        },
+    )
+}
+
+/// "Move to app": ends an idle Claude session running outside the app and
+/// resumes it in a new app terminal. The UI sends only the session id; pid,
+/// start time and folder come from the registry and transcript, read fresh.
+/// Order: in-flight guard, resume-terminal check, `adopt_target` (folder
+/// resolved before the kill), shell launch, kill only if the start time
+/// still matches, wait for the session to leave the registry, spawn.
+#[tauri::command(async)]
+pub fn adopt_session(
+    settings: tauri::State<'_, SettingsStore>,
+    app: tauri::State<'_, AppState>,
+    state: tauri::State<'_, PtyManager>,
+    session_id: String,
+    cols: u16,
+    rows: u16,
+    on_output: Channel<Vec<u8>>,
+    on_exit: Channel<i32>,
+) -> Result<PtyInfo, String> {
+    let _guard = app.begin_adopt(&session_id)?;
+    state.check_resume_terminal(&session_id)?;
+    let (id, dir, src) = app.adopt_target(&session_id)?;
+    // Resolved before the kill: a missing shell must not end the session.
+    let launch = chosen_launch(&settings, Some(&id))?;
+    crate::platform::terminate_verified(src.pid, src.proc_start)?;
+    app.wait_not_live(&id, ADOPT_WAIT)?;
+    state.spawn_resume(
+        &launch,
+        &dir,
         &id,
         cols,
         rows,
