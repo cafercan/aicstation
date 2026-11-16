@@ -21,13 +21,15 @@ export function openSessionView(
  * Follow-the-terminal rules (spec, "Decisions from review"). A session view
  * that holds a terminal follows whatever runs in that terminal: a new session
  * id (`/clear`, `/resume`) keeps the tab, no session left makes it the plain
- * terminal, a closed terminal falls back to the Info tab. A Terminal tab
- * without a terminal switches to the app terminal once the session runs in
- * one, or to a terminal started by Resume/Move whose session is not listed
- * yet (`pending`; the newest wins). Returns `v` itself when nothing changes.
+ * terminal, a closed terminal falls back to the Info tab. Without a
+ * terminal, once the session runs in an app terminal the Info tab attaches
+ * it and the Terminal tab switches to it; a Terminal tab also switches to a
+ * terminal that Resume/Move started for this session before the registry
+ * lists it (`pending`: terminal id -> session id; the newest wins).
+ * Returns `v` itself when nothing changes.
  */
 export function resolveView(
-  v: View, terminals: TerminalEntry[], sessions: SessionCard[], pending: ReadonlySet<number>,
+  v: View, terminals: TerminalEntry[], sessions: SessionCard[], pending: ReadonlyMap<number, string>,
 ): View {
   if (typeof v !== "object" || !("session" in v)) return v;
   if (v.terminal !== undefined) {
@@ -37,14 +39,25 @@ export function resolveView(
     if (!inside) return { terminal: entry.id };
     return inside.sessionId === v.session ? v : { session: inside.sessionId, tab: v.tab, terminal: entry.id };
   }
-  if (v.tab !== "terminal") return v;
   const card = sessions.find((s) => s.sessionId === v.session);
   const host = card && card.pid
     ? terminals.find((t) => sessionsIn(t, [card]).length > 0)
     : undefined;
-  if (host) return { terminal: host.id };
-  const waiting = terminals.filter((t) => pending.has(t.id)).map((t) => t.id);
+  if (host) return v.tab === "info" ? { session: v.session, tab: "info", terminal: host.id } : { terminal: host.id };
+  if (v.tab !== "terminal") return v;
+  const waiting = terminals.filter((t) => pending.get(t.id) === v.session).map((t) => t.id);
   return waiting.length > 0 ? { terminal: Math.max(...waiting) } : v;
+}
+
+/**
+ * View after app terminal `id` is closed: a plain view of it moves to `other`
+ * (the remaining split pane) or the dashboard. Session views are left alone;
+ * resolveView moves them to the Info tab once the terminal is gone.
+ */
+export function viewAfterClose(v: View, id: number, other: number | null): View {
+  // Same test as workspace.tsx termOf, kept here so this module stays free of UI imports.
+  if (typeof v !== "object" || "session" in v || v.terminal !== id) return v;
+  return other !== null ? { terminal: other } : "dashboard";
 }
 
 /**

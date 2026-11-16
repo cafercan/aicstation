@@ -272,6 +272,16 @@ const sidebar = (over: Partial<Parameters<typeof Sidebar>[0]> = {}) => (
     terminals={[{ id: 1, label: "projem", status: "shell" }]} {...over} />
 );
 
+test("kenar çubuğu: terminalli oturum görünümü o terminal satırını vurgular, Dashboard'u değil", () => {
+  const { unmount } = render(sidebar({ view: { session: "s1", tab: "info", terminal: 1 } }));
+  expect(screen.getByText("projem").closest(".item")!.className).toBe("item sub on");
+  expect(screen.getByText("▦ Dashboard").className).toBe("item");
+  unmount();
+  render(sidebar({ view: { session: "s1", tab: "info" } }));
+  expect(screen.getByText("projem").closest(".item")!.className).toBe("item sub");
+  expect(screen.getByText("▦ Dashboard").className).toBe("item on");
+});
+
 test("dil seçici: sekiz dil, seçim anında uygulanır ve kalıcıdır", () => {
   render(<>{sidebar()}<GeneralPrefs /></>);
   expect(screen.getByText("Geçmiş")).toBeTruthy();

@@ -94,7 +94,9 @@ export default function Sidebar({ view, terminals, onSelect, onNew, onClose, onO
       setWtError(typeof e === "string" || e instanceof Error ? errorText(e)
         : t(isWindows() ? "err.wt_open_failed" : "err.terminal_open_failed")));
   };
-  const isDash = view === "dashboard" || (typeof view === "object" && "session" in view);
+  // A session view shown with an app terminal highlights that terminal's row, not Dashboard.
+  const viewTerm = typeof view === "object" && "terminal" in view ? view.terminal : undefined;
+  const isDash = view === "dashboard" || (typeof view === "object" && "session" in view && viewTerm === undefined);
   return (
     <nav className="side">
       <div className={isDash ? "item on" : "item"} onClick={() => onSelect("dashboard")}>{t("nav.dashboard")}</div>
@@ -102,7 +104,7 @@ export default function Sidebar({ view, terminals, onSelect, onNew, onClose, onO
       <div className="head">{t("nav.terminals")}</div>
       {terminals.map((term) => (
         <div key={term.id}
-          className={typeof view === "object" && "terminal" in view && view.terminal === term.id ? "item sub on" : "item sub"}
+          className={viewTerm === term.id ? "item sub on" : "item sub"}
           onClick={() => onSelect({ terminal: term.id })}>
           {term.status
             ? <SessionMark color={statusColor(term.status)} size={12}

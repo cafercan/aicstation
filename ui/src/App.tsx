@@ -19,7 +19,7 @@ import {
   terminalForPid, terminalName,
   useTerminals,
 } from "./terminal/store";
-import { openSessionView } from "./sessionView";
+import { openSessionView, viewAfterClose } from "./sessionView";
 import "./app.css";
 import "./features.css";
 import { splitAfterClose, type Split } from "./terminal/split";
@@ -126,7 +126,7 @@ export default function App() {
     if (!confirmClose([id], snapRef.current.sessions)) return;
     // Closing a split pane leaves the other pane on screen.
     const other = splitAfterClose(splitRef.current, id).show;
-    setView((v) => (typeof v === "object" && "terminal" in v && v.terminal === id ? (other !== null ? { terminal: other } : "dashboard") : v));
+    setView((v) => viewAfterClose(v, id, other));
     void closeTerminal(id);
   }, []);
 

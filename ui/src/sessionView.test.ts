@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 import type { SessionCard } from "./api";
 import type { View } from "./components/Sidebar";
 import type { TerminalEntry } from "./terminal/store";
-import { moveState, openSessionView, resolveView, tabBarFor } from "./sessionView";
+import { moveState, openSessionView, resolveView, tabBarFor, viewAfterClose } from "./sessionView";
 
 function card(over: Partial<SessionCard>): SessionCard {
   return {
@@ -15,7 +15,7 @@ function card(over: Partial<SessionCard>): SessionCard {
 }
 
 const term = (id: number, pid: number) => ({ id, pid, n: id }) as unknown as TerminalEntry;
-const NONE: ReadonlySet<number> = new Set();
+const NONE: ReadonlyMap<number, string> = new Map();
 
 test("card_click_in_app_terminal_opens_terminal_tab", () => {
   const sessions = [card({ sessionId: "a", parentPid: 10, hostKind: "embedded" })];
@@ -60,14 +60,47 @@ test("terminal_tab_without_terminal_follows_session_into_app_terminal", () => {
 test("pending_terminal_wins_over_closed_placeholder", () => {
   const v: View = { session: "a", tab: "terminal" };
   const sessions = [card({ sessionId: "a", pid: 0, parentPid: null })];
-  expect(resolveView(v, [term(1, 10), term(2, 20)], sessions, new Set([2]))).toEqual({ terminal: 2 });
+  expect(resolveView(v, [term(1, 10), term(2, 20)], sessions, new Map([[2, "a"]]))).toEqual({ terminal: 2 });
+});
+
+test("pending_terminal_of_another_session_is_ignored", () => {
+  const v: View = { session: "b", tab: "terminal" };
+  const sessions = [card({ sessionId: "b", pid: 0, parentPid: null })];
+  const pending = new Map([[2, "a"]]);
+  expect(resolveView(v, [term(1, 10), term(2, 20)], sessions, pending)).toBe(v);
+});
+
+test("pending_newest_terminal_of_the_session_wins", () => {
+  const v: View = { session: "a", tab: "terminal" };
+  const pending = new Map([[2, "a"], [3, "a"], [4, "b"]]);
+  expect(resolveView(v, [term(2, 20), term(3, 30), term(4, 40)], [], pending)).toEqual({ terminal: 3 });
+});
+
+test("info_view_attaches_terminal_when_session_moves_into_app", () => {
+  const v: View = { session: "a", tab: "info" };
+  const sessions = [card({ sessionId: "a", parentPid: 20 })];
+  expect(resolveView(v, [term(1, 10), term(2, 20)], sessions, NONE)).toEqual({ session: "a", tab: "info", terminal: 2 });
+  // Closed session: stays as it is.
+  const closed = [card({ sessionId: "a", pid: 0, parentPid: 20 })];
+  expect(resolveView(v, [term(2, 20)], closed, NONE)).toBe(v);
+});
+
+test("closing_terminal_redirects_only_plain_terminal_views", () => {
+  expect(viewAfterClose({ terminal: 1 }, 1, 2)).toEqual({ terminal: 2 });
+  expect(viewAfterClose({ terminal: 1 }, 1, null)).toBe("dashboard");
+  const other: View = { terminal: 3 };
+  expect(viewAfterClose(other, 1, null)).toBe(other);
+  const sv: View = { session: "a", tab: "terminal", terminal: 1 };
+  expect(viewAfterClose(sv, 1, null)).toBe(sv);
+  // resolveView then falls back to Info once the terminal is gone.
+  expect(resolveView(sv, [], [], NONE)).toEqual({ session: "a", tab: "info" });
 });
 
 test("resolve_returns_same_object_when_unchanged", () => {
   const sessions = [card({ sessionId: "a", parentPid: 10 })];
   const views: View[] = [
     "dashboard", { terminal: 1 }, { session: "a", tab: "info", terminal: 1 },
-    { session: "a", tab: "info" }, { session: "x", tab: "terminal" },
+    { session: "x", tab: "info" }, { session: "x", tab: "terminal" },
   ];
   for (const v of views) expect(resolveView(v, [term(1, 10)], sessions, NONE)).toBe(v);
 });
