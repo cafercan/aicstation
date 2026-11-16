@@ -86,6 +86,24 @@ pub fn focus_session_tab(_pid: u32, _name: &str) -> Result<Option<String>, Strin
     Err(crate::errors::TAB_NOT_FOUND.into())
 }
 
+/// Terminates `pid` only if its start time still equals `proc_start` (the
+/// registry's `procStart`), so a recycled pid is never killed. Err is
+/// `session_not_live` (gone or different process) or `adopt_kill_failed`.
+#[cfg(windows)]
+pub fn terminate_verified(pid: u32, proc_start: u64) -> Result<(), String> {
+    windows::terminate_verified(pid, proc_start)
+}
+
+#[cfg(unix)]
+pub fn terminate_verified(pid: u32, proc_start: u64) -> Result<(), String> {
+    unix::terminate_verified(pid, proc_start)
+}
+
+#[cfg(not(any(windows, unix)))]
+pub fn terminate_verified(_pid: u32, _proc_start: u64) -> Result<(), String> {
+    Err(crate::errors::ADOPT_KILL_FAILED.into())
+}
+
 #[cfg(windows)]
 pub fn probe() -> Box<dyn ProcessProbe + Send + Sync> {
     Box::new(windows::WinProbe::new())

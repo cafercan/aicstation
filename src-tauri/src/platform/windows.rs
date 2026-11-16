@@ -17,7 +17,7 @@ use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
 };
 use windows_sys::Win32::System::Threading::{
-    GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    GetProcessTimes, OpenProcess, TerminateProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
 };
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
@@ -131,6 +131,37 @@ pub(super) fn host_of(pid: u32, table: &HashMap<u32, ProcInfo>) -> Host {
     find_host(pid, std::process::id(), table, creation_time)
 }
 
+/// Creation FILETIME of the process behind an open handle.
+fn handle_creation_time(h: &Handle) -> Option<u64> {
+    let zero = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
+    let (mut creation, mut exit, mut kernel, mut user) = (zero, zero, zero, zero);
+    if unsafe { GetProcessTimes(h.0, &mut creation, &mut exit, &mut kernel, &mut user) } == 0 {
+        return None;
+    }
+    Some(((creation.dwHighDateTime as u64) << 32) | creation.dwLowDateTime as u64)
+}
+
+/// Terminates `pid` when its creation time equals `proc_start`. The check and
+/// the kill use the same handle, so the pid cannot be recycled in between.
+pub(super) fn terminate_verified(pid: u32, proc_start: u64) -> Result<(), String> {
+    use crate::errors::{with, ADOPT_KILL_FAILED, SESSION_NOT_LIVE};
+    const ERROR_ACCESS_DENIED: i32 = 5;
+    let h = unsafe { OpenProcess(PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if h.is_null() {
+        // Gone (or never existed) is "not live"; access denied is a failed kill.
+        let e = std::io::Error::last_os_error();
+        return Err(if e.raw_os_error() == Some(ERROR_ACCESS_DENIED) { with(ADOPT_KILL_FAILED, e) } else { SESSION_NOT_LIVE.into() });
+    }
+    let h = Handle(h);
+    if handle_creation_time(&h) != Some(proc_start) {
+        return Err(SESSION_NOT_LIVE.into());
+    }
+    if unsafe { TerminateProcess(h.0, 1) } == 0 {
+        return Err(with(ADOPT_KILL_FAILED, std::io::Error::last_os_error()));
+    }
+    Ok(())
+}
+
 impl ProcessProbe for WinProbe {
     fn start_filetime(&self, pid: u32) -> Option<u64> {
         unsafe {
@@ -138,13 +169,7 @@ impl ProcessProbe for WinProbe {
             if h.is_null() {
                 return None;
             }
-            let h = Handle(h);
-            let zero = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
-            let (mut creation, mut exit, mut kernel, mut user) = (zero, zero, zero, zero);
-            if GetProcessTimes(h.0, &mut creation, &mut exit, &mut kernel, &mut user) == 0 {
-                return None;
-            }
-            Some(((creation.dwHighDateTime as u64) << 32) | creation.dwLowDateTime as u64)
+            handle_creation_time(&Handle(h))
         }
     }
 
@@ -252,6 +277,38 @@ mod tests {
         let n = persistent_env_names();
         assert!(n.contains("PATH"), "{n:?}");
         assert!(n.iter().all(|k| *k == k.to_ascii_uppercase()));
+    }
+
+    fn long_child() -> std::process::Child {
+        std::process::Command::new("ping")
+            .args(["-n", "30", "127.0.0.1"])
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap()
+    }
+
+    #[test]
+    fn terminate_kills_matching_process() {
+        let mut child = long_child();
+        let start = creation_time(child.id()).expect("start time");
+        assert_eq!(super::super::terminate_verified(child.id(), start), Ok(()));
+        let t = Instant::now();
+        while child.try_wait().unwrap().is_none() {
+            assert!(t.elapsed() < Duration::from_secs(2), "child still running");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    #[test]
+    fn terminate_refuses_wrong_start_time() {
+        let mut child = long_child();
+        let start = creation_time(child.id()).expect("start time");
+        let r = super::super::terminate_verified(child.id(), start + 1);
+        let alive = child.try_wait().unwrap().is_none();
+        let _ = child.kill();
+        let _ = child.wait();
+        assert_eq!(r, Err(crate::errors::SESSION_NOT_LIVE.to_string()));
+        assert!(alive);
     }
 
     #[test]

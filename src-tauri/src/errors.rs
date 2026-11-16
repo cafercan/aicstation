@@ -69,6 +69,9 @@ pub const SETTINGS_SAVE_FAILED: &str = "settings_save_failed";
 /// Content search query is not 2..=200 characters (or has control characters).
 pub const SEARCH_QUERY_INVALID: &str = "search_query_invalid";
 
+/// The process outside the app could not be terminated (adopting a session).
+pub const ADOPT_KILL_FAILED: &str = "adopt_kill_failed";
+
 /// `code:detail`.
 pub fn with(code: &str, detail: impl std::fmt::Display) -> String {
     format!("{code}:{detail}")
@@ -83,6 +86,7 @@ pub const ALL: &[&str] = &[
     TERMINAL_NOT_FOUND, TERMINAL_OPEN_FAILED, SHELL_NOT_FOUND, BUTAGLYPH_NOT_FOUND, BUTAGLYPH_FAILED,
     TAB_NOT_FOUND, TAB_AMBIGUOUS, TAB_NO_MATCH, TAB_SELECT_FAILED,
     SETTINGS_INVALID, SETTINGS_SAVE_FAILED, SEARCH_QUERY_INVALID,
+    ADOPT_KILL_FAILED,
 ];
 
 #[cfg(test)]

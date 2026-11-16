@@ -3,6 +3,7 @@
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use station_core::registry::ProcessProbe;
 
 /// Well-known system bin directories, tried before PATH so a program is not
 /// picked up from a user-writable PATH entry first.
@@ -88,9 +89,73 @@ pub fn open_external_terminal() -> Result<(), String> {
         .map_err(|e| crate::errors::with(crate::errors::TERMINAL_OPEN_FAILED, e))
 }
 
+/// Terminates `pid` when its start time still equals `proc_start`: SIGTERM,
+/// then SIGKILL if it is still there after 2 s.
+pub fn terminate_verified(pid: u32, proc_start: u64) -> Result<(), String> {
+    use crate::errors::{ADOPT_KILL_FAILED, SESSION_NOT_LIVE};
+    use std::time::{Duration, Instant};
+    let probe = super::probe();
+    if probe.start_filetime(pid) != Some(proc_start) {
+        return Err(SESSION_NOT_LIVE.into());
+    }
+    let gone = || probe.start_filetime(pid) != Some(proc_start) || is_zombie(pid);
+    let send = |sig: libc::c_int| unsafe { libc::kill(pid as libc::pid_t, sig) } == 0;
+    if !send(libc::SIGTERM) {
+        let esrch = std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH);
+        return Err(if esrch { SESSION_NOT_LIVE } else { ADOPT_KILL_FAILED }.into());
+    }
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        if gone() {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    send(libc::SIGKILL);
+    std::thread::sleep(Duration::from_millis(100));
+    if gone() { Ok(()) } else { Err(ADOPT_KILL_FAILED.into()) }
+}
+
+/// A killed child of this process stays a zombie (it still has a start time)
+/// until reaped; count it as gone. Reads /proc, so Linux only (false elsewhere).
+fn is_zombie(pid: u32) -> bool {
+    std::fs::read_to_string(format!("/proc/{pid}/stat"))
+        .ok()
+        .and_then(|s| s.rsplit_once(')').map(|(_, rest)| rest.trim_start().starts_with('Z')))
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn long_child() -> std::process::Child {
+        Command::new("sleep").arg("30").spawn().unwrap()
+    }
+
+    #[test]
+    fn terminate_kills_matching_process() {
+        let mut child = long_child();
+        let start = super::super::probe().start_filetime(child.id()).expect("start time");
+        assert_eq!(terminate_verified(child.id(), start), Ok(()));
+        let t = std::time::Instant::now();
+        while child.try_wait().unwrap().is_none() {
+            assert!(t.elapsed() < std::time::Duration::from_secs(2), "child still running");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
+
+    #[test]
+    fn terminate_refuses_wrong_start_time() {
+        let mut child = long_child();
+        let start = super::super::probe().start_filetime(child.id()).expect("start time");
+        let r = terminate_verified(child.id(), start + 1);
+        let alive = child.try_wait().unwrap().is_none();
+        let _ = child.kill();
+        let _ = child.wait();
+        assert_eq!(r, Err(crate::errors::SESSION_NOT_LIVE.to_string()));
+        assert!(alive);
+    }
 
     #[test]
     fn programs_resolve_to_absolute_executables_only() {

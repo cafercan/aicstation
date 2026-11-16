@@ -138,6 +138,7 @@ export const zh: Dict = {
   "err.session_resume_terminal_open": "此会话仍在恢复它的终端中打开",
   "err.session_unknown": "未知会话，或该会话没有文件夹",
   "err.session_not_live": "会话未在运行",
+  "err.adopt_kill_failed": "无法结束应用之外的进程",
   "err.resume_folder_mismatch": "无法在该会话的项目文件夹中恢复",
   "err.folder_unknown": "未知文件夹",
   "err.folder_network": "不支持网络路径",

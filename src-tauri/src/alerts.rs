@@ -283,6 +283,8 @@ mod tests {
             last_activity_ms: 0,
             git_branch: None,
             host_kind: HostKind::Other,
+            agents_running: 0,
+            movable: false,
         }
     }
 

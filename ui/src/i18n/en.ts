@@ -138,6 +138,7 @@ export const en: Dict = {
   "err.session_resume_terminal_open": "This session is still open in the terminal that resumed it",
   "err.session_unknown": "Unknown session, or it has no folder",
   "err.session_not_live": "The session is not running",
+  "err.adopt_kill_failed": "The process outside the app could not be ended",
   "err.resume_folder_mismatch": "Cannot resume in the session's project folder",
   "err.folder_unknown": "Unknown folder",
   "err.folder_network": "Network paths are not supported",

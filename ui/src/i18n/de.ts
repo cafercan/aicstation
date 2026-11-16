@@ -141,6 +141,7 @@ export const de: Dict = {
   "err.session_resume_terminal_open": "Diese Sitzung ist noch in dem Terminal offen, das sie fortgesetzt hat",
   "err.session_unknown": "Unbekannte Sitzung oder ohne Ordner",
   "err.session_not_live": "Die Sitzung läuft nicht",
+  "err.adopt_kill_failed": "Der Prozess außerhalb der App konnte nicht beendet werden",
   "err.resume_folder_mismatch": "Fortsetzen im Projektordner der Sitzung nicht möglich",
   "err.folder_unknown": "Unbekannter Ordner",
   "err.folder_network": "Netzwerkpfade werden nicht unterstützt",

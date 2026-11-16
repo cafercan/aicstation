@@ -141,6 +141,7 @@ export const fr: Dict = {
   "err.session_resume_terminal_open": "Cette session est encore ouverte dans le terminal qui l'a reprise",
   "err.session_unknown": "Session inconnue ou sans dossier",
   "err.session_not_live": "La session n'est pas en cours d'exécution",
+  "err.adopt_kill_failed": "Le processus extérieur à l'application n'a pas pu être arrêté",
   "err.resume_folder_mismatch": "Impossible de reprendre dans le dossier de projet de la session",
   "err.folder_unknown": "Dossier inconnu",
   "err.folder_network": "Les chemins réseau ne sont pas pris en charge",
