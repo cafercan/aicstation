@@ -280,9 +280,12 @@ pub fn run_chained(command: &str, input: &[u8]) -> (Vec<u8>, i32) {
 }
 
 /// `aicstation statusline --off` (run by the Windows uninstaller): puts the
-/// user's previous status line back. Returns the exit code.
+/// user's previous status line back, and forgets that "Show Claude usage
+/// limits" was turned on by default, so a reinstall turns it on again.
+/// Returns the exit code.
 pub fn run_off() -> i32 {
     let Some(dir) = data_dir() else { return 1 };
+    crate::settings::SettingsStore::open(dir.join("settings.json")).reset_usage_bridge_offered();
     match disable(&claude_settings(), &dir) {
         Ok(()) => 0,
         Err(e) => {

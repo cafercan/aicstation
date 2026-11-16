@@ -245,8 +245,18 @@ impl SettingsStore {
 
     /// Records that the usage limits bridge was turned on by default.
     pub fn mark_usage_bridge_offered(&self) {
+        self.set_usage_bridge_offered(true);
+    }
+
+    /// Forgets that the default was applied, so the next start turns the bridge
+    /// on again. The uninstaller does this: a reinstall starts from the defaults.
+    pub fn reset_usage_bridge_offered(&self) {
+        self.set_usage_bridge_offered(false);
+    }
+
+    fn set_usage_bridge_offered(&self, v: bool) {
         let mut cur = self.current.lock().unwrap_or_else(|e| e.into_inner());
-        cur.usage_bridge_offered = true;
+        cur.usage_bridge_offered = v;
         if let Err(e) = save(&self.path, &cur) {
             eprintln!("ayarlar kaydedilemedi: {e}");
         }
@@ -439,5 +449,17 @@ mod tests {
         let out = store.set_from_ui(Settings { usage_bridge_offered: false, ..Settings::default() }).unwrap();
         assert!(out.usage_bridge_offered);
         assert!(SettingsStore::open(p).get().usage_bridge_offered, "remembered across runs");
+    }
+
+    #[test]
+    fn an_uninstall_reset_makes_the_next_start_apply_the_usage_bridge_default_again() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join("settings.json");
+        let store = SettingsStore::open(p.clone());
+        store.mark_usage_bridge_offered();
+        SettingsStore::open(p.clone()).reset_usage_bridge_offered();
+        let after = SettingsStore::open(p);
+        assert!(!after.get().usage_bridge_offered);
+        assert!(after.get().close_to_tray, "other settings are kept");
     }
 }
