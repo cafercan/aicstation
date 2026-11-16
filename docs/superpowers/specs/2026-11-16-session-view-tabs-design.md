@@ -148,6 +148,24 @@ release is cut.
 - **Languages:** all nine dictionaries get the new strings and `adopt_*`
   error codes (the i18n test requires it); the builder writes them.
 
+## Changes from the final review (as built)
+
+- Order in `adopt_session`: id check → in-flight guard → resume-terminal
+  check → launch settings → PTY capacity check → `adopt_target` (host and
+  folder checks, then a fresh registry status read as the last step, which
+  must name the same pid and start time) → kill → wait → spawn. Everything
+  that can refuse happens before the kill.
+- Kill decision uses a stricter agent rule than the card: any subagent
+  without a `finished` marker whose transcript changed in the last 15 minutes
+  blocks the move (`adopt_agents_running`). The card's running count keeps the
+  display rule, so the button can be enabled and the backend still refuse.
+- Errors after the kill: `adopt_timeout` says the process was ended but has
+  not closed yet; any other failure after the kill is
+  `adopt_resume_failed:<inner>` and says to resume from the Terminal tab.
+- Windows: `TerminateProcess` then waits up to 3 s on the same handle. Only
+  the `claude` process is ended; its child processes (MCP servers,
+  background shells) are not.
+
 ## Left to the builder
 
 - Exact component split and file names.
