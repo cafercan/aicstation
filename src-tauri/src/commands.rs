@@ -373,17 +373,28 @@ impl AppState {
     /// the cached snapshot), not already in an app terminal, whose first
     /// recorded cwd passes the same folder checks as `resume_target`. The
     /// folder is taken now, before the process is ended.
+    ///
+    /// The idle check runs twice: once to learn the process and folder, and
+    /// again as the very last step, so the caller kills on a status read as
+    /// recent as possible. The second read must name the same process.
     pub fn adopt_target(&self, session_id: &str) -> Result<(String, PathBuf, AdoptSource), String> {
         if !is_session_id(session_id) {
             return Err(errors::SESSION_INVALID.into());
         }
-        let src = lock(&self.monitor)
-            .adopt_check(session_id, self.probe.as_ref(), SystemTime::now())
-            .map_err(adopt_refusal_code)?;
-        if self.probe.host_kind(src.pid) == HostKind::Embedded {
+        let check = || {
+            lock(&self.monitor)
+                .adopt_check(session_id, self.probe.as_ref(), SystemTime::now())
+                .map_err(adopt_refusal_code)
+        };
+        let first = check()?;
+        if self.probe.host_kind(first.pid) == HostKind::Embedded {
             return Err(errors::ADOPT_EMBEDDED.into());
         }
-        let dir = checked_resume_dir(&src.first_cwd, &src.project_dir)?;
+        let dir = checked_resume_dir(&first.first_cwd, &first.project_dir)?;
+        let src = check()?;
+        if (src.pid, src.proc_start) != (first.pid, first.proc_start) {
+            return Err(errors::SESSION_NOT_LIVE.into());
+        }
         Ok((session_id.to_string(), dir, src))
     }
 
@@ -399,6 +410,11 @@ impl AppState {
     /// Re-reads the registry every 200 ms until `session_id` is no longer
     /// live (the ended process may linger briefly: `TerminateProcess` is
     /// asynchronous). `adopt_timeout` once `timeout` has passed.
+    ///
+    /// Returns on the FIRST read without the session. That is safe only
+    /// because `adopt_session` calls it after `terminate_verified` succeeded
+    /// (a registry file being rewritten would otherwise read as "gone"); it
+    /// must never be moved before the kill.
     pub fn wait_not_live(&self, session_id: &str, timeout: Duration) -> Result<(), String> {
         let start = Instant::now();
         loop {
@@ -1305,6 +1321,17 @@ mod tests {
     }
 
     #[test]
+    fn errors_after_the_kill_say_the_process_was_ended() {
+        assert_eq!(after_kill(errors::ADOPT_TIMEOUT.into()), errors::ADOPT_TIMEOUT, "timeout keeps its own text");
+        assert_eq!(after_kill("pty_spawn_failed:os 5".into()), "adopt_resume_failed:pty_spawn_failed:os 5");
+        assert_eq!(after_kill("pty_limit:32".into()), "adopt_resume_failed:pty_limit:32");
+        assert_eq!(
+            after_kill("session_resume_terminal_open:3".into()),
+            "adopt_resume_failed:session_resume_terminal_open:3"
+        );
+    }
+
+    #[test]
     fn wait_not_live_times_out() {
         let tmp = tempfile::tempdir().unwrap();
         let (claude, _, _) = adopt_files(tmp.path(), "idle", true);
@@ -1344,6 +1371,17 @@ fn chosen_launch(settings: &SettingsStore, resume: Option<&str>) -> Result<crate
         ..crate::butaglyph::startup(&s.prompt, &s.prompt_preset)
     };
     crate::integration::launch(&shell, &startup)
+}
+
+/// An error once the outside process was ended: the session is closed now,
+/// so anything but the wait timeout is `adopt_resume_failed:<code>` (the user
+/// resumes it from the Terminal tab).
+fn after_kill(e: String) -> String {
+    if e == errors::ADOPT_TIMEOUT {
+        e
+    } else {
+        errors::with(errors::ADOPT_RESUME_FAILED, e)
+    }
 }
 
 #[tauri::command(async)]
@@ -1401,9 +1439,11 @@ pub fn pty_spawn_resume(
 /// "Move to app": ends an idle Claude session running outside the app and
 /// resumes it in a new app terminal. The UI sends only the session id; pid,
 /// start time and folder come from the registry and transcript, read fresh.
-/// Order: in-flight guard, resume-terminal check, `adopt_target` (folder
-/// resolved before the kill), shell launch, kill only if the start time
-/// still matches, wait for the session to leave the registry, spawn.
+/// Everything that can refuse runs before the kill, the fresh idle check
+/// last: in-flight guard, resume-terminal check, shell launch, terminal
+/// capacity, `adopt_target`; then kill only if the start time still matches,
+/// wait for the session to leave the registry, spawn. Errors after the kill
+/// go through `after_kill`.
 #[tauri::command(async)]
 pub fn adopt_session(
     settings: tauri::State<'_, SettingsStore>,
@@ -1415,24 +1455,33 @@ pub fn adopt_session(
     on_output: Channel<Vec<u8>>,
     on_exit: Channel<i32>,
 ) -> Result<PtyInfo, String> {
+    if !is_session_id(&session_id) {
+        return Err(errors::SESSION_INVALID.into());
+    }
     let _guard = app.begin_adopt(&session_id)?;
     state.check_resume_terminal(&session_id)?;
+    // Resolved before the kill: a missing shell or a full terminal list must
+    // not end the session.
+    let launch = chosen_launch(&settings, Some(&session_id))?;
+    state.check_capacity()?;
     let (id, dir, src) = app.adopt_target(&session_id)?;
-    // Resolved before the kill: a missing shell must not end the session.
-    let launch = chosen_launch(&settings, Some(&id))?;
     crate::platform::terminate_verified(src.pid, src.proc_start)?;
-    app.wait_not_live(&id, ADOPT_WAIT)?;
-    state.spawn_resume(
-        &launch,
-        &dir,
-        &id,
-        cols,
-        rows,
-        move |b| on_output.send(b.to_vec()).is_ok(),
-        move |code| {
-            let _ = on_exit.send(code);
-        },
-    )
+    // Must stay right after the kill: wait_not_live returns on the first read
+    // without the session.
+    app.wait_not_live(&id, ADOPT_WAIT).map_err(after_kill)?;
+    state
+        .spawn_resume(
+            &launch,
+            &dir,
+            &id,
+            cols,
+            rows,
+            move |b| on_output.send(b.to_vec()).is_ok(),
+            move |code| {
+                let _ = on_exit.send(code);
+            },
+        )
+        .map_err(after_kill)
 }
 
 #[tauri::command(async)]

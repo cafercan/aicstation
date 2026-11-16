@@ -86,6 +86,9 @@ pub const ADOPT_IN_PROGRESS: &str = "adopt_in_progress";
 pub const ADOPT_TIMEOUT: &str = "adopt_timeout";
 /// The process outside the app could not be terminated (adopting a session).
 pub const ADOPT_KILL_FAILED: &str = "adopt_kill_failed";
+/// The process outside the app was ended, but the resume terminal could not
+/// be opened: `adopt_resume_failed:<inner code>`.
+pub const ADOPT_RESUME_FAILED: &str = "adopt_resume_failed";
 
 /// `code:detail`.
 pub fn with(code: &str, detail: impl std::fmt::Display) -> String {
@@ -102,7 +105,7 @@ pub const ALL: &[&str] = &[
     TAB_NOT_FOUND, TAB_AMBIGUOUS, TAB_NO_MATCH, TAB_SELECT_FAILED,
     SETTINGS_INVALID, SETTINGS_SAVE_FAILED, SEARCH_QUERY_INVALID,
     ADOPT_NOT_MOVABLE, ADOPT_BUSY, ADOPT_WAITING, ADOPT_AGENTS_RUNNING, ADOPT_EMBEDDED, ADOPT_IN_PROGRESS, ADOPT_TIMEOUT,
-    ADOPT_KILL_FAILED,
+    ADOPT_KILL_FAILED, ADOPT_RESUME_FAILED,
 ];
 
 #[cfg(test)]

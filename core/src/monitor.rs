@@ -211,6 +211,25 @@ fn running_agents(nodes: &[AgentNode]) -> u32 {
         .sum()
 }
 
+/// An agent without a `finished` marker whose transcript changed within this
+/// window may still be running as far as a move into the app is concerned
+/// (stricter than the display's `RUNNING_WINDOW`: a long tool call writes
+/// nothing for minutes).
+pub const ADOPT_AGENT_WINDOW: Duration = Duration::from_secs(15 * 60);
+
+/// Whether any agent may still be running, for the kill decision only:
+/// shown as running, or not marked finished and changed within
+/// `ADOPT_AGENT_WINDOW` (a future mtime counts as recent).
+fn agent_may_run(nodes: &[AgentNode], now: SystemTime) -> bool {
+    nodes.iter().any(|n| {
+        let own = n.kind == AgentKind::Agent
+            && (n.state == AgentState::Running
+                || n.unfinished_mtime
+                    .is_some_and(|mt| now.duration_since(mt).map_or(true, |d| d <= ADOPT_AGENT_WINDOW)));
+        own || agent_may_run(&n.children, now)
+    })
+}
+
 fn status_rank(s: &SessionStatus) -> u8 {
     match s {
         SessionStatus::Waiting => 0,
@@ -429,7 +448,8 @@ impl Monitor {
     }
 
     /// Checks that a live session can be moved into the app and returns what the
-    /// move needs. Reads the registry fresh; idle means status idle and no running agent.
+    /// move needs. Reads the registry fresh; idle means status idle and no agent
+    /// that may still run (see `agent_may_run`).
     pub fn adopt_check(
         &mut self,
         session_id: &str,
@@ -449,7 +469,7 @@ impl Monitor {
             SessionStatus::Busy | SessionStatus::Other(_) => return Err(AdoptRefusal::Busy),
         }
         let tree = self.update_live(session_id, now);
-        if running_agents(&tree.roots) > 0 {
+        if agent_may_run(&tree.roots, now) {
             return Err(AdoptRefusal::AgentsRunning);
         }
         let first_cwd = self.states[session_id].stats.first_cwd.clone().filter(|c| !c.is_empty());
@@ -1045,6 +1065,27 @@ mod tests {
         running_agent(&e, &sid);
         let real_now = SystemTime::now();
         assert_eq!(m.adopt_check(&sid, &FakeProbe, real_now).unwrap_err(), AdoptRefusal::AgentsRunning);
+    }
+
+    #[test]
+    fn adopt_check_refuses_unfinished_agent_seen_recently() {
+        let (e, sid, mut m) = adopt_env("idle", CLI);
+        let sub = e.dir.path().join("projects/proj-a").join(&sid).join("subagents");
+        fs::create_dir_all(&sub).unwrap();
+        // No finished marker; the last line is a tool_result, so no open tool.
+        let agent = sub.join("agent-q.jsonl");
+        e.append(&agent, &edit_lines("s1", "Edit", "/w/a.rs", "2026-11-02T07:00:00Z"));
+        let mtime = fs::metadata(&agent).unwrap().modified().unwrap();
+        let five = mtime + Duration::from_secs(5 * 60);
+        assert_eq!(m.adopt_check(&sid, &FakeProbe, five).unwrap_err(), AdoptRefusal::AgentsRunning);
+        // The display heuristic (2 min) already calls it finished.
+        assert_eq!(m.refresh(&FakeProbe, five).sessions[0].agents_running, 0);
+        let twenty = mtime + Duration::from_secs(20 * 60);
+        assert!(m.adopt_check(&sid, &FakeProbe, twenty).is_ok());
+        // A finished marker clears it at once.
+        fs::write(sub.join("agent-q.meta.json"), r#"{"finished":true}"#).unwrap();
+        let mut fresh = e.mon();
+        assert!(fresh.adopt_check(&sid, &FakeProbe, five).is_ok());
     }
 
     #[test]

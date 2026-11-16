@@ -43,6 +43,11 @@ pub struct AgentNode {
     pub state: AgentState,
     pub stats: SessionStats,
     pub children: Vec<AgentNode>,
+    /// Transcript mtime of an agent without a `finished` marker; `None` once
+    /// marked finished, when the mtime is unreadable, and for workflow/phase
+    /// nodes. Feeds only the move-into-app check, never the display.
+    #[serde(skip)]
+    pub unfinished_mtime: Option<SystemTime>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -277,13 +282,11 @@ impl AgentCache {
         });
         let meta = c.meta.clone();
         let stats = c.stats.clone();
+        let mtime = fs::metadata(jsonl).and_then(|m| m.modified()).ok();
         let state = if meta.finished || !session_live {
             AgentState::Finished
         } else {
-            let recent = fs::metadata(jsonl)
-                .and_then(|m| m.modified())
-                .map(|mt| now.duration_since(mt).map_or(true, |d| d <= RUNNING_WINDOW))
-                .unwrap_or(false);
+            let recent = mtime.is_some_and(|mt| now.duration_since(mt).map_or(true, |d| d <= RUNNING_WINDOW));
             let open_tool = stats.tool_calls.back().is_some_and(|c| c.state == ToolState::Running);
             if recent || open_tool {
                 AgentState::Running
@@ -300,6 +303,7 @@ impl AgentCache {
                 state,
                 stats,
                 children: Vec::new(),
+                unfinished_mtime: if meta.finished { None } else { mtime },
             },
             parent: meta.parent,
             phase: meta.phase,
@@ -335,6 +339,7 @@ impl AgentCache {
                     description: None,
                     stats,
                     children: agents,
+                    unfinished_mtime: None,
                 }
             })
             .collect();
@@ -350,6 +355,7 @@ impl AgentCache {
             state: any_running(phase_nodes.iter()),
             stats,
             children: phase_nodes,
+            unfinished_mtime: None,
         })
     }
 

@@ -291,6 +291,16 @@ impl PtyManager {
         self.resumed.lock().ok()?.holder(session_id)
     }
 
+    /// `pty_limit:<max>` when no further terminal may be opened now. Lets
+    /// `adopt_session` refuse before it ends the outside process; the spawn
+    /// itself still checks again.
+    pub fn check_capacity(&self) -> Result<(), String> {
+        if self.inner.lock().map_err(poisoned)?.ptys.len() >= MAX_PTYS {
+            return Err(crate::errors::with(crate::errors::PTY_LIMIT, MAX_PTYS));
+        }
+        Ok(())
+    }
+
     /// `Err` for a resume of a session held by one of our terminals.
     pub fn check_resume_terminal(&self, session_id: &str) -> Result<(), String> {
         let held = self.resumed.lock().map_err(poisoned)?.held.get(session_id).map(|h| h.pty);
@@ -978,9 +988,14 @@ mod tests {
         let m = PtyManager::new();
         let mut ids = Vec::new();
         for _ in 0..MAX_PTYS {
+            assert_eq!(m.check_capacity(), Ok(()), "room left");
             ids.push(m.spawn_cmd(IDLE, IDLE_ARGS, 80, 24, |_| true, |_| {}).unwrap().id);
         }
-        assert!(m.spawn_cmd(IDLE, IDLE_ARGS, 80, 24, |_| true, |_| {}).is_err());
+        let full = crate::errors::with(crate::errors::PTY_LIMIT, MAX_PTYS);
+        assert_eq!(m.check_capacity(), Err(full.clone()), "checked without spawning");
+        assert_eq!(m.spawn_cmd(IDLE, IDLE_ARGS, 80, 24, |_| true, |_| {}).unwrap_err(), full);
+        m.kill(ids.pop().unwrap()).unwrap();
+        assert_eq!(m.check_capacity(), Ok(()), "a closed terminal frees a slot");
         for id in ids {
             m.kill(id).unwrap();
         }

@@ -106,6 +106,9 @@ test("hata kodları çevrilir; bilinmeyen kod ve düz metin olduğu gibi kalır"
   expect(errorText("folder_open_failed:Erişim engellendi. (os error 5)", "tr"))
     .toBe("Klasör açılamadı: Erişim engellendi. (os error 5)");
   expect(errorText("tab_ambiguous", "az")).toBe(DICTS.az["err.tab_ambiguous"]);
+  expect(errorText("adopt_resume_failed:pty_limit:32", "en")).toBe(
+    `${DICTS.en["err.adopt_resume_failed"]}: At most 32 terminals can be open`,
+  );
   expect(errorText("weird_code", "tr")).toBe("weird_code");
   expect(errorText("command pty_spawn not found", "tr")).toBe("command pty_spawn not found");
   expect(errorText(new Error("session_unknown"), "en")).toBe(DICTS.en["err.session_unknown"]);

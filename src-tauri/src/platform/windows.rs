@@ -17,7 +17,8 @@ use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
 };
 use windows_sys::Win32::System::Threading::{
-    GetProcessTimes, OpenProcess, TerminateProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
+    GetProcessTimes, OpenProcess, TerminateProcess, WaitForSingleObject, PROCESS_QUERY_LIMITED_INFORMATION,
+    PROCESS_SYNCHRONIZE, PROCESS_TERMINATE,
 };
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
@@ -141,12 +142,19 @@ fn handle_creation_time(h: &Handle) -> Option<u64> {
     Some(((creation.dwHighDateTime as u64) << 32) | creation.dwLowDateTime as u64)
 }
 
+/// How long `terminate_verified` waits for the ended process to exit
+/// (`TerminateProcess` is asynchronous). Running out is not an error: the
+/// caller polls the registry anyway.
+const TERMINATE_WAIT_MS: u32 = 3000;
+
 /// Terminates `pid` when its creation time equals `proc_start`. The check and
 /// the kill use the same handle, so the pid cannot be recycled in between.
+/// Waits up to `TERMINATE_WAIT_MS` for the process to exit.
 pub(super) fn terminate_verified(pid: u32, proc_start: u64) -> Result<(), String> {
     use crate::errors::{with, ADOPT_KILL_FAILED, SESSION_NOT_LIVE};
     const ERROR_ACCESS_DENIED: i32 = 5;
-    let h = unsafe { OpenProcess(PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    let access = PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE;
+    let h = unsafe { OpenProcess(access, 0, pid) };
     if h.is_null() {
         // Gone (or never existed) is "not live"; access denied is a failed kill.
         let e = std::io::Error::last_os_error();
@@ -159,6 +167,8 @@ pub(super) fn terminate_verified(pid: u32, proc_start: u64) -> Result<(), String
     if unsafe { TerminateProcess(h.0, 1) } == 0 {
         return Err(with(ADOPT_KILL_FAILED, std::io::Error::last_os_error()));
     }
+    // Signalled on exit; a timeout or failure here is not an error.
+    unsafe { WaitForSingleObject(h.0, TERMINATE_WAIT_MS) };
     Ok(())
 }
 
@@ -292,11 +302,8 @@ mod tests {
         let mut child = long_child();
         let start = creation_time(child.id()).expect("start time");
         assert_eq!(super::super::terminate_verified(child.id(), start), Ok(()));
-        let t = Instant::now();
-        while child.try_wait().unwrap().is_none() {
-            assert!(t.elapsed() < Duration::from_secs(2), "child still running");
-            std::thread::sleep(Duration::from_millis(20));
-        }
+        // terminate_verified waited for the exit: no polling needed.
+        assert!(child.try_wait().unwrap().is_some(), "child exited before return");
     }
 
     #[test]
