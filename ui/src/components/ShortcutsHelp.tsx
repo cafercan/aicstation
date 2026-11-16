@@ -14,6 +14,7 @@ export const ACTION_LABEL: Record<ActionId, Key> = {
   focusSearch: "act.focusSearch",
   palette: "act.palette",
   toggleSplit: "act.toggleSplit",
+  toggleSidebar: "act.toggleSidebar",
   shortcuts: "act.shortcuts",
 };
 

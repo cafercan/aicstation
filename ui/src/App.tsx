@@ -5,7 +5,7 @@ import {
   type HistoryView, type Snapshot,
 } from "./api";
 import SessionTabs from "./components/SessionTabs";
-import Sidebar, { type SessionTab, type View } from "./components/Sidebar";
+import Sidebar, { SideRail, sidebarOpen, type SessionTab, type View } from "./components/Sidebar";
 import StatusBar from "./components/StatusBar";
 import Dashboard from "./pages/Dashboard";
 import History from "./pages/History";
@@ -227,14 +227,17 @@ export default function App() {
     else setView(term !== undefined ? { terminal: term } : { session: bar.sessionId, tab });
   };
 
+  const sideOpen = sidebarOpen.use();
   // The split controls share the tab row when both are on screen.
   const barInTabs = bar !== null && terminalShown(area);
 
   return (
     <div className="app">
       <div className="body">
-        <Sidebar view={view} terminals={sideTerms} onSelect={setView} onNew={onNew} onClose={onClose}
-          onOpenWt={openSystemTerminal} />
+        {sideOpen
+          ? <Sidebar view={view} terminals={sideTerms} onSelect={setView} onNew={onNew} onClose={onClose}
+            onOpenWt={openSystemTerminal} />
+          : <SideRail />}
         <div className="main-col">
           {bar && <SessionTabs active={bar.active} onSelect={selectTab}
             extra={barInTabs ? <AreaBar {...area} inline /> : undefined} />}

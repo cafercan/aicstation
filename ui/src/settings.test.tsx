@@ -62,6 +62,13 @@ import { loadSettings } from "./settings";
 import { resetUiState } from "./testing/reset";
 import { setLang } from "./i18n";
 
+/** The sidebar's bottom block (settings, about) starts closed. */
+const openFooter = () => {
+  const t = screen.getByRole("button", { name: /Ayarlar ve hakkında/ });
+  if (t.getAttribute("aria-expanded") !== "true") fireEvent.click(t);
+};
+
+
 const calls = (cmd: string) => invoke.mock.calls.filter((c) => c[0] === cmd).map((c) => c[1]);
 
 beforeEach(() => {
@@ -82,6 +89,7 @@ afterEach(() => { setLang("tr"); });
 
 test("dişli ayarlar sayfasını açar; anahtarlar kayıtlı değerleri gösterir", async () => {
   render(<App />);
+  openFooter();
   fireEvent.click(screen.getByRole("button", { name: "⚙ Ayarlar" }));
   expect(await screen.findByRole("heading", { name: "Ayarlar" })).toBeTruthy();
   const box = (name: string) => screen.getByRole("checkbox", { name }) as HTMLInputElement;
@@ -264,6 +272,7 @@ test("pencereyi kapatmak: tepsi açıksa gizler, kapalıysa uygulamadan çıkar"
   expect(h.destroy).not.toHaveBeenCalled();
 
   // Turn "minimize to tray" off: closing now exits.
+  openFooter();
   fireEvent.click(screen.getByRole("button", { name: "⚙ Ayarlar" }));
   fireEvent.click(await screen.findByRole("checkbox", { name: /Kapatınca tepsiye küçült/ }));
   await waitFor(() => expect(h.stored.closeToTray).toBe(false));

@@ -7,6 +7,7 @@ import type { SessionCard } from "./api";
 import type { View } from "./components/Sidebar";
 import CommandPalette, { type PaletteItem } from "./components/CommandPalette";
 import ShortcutsHelp, { ACTION_LABEL } from "./components/ShortcutsHelp";
+import { toggleSidebar } from "./components/Sidebar";
 import { SplitDivider, TermBar } from "./components/SplitControls";
 import TerminalView from "./pages/TerminalView";
 import { t } from "./i18n";
@@ -147,6 +148,7 @@ export function runBinding(b: Binding, c: ShortcutCtx): boolean {
     }
     case "dashboard": c.setView("dashboard"); return true;
     case "history": c.setView("history"); return true;
+    case "toggleSidebar": toggleSidebar(); return true;
     case "focusSearch": return focusSearch();
     case "palette": c.setOverlay((o) => (o === "palette" ? null : "palette")); return true;
     case "shortcuts": c.setOverlay((o) => (o === "help" ? null : "help")); return true;

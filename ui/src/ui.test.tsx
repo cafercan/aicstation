@@ -1,4 +1,5 @@
 import { act, render, screen, fireEvent } from "@testing-library/react";
+import { resetUiState } from "./testing/reset";
 import { expect, test, vi } from "vitest";
 import SessionCardView from "./components/SessionCard";
 import KpiRow from "./components/KpiRow";
@@ -382,7 +383,9 @@ test("oturum işareti: durum renkli daire ve nötr bir üçgen; yıldız glifi y
 test("hakkında: ürün adı, slogan ve bağımsızlık notu seçili dilde", () => {
   setLang("en");
   render(sidebar());
+  fireEvent.click(screen.getByRole("button", { name: /Settings & about/ }));
   const about = screen.getByRole("contentinfo");
+  expect(about.textContent).toContain(`Version ${__APP_VERSION__}`);
   expect(about.textContent).toContain("AI C-Station");
   expect(about.textContent).toContain("Sessions, agents and terminals for Claude Code");
   const note = "Unofficial; not affiliated with or endorsed by Anthropic. Claude and Claude Code are trademarks of Anthropic.";
@@ -403,25 +406,27 @@ test("status bar: token sayısı birincil, ~$ soluk; fiyatsız modelde $ yok", (
   expect(container.textContent).not.toContain("$");
 });
 
-test("kenar çubuğu alt bloğu: ok düğmesiyle kapanır/açılır, aria-expanded güncellenir, tercih saklanır", () => {
+test("kenar çubuğu alt bloğu: kapalı gelir, ok düğmesiyle açılır/kapanır, sürümü gösterir, tercih saklanır", () => {
+  resetUiState();
   const { unmount } = render(sidebar());
   const toggle = screen.getByRole("button", { name: /Ayarlar ve hakkında/ });
-  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
   expect(toggle.getAttribute("aria-controls")).toBe("side-foot-body");
+  expect(document.getElementById("side-foot-body")!.hidden).toBe(true);
+  expect(toggle.textContent).toContain(`v${__APP_VERSION__}`);
+  expect(screen.queryByRole("button", { name: /^⚙/ })).toBeNull();
+  fireEvent.click(toggle);
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
   expect(document.getElementById("side-foot-body")!.hidden).toBe(false);
   expect(screen.getByRole("button", { name: "⚙ Ayarlar" })).toBeTruthy();
-  expect(screen.queryByRole("combobox", { name: "Dil" })).toBeNull();
   expect(screen.getByText("AI C-Station")).toBeTruthy();
-  fireEvent.click(toggle);
-  expect(toggle.getAttribute("aria-expanded")).toBe("false");
-  expect(document.getElementById("side-foot-body")!.hidden).toBe(true);
-  expect(screen.queryByRole("button", { name: /^⚙/ })).toBeNull();
-  expect(localStorage.getItem("station.footerOpen")).toBe("0");
-  // Remounting keeps it closed (the choice lives in the store and in localStorage).
+  expect(screen.getByText(`Sürüm ${__APP_VERSION__}`)).toBeTruthy();
+  expect(localStorage.getItem("station.footerOpen")).toBe("1");
+  // Remounting keeps it open (the choice lives in the store and in localStorage).
   unmount();
   render(sidebar());
-  expect(screen.getByRole("button", { name: /Ayarlar ve hakkında/ }).getAttribute("aria-expanded")).toBe("false");
-  fireEvent.click(screen.getByRole("button", { name: /Ayarlar ve hakkında/ }));
-  expect(screen.getByRole("button", { name: "⚙ Ayarlar" })).toBeTruthy();
-  expect(localStorage.getItem("station.footerOpen")).toBe("1");
+  const again = screen.getByRole("button", { name: /Ayarlar ve hakkında/ });
+  expect(again.getAttribute("aria-expanded")).toBe("true");
+  fireEvent.click(again);
+  expect(localStorage.getItem("station.footerOpen")).toBe("0");
 });

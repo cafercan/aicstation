@@ -79,6 +79,17 @@ select {
 
 /* Sidebar footer: language + theme */
 .side .foot { margin-top: auto; }
+.foot-toggle .ver { margin-left: auto; font-size: 10px; letter-spacing: 0; color: var(--muted); }
+.about-ver { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+/* Hide / show the sidebar: a small icon button at its top, or alone in a slim rail while hidden. */
+.side-top { display: flex; justify-content: flex-end; margin: -4px -2px 4px; }
+.side-btn {
+  display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0;
+  color: var(--muted); background: transparent; border: 0; border-radius: 6px; cursor: pointer;
+}
+.side-btn:hover { color: var(--strong); background: var(--hover); }
+.side-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.side-rail { width: 40px; flex: none; display: flex; flex-direction: column; align-items: center; padding: 6px 0; background: var(--surface-b); border-right: 1px solid var(--border); }
 .foot-toggle {
   display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 6px 4px; font: inherit; font-size: 10.5px;
   letter-spacing: .04em; color: var(--muted); background: transparent; border: 0; border-top: 1px solid var(--border);

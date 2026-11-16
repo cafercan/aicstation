@@ -19,7 +19,7 @@
 
 export type ActionId =
   | "newTerminal" | "closeTerminal" | "switchTerminal" | "dashboard" | "history" | "focusSearch"
-  | "nextTerminal" | "prevTerminal" | "palette" | "toggleSplit" | "shortcuts";
+  | "nextTerminal" | "prevTerminal" | "palette" | "toggleSplit" | "toggleSidebar" | "shortcuts";
 
 export interface Binding {
   id: ActionId;
@@ -56,6 +56,7 @@ export const KEYMAP: readonly Binding[] = [
   { id: "focusSearch", chord: "Ctrl+Shift+F" },
   { id: "palette", chord: "Ctrl+Shift+P" },
   { id: "toggleSplit", chord: "Ctrl+Shift+\\" },
+  { id: "toggleSidebar", chord: "Ctrl+Shift+B" },
   { id: "shortcuts", chord: "Ctrl+Shift+/" },
 ];
 

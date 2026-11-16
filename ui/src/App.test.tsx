@@ -159,6 +159,20 @@ test("Claude'suz kabuk terminalinde Böl kendi satırında kalır", async () => 
   expect(container.querySelector(".term-area")!.className).toBe("term-area");
 });
 
+test("kenar çubuğu gizlenir, ince şerit kalır; göster ve Ctrl+Shift+B geri getirir; tercih saklanır", async () => {
+  render(<App />);
+  fireEvent.click(screen.getByRole("button", { name: "Kenar çubuğunu gizle" }));
+  expect(screen.queryByText("▦ Dashboard")).toBeNull();
+  expect(localStorage.getItem("station.sidebarOpen")).toBe("0");
+  fireEvent.click(screen.getByRole("button", { name: "Kenar çubuğunu göster" }));
+  expect(screen.getByText("▦ Dashboard")).toBeTruthy();
+  expect(localStorage.getItem("station.sidebarOpen")).toBe("1");
+  fireEvent.keyDown(window, { key: "B", code: "KeyB", ctrlKey: true, shiftKey: true });
+  expect(screen.queryByText("▦ Dashboard")).toBeNull();
+  fireEvent.keyDown(window, { key: "B", code: "KeyB", ctrlKey: true, shiftKey: true });
+  expect(screen.getByText("▦ Dashboard")).toBeTruthy();
+});
+
 test("Claude'suz kabuk terminalinde sekme çubuğu yok", async () => {
   fake.add(1, 50);
   const { container } = render(<App />);

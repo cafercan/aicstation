@@ -39,9 +39,37 @@ interface Props {
 }
 
 const FOOTER_KEY = "station.footerOpen";
-/** Whether the bottom block (language, theme, settings, about) is open; remembered per viewer. */
-const footerOpen = createStore<boolean>(readPref(FOOTER_KEY) !== "0");
+/** Whether the bottom block (settings, about) is open; closed until opened, then remembered per viewer. */
+const footerOpen = createStore<boolean>(readPref(FOOTER_KEY) === "1");
 const setFooterOpen = (open: boolean) => { footerOpen.set(open); writePref(FOOTER_KEY, open ? "1" : "0"); };
+
+const SIDEBAR_KEY = "station.sidebarOpen";
+/** Whether the sidebar is shown (hidden: a slim rail with a show button); remembered per viewer. */
+export const sidebarOpen = createStore<boolean>(readPref(SIDEBAR_KEY) !== "0");
+export const setSidebarOpen = (open: boolean) => { sidebarOpen.set(open); writePref(SIDEBAR_KEY, open ? "1" : "0"); };
+export const toggleSidebar = () => setSidebarOpen(!sidebarOpen.get());
+
+/** Panel-left icon of the hide / show buttons. */
+function PanelIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M6 3v10" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+/** Shown instead of the sidebar while it is hidden: one button that brings it back. */
+export function SideRail() {
+  const t = useT();
+  const label = t("nav.showSidebar");
+  return (
+    <div className="side-rail">
+      <button type="button" className="side-btn" aria-label={label} title={`${label} (Ctrl+Shift+B)`}
+        onClick={() => setSidebarOpen(true)}><PanelIcon /></button>
+    </div>
+  );
+}
 
 /** Collapsible bottom block: a chevron toggle row above the prefs and the about text. */
 function Footer({ settingsOn, onSettings }: { settingsOn: boolean; onSettings: () => void }) {
@@ -52,6 +80,7 @@ function Footer({ settingsOn, onSettings }: { settingsOn: boolean; onSettings: (
       <button type="button" className="foot-toggle" aria-expanded={open} aria-controls="side-foot-body"
         onClick={() => setFooterOpen(!open)}>
         <span className="chev" aria-hidden="true">{open ? "▾" : "▸"}</span> {t("nav.footerToggle")}
+        <span className="ver">v{__APP_VERSION__}</span>
       </button>
       <div id="side-foot-body" hidden={!open}>
         <Prefs settingsOn={settingsOn} onSettings={onSettings} />
@@ -79,6 +108,7 @@ function About() {
   return (
     <footer className="about" title={note}>
       <div className="about-name">AI C-Station</div>
+      <div className="about-ver">{t("about.version", { v: __APP_VERSION__ })}</div>
       <div className="about-tag">{t("about.tagline")}</div>
       <div className="about-note">{note}</div>
     </footer>
@@ -99,6 +129,10 @@ export default function Sidebar({ view, terminals, onSelect, onNew, onClose, onO
   const isDash = view === "dashboard" || (typeof view === "object" && "session" in view && viewTerm === undefined);
   return (
     <nav className="side">
+      <div className="side-top">
+        <button type="button" className="side-btn" aria-label={t("nav.hideSidebar")}
+          title={`${t("nav.hideSidebar")} (Ctrl+Shift+B)`} onClick={() => setSidebarOpen(false)}><PanelIcon /></button>
+      </div>
       <div className={isDash ? "item nav on" : "item nav"} onClick={() => onSelect("dashboard")}>{t("nav.dashboard")}</div>
       <div className={view === "history" ? "item nav on" : "item nav"} onClick={() => onSelect("history")}>{t("nav.history")}</div>
       <div className="head">{t("nav.terminals")}</div>
