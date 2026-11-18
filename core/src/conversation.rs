@@ -41,6 +41,11 @@ pub struct Node {
     pub logical_parent: Option<String>,
     pub body: NodeBody,
     pub at_ms: i64,
+    /// Byte offset of the line; orders nodes in file order.
+    pub offset: u64,
+    /// `message.id` of an assistant line. Claude Code writes each content
+    /// block of one API message on its own line, all with this id.
+    pub message_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,15 +62,21 @@ fn flag(v: &Value, k: &str) -> bool {
     v.get(k).and_then(Value::as_bool).unwrap_or(false)
 }
 
-fn cap_text(t: &str) -> (String, bool) {
-    if t.len() <= MAX_TEXT {
-        return (t.to_string(), false);
+/// Longest prefix of `t` of at most `max` bytes that ends on a char boundary.
+fn prefix(t: &str, max: usize) -> &str {
+    if t.len() <= max {
+        return t;
     }
-    let mut end = MAX_TEXT;
+    let mut end = max;
     while !t.is_char_boundary(end) {
         end -= 1;
     }
-    (t[..end].to_string(), true)
+    &t[..end]
+}
+
+fn cap_text(t: &str) -> (String, bool) {
+    let p = prefix(t, MAX_TEXT);
+    (p.to_string(), p.len() < t.len())
 }
 
 /// Supported media type and base64 payload of an image block, if usable.
@@ -238,6 +249,11 @@ pub fn parse_node(offset: u64, line: &str) -> Option<Node> {
         at_ms: s(&v, "timestamp")
             .and_then(|t| DateTime::parse_from_rfc3339(t).ok())
             .map_or(0, |t| t.timestamp_millis()),
+        offset,
+        message_id: match s(&v, "type") {
+            Some("assistant") => v.get("message").and_then(|m| s(m, "id")).map(str::to_string),
+            _ => None,
+        },
     })
 }
 
@@ -319,7 +335,8 @@ pub struct Conversation {
     reader: TranscriptReader,
     nodes: HashMap<String, Node>,
     leaf: Option<String>,
-    chain: Vec<String>,
+    /// Uuids of the displayed nodes, in file order.
+    shown: Vec<String>,
     items: Vec<ConvItem>,
     images: HashSet<(u64, u32)>,
     epoch: u32,
@@ -332,7 +349,7 @@ impl Conversation {
             path,
             nodes: HashMap::new(),
             leaf: None,
-            chain: Vec::new(),
+            shown: Vec::new(),
             items: Vec::new(),
             images: HashSet::new(),
             epoch: 0,
@@ -344,8 +361,10 @@ impl Conversation {
     }
 
     /// Reads the lines appended since the last call. A shrunk file clears
-    /// everything and starts a new epoch; a new leaf whose chain does not
-    /// extend the previous one (rewind, edit, retry) also starts one. Lines
+    /// everything and starts a new epoch. A new epoch also starts when the
+    /// displayed nodes no longer extend the previous ones (rewind, edit,
+    /// retry), or when an item before the previous last one changed (a late
+    /// tool result), since `since` only resends from the last item. Lines
     /// delivered before an io error are kept.
     pub fn update(&mut self) -> io::Result<()> {
         let mut reset = false;
@@ -357,7 +376,8 @@ impl Conversation {
         if reset {
             self.nodes.clear();
             self.leaf = None;
-            self.chain.clear();
+            self.shown.clear();
+            self.items.clear();
             self.epoch = self.epoch.wrapping_add(1);
         }
         let changed = reset || !fresh.is_empty();
@@ -374,18 +394,19 @@ impl Conversation {
     }
 
     fn rebuild(&mut self) {
-        let chain = current_chain(&self.nodes, self.leaf.as_deref());
-        let uuids: Vec<String> = chain
+        let shown = shown_nodes(&self.nodes, current_chain(&self.nodes, self.leaf.as_deref()));
+        let uuids: Vec<String> = shown
             .iter()
             .filter_map(|l| match l {
                 Link::Node(n) => Some(n.uuid.clone()),
                 Link::Jump(_) => None,
             })
             .collect();
-        if !uuids.starts_with(&self.chain) {
+        let old = std::mem::replace(&mut self.items, group(&shown));
+        let keep = old.len().saturating_sub(1);
+        if !uuids.starts_with(&self.shown) || self.items.get(..keep) != old.get(..keep) {
             self.epoch = self.epoch.wrapping_add(1);
         }
-        self.items = group(&chain);
         self.images.clear();
         for item in &self.items {
             let refs: &mut dyn Iterator<Item = &ImageRef> = match item {
@@ -395,7 +416,7 @@ impl Conversation {
             };
             self.images.extend(refs.map(|r| (r.offset, r.ordinal)));
         }
-        self.chain = uuids;
+        self.shown = uuids;
     }
 
     fn total(&self) -> u32 {
@@ -434,9 +455,9 @@ impl Conversation {
 
 enum Link<'a> {
     Node(&'a Node),
-    /// The walk crossed to a logical parent at a node that is not a compact
-    /// boundary; carries that node's time.
-    Jump(i64),
+    /// The walk crossed to a logical parent at this node, which is not a
+    /// compact boundary; a divider goes right before it.
+    Jump(&'a Node),
 }
 
 /// The chain from `leaf` back to its root, in file order. A missing parent
@@ -459,7 +480,7 @@ fn current_chain<'a>(nodes: &'a HashMap<String, Node>, leaf: Option<&str>) -> Ve
                     .and_then(|p| nodes.get(p))
                     .filter(|p| !seen.contains(p.uuid.as_str()));
                 if lp.is_some() && n.body != NodeBody::CompactBoundary {
-                    out.push(Link::Jump(n.at_ms));
+                    out.push(Link::Jump(n));
                 }
                 lp
             }
@@ -469,15 +490,56 @@ fn current_chain<'a>(nodes: &'a HashMap<String, Node>, leaf: Option<&str>) -> Ve
     out
 }
 
-/// Groups a chain into displayed items (see [`ConvItem`]).
+/// The chain plus its parallel tool calls, in file order. Claude Code chains
+/// the tool_use lines of one API message and hangs each result off its own
+/// tool_use, so the walk from the leaf misses all but one of them. Added:
+/// assistant lines sharing a `message.id` with a chain line, and tool results
+/// answering a tool_use of any displayed line. Abandoned branches carry other
+/// message ids and stay out.
+fn shown_nodes<'a>(nodes: &'a HashMap<String, Node>, chain: Vec<Link<'a>>) -> Vec<Link<'a>> {
+    let on_chain = |l: &Link<'a>| match l {
+        Link::Node(n) => Some(*n),
+        Link::Jump(_) => None,
+    };
+    let uuids: HashSet<&str> = chain.iter().filter_map(on_chain).map(|n| n.uuid.as_str()).collect();
+    let msgs: HashSet<&str> = chain.iter().filter_map(on_chain).filter_map(|n| n.message_id.as_deref()).collect();
+    let mut extra: Vec<&Node> = nodes
+        .values()
+        .filter(|n| !uuids.contains(n.uuid.as_str()))
+        .filter(|n| n.message_id.as_deref().is_some_and(|m| msgs.contains(m)))
+        .collect();
+    let uses: HashSet<&str> = chain
+        .iter()
+        .filter_map(on_chain)
+        .chain(extra.iter().copied())
+        .flat_map(|n| match &n.body {
+            NodeBody::ToolUses(u) => u.iter().map(|(id, _, _)| id.as_str()).collect(),
+            _ => Vec::new(),
+        })
+        .collect();
+    extra.extend(nodes.values().filter(|n| {
+        !uuids.contains(n.uuid.as_str())
+            && matches!(&n.body, NodeBody::ToolResults(r) if r.iter().any(|(id, _, _)| uses.contains(id.as_str())))
+    }));
+    let mut out = chain;
+    out.extend(extra.into_iter().map(Link::Node));
+    // A divider sorts right before the node it belongs to.
+    out.sort_by_key(|l| match l {
+        Link::Jump(n) => (n.offset, 0),
+        Link::Node(n) => (n.offset, 1),
+    });
+    out
+}
+
+/// Groups displayed nodes into items (see [`ConvItem`]).
 fn group(chain: &[Link]) -> Vec<ConvItem> {
     let mut items = Vec::new();
     // tool_use id -> (item index, step index)
     let mut steps_at: HashMap<&str, (usize, usize)> = HashMap::new();
     for link in chain {
         let n = match link {
-            Link::Jump(at_ms) => {
-                items.push(ConvItem::Compacted { at_ms: *at_ms });
+            Link::Jump(n) => {
+                items.push(ConvItem::Compacted { at_ms: n.at_ms });
                 continue;
             }
             Link::Node(n) => n,
@@ -491,8 +553,17 @@ fn group(chain: &[Link]) -> Vec<ConvItem> {
             }),
             NodeBody::AssistantText { text, truncated } => match items.last_mut() {
                 Some(ConvItem::Assistant { text: t, truncated: tr, .. }) => {
-                    t.push_str("\n\n");
-                    t.push_str(text);
+                    let room = MAX_TEXT.saturating_sub(t.len());
+                    if room >= 2 + text.len() {
+                        t.push_str("\n\n");
+                        t.push_str(text);
+                    } else {
+                        if room > 2 {
+                            t.push_str("\n\n");
+                            t.push_str(prefix(text, room - 2));
+                        }
+                        *tr = true;
+                    }
                     *tr |= *truncated;
                 }
                 _ => items.push(ConvItem::Assistant { text: text.clone(), truncated: *truncated, at_ms: n.at_ms }),
@@ -610,6 +681,15 @@ mod tests {
         assert_eq!(parse_node(0, th).unwrap().body, NodeBody::Other);
         let out = user(r#""<local-command-stdout>ok</local-command-stdout>""#, "");
         assert_eq!(parse_node(0, &out).unwrap().body, NodeBody::Other);
+    }
+
+    #[test]
+    fn keeps_offset_and_assistant_message_id() {
+        let l = r#"{"type":"assistant","uuid":"x","message":{"id":"msg_1","content":[{"type":"text","text":"t"}]}}"#;
+        let n = parse_node(42, l).unwrap();
+        assert_eq!((n.offset, n.message_id.as_deref()), (42, Some("msg_1")));
+        let n = parse_node(7, r#"{"type":"user","uuid":"y","message":{"id":"msg_2","content":"hi"}}"#).unwrap();
+        assert_eq!((n.offset, n.message_id), (7, None));
     }
 
     #[test]
@@ -752,6 +832,13 @@ mod tests {
     fn tr(uuid: &str, parent: &str, id: &str, err: bool, images: usize) -> Value {
         let inner: Vec<Value> = (0..images).map(|_| img()).collect();
         line("user", uuid, Some(parent), serde_json::json!([{"type":"tool_result","tool_use_id":id,"is_error":err,"content":inner}]))
+    }
+
+    /// Tool use line that is part of API message `msg`.
+    fn tu_msg(uuid: &str, parent: &str, id: &str, msg: &str) -> Value {
+        let mut v = bash(uuid, parent, id);
+        v["message"]["id"] = msg.into();
+        v
     }
 
     fn kinds(items: &[ConvItem]) -> Vec<String> {
@@ -1006,5 +1093,84 @@ mod tests {
             serde_json::to_value(&page).unwrap(),
             serde_json::json!({"epoch":1,"total":0,"start":0,"items":[{"kind":"compacted","atMs":2}]})
         );
+    }
+
+    #[test]
+    fn joined_assistant_text_is_capped() {
+        let mut t = Tx::new();
+        t.push(u("u1", None, "go"));
+        t.push(a("a1", "u1", &"x".repeat(40 * 1024)));
+        t.push(a("a2", "a1", &"ç".repeat(20 * 1024)));
+        let items = all(&t.conv());
+        let ConvItem::Assistant { text, truncated, .. } = &items[1] else { panic!() };
+        assert!(text.len() <= MAX_TEXT, "{}", text.len());
+        assert!(text.len() > 40 * 1024);
+        assert!(*truncated);
+    }
+
+    #[test]
+    fn parallel_tool_calls_on_side_branch_are_shown() {
+        // Real shape: the second tool_use of one API message hangs off the
+        // first, its result off it; the conversation continues from result 1.
+        let mut t = Tx::new();
+        t.push(u("u1", None, "go"));
+        t.push(tu_msg("t1", "u1", "c1", "msg_a"));
+        t.push(tu_msg("t2", "t1", "c2", "msg_a"));
+        // Poll after every line, as the live view does.
+        let mut c = t.conv();
+        let e0 = c.page(None).epoch;
+        let mut step = |t: &mut Tx, v: Value| {
+            let (off, _) = t.push(v);
+            c.update().unwrap();
+            assert_eq!(c.page(None).epoch, e0, "a live update must not reload");
+            off
+        };
+        step(&mut t, tr("r1", "t1", "c1", false, 0));
+        let off_r2 = step(&mut t, tr("r2", "t2", "c2", false, 1));
+        step(&mut t, a("a1", "r1", "both done"));
+        let items = all(&c);
+        assert_eq!(kinds(&items), ["U:go", "S2", "A:both done"]);
+        let ConvItem::Steps { steps, .. } = &items[1] else { panic!() };
+        assert!(steps.iter().all(|s| s.done));
+        assert!(steps[0].images.is_empty());
+        assert_eq!(steps[1].images, vec![ImageRef { offset: off_r2, ordinal: 0, media_type: "image/png".into() }]);
+        assert!(c.has_image(off_r2, 0));
+    }
+
+    #[test]
+    fn abandoned_branch_with_other_message_id_stays_hidden() {
+        let mut t = Tx::new();
+        t.push(u("u1", None, "go"));
+        t.push(tu_msg("t1", "u1", "c1", "msg_old"));
+        t.push(tr("r1", "t1", "c1", false, 1));
+        // Retry: a new API message from the same user message.
+        t.push(tu_msg("t2", "u1", "c2", "msg_new"));
+        t.push(tr("r2", "t2", "c2", false, 0));
+        let c = t.conv();
+        let items = all(&c);
+        assert_eq!(kinds(&items), ["U:go", "S1"]);
+        let ConvItem::Steps { steps, .. } = &items[1] else { panic!() };
+        assert!(steps[0].done && steps[0].images.is_empty());
+        assert!(c.images.is_empty());
+    }
+
+    #[test]
+    fn late_result_on_older_steps_bumps_epoch() {
+        let mut t = Tx::new();
+        t.push(u("u1", None, "go"));
+        t.push(bash("b1", "u1", "t1"));
+        t.push(a("a1", "b1", "waiting"));
+        let mut c = t.conv();
+        let e0 = c.page(None).epoch;
+        t.push(tr("r1", "a1", "t1", false, 0));
+        c.update().unwrap();
+        assert_eq!(c.page(None).epoch, e0 + 1);
+        let ConvItem::Steps { steps, .. } = &all(&c)[1] else { panic!() };
+        assert!(steps[0].done);
+        // A change to the last item alone keeps the epoch.
+        t.push(a("a2", "r1", "more"));
+        c.update().unwrap();
+        assert_eq!(c.page(None).epoch, e0 + 1);
+        assert_eq!(kinds(&all(&c)), ["U:go", "S1", "A:waiting\n\nmore"]);
     }
 }
