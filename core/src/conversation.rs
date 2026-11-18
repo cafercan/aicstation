@@ -78,9 +78,15 @@ fn prefix(t: &str, max: usize) -> &str {
     &t[..end]
 }
 
+/// `t` cut to `MAX_TEXT` bytes, and whether it was cut. A cut text never
+/// ends in the blank line that separated two joined blocks.
 fn cap_text(t: &str) -> (String, bool) {
     let p = prefix(t, MAX_TEXT);
-    (p.to_string(), p.len() < t.len())
+    if p.len() < t.len() {
+        (p.trim_end().to_string(), true)
+    } else {
+        (p.to_string(), false)
+    }
 }
 
 /// Supported media type and base64 payload of an image block, if usable.
@@ -132,11 +138,42 @@ fn tag<'a>(t: &'a str, name: &str) -> Option<&'a str> {
     Some(&t[start..end])
 }
 
+/// A text block the user never typed: empty once its system reminders are
+/// gone, or local command output / a caveat / shell output.
 fn is_hidden_text(t: &str) -> bool {
     let t = t.trim_start();
-    ["<local-command-stdout>", "<local-command-caveat>", "<system-reminder>", "<bash-stdout>", "<bash-stderr>"]
-        .iter()
-        .any(|p| t.starts_with(p))
+    t.is_empty()
+        || ["<local-command-stdout>", "<local-command-caveat>", "<bash-stdout>", "<bash-stderr>"]
+            .iter()
+            .any(|p| t.starts_with(p))
+}
+
+/// `t` without its `<system-reminder>…</system-reminder>` blocks (Claude
+/// Code adds them to the user's text; an unclosed one runs to the end).
+/// Text on both sides of a removed block keeps one run of the whitespace
+/// around it.
+fn strip_reminders(t: &str) -> String {
+    const OPEN: &str = "<system-reminder>";
+    const CLOSE: &str = "</system-reminder>";
+    if !t.contains(OPEN) {
+        return t.to_string();
+    }
+    let mut out = String::with_capacity(t.len());
+    let mut rest = t;
+    while let Some(at) = rest.find(OPEN) {
+        out.push_str(&rest[..at]);
+        rest = match rest[at + OPEN.len()..].find(CLOSE) {
+            Some(end) => &rest[at + OPEN.len() + end + CLOSE.len()..],
+            None => "",
+        };
+        let after = rest.trim_start();
+        if !out.ends_with(char::is_whitespace) && !out.is_empty() {
+            out.push_str(&rest[..rest.len() - after.len()]);
+        }
+        rest = after;
+    }
+    out.push_str(rest);
+    out.trim_end().to_string()
 }
 
 /// `t` without `<pasted_content …>` / `</pasted_content>` wrappers (Claude
@@ -169,9 +206,13 @@ fn strip_pasted(t: &str) -> String {
 }
 
 /// One text block of a user message as shown: a slash command as typed, a
-/// `!` shell command as `! cmd`, a paste without its wrapper.
+/// `!` shell command as `! cmd`, a paste without its wrapper. A block is a
+/// slash command only when it starts with Claude Code's command tags, so a
+/// message that mentions them stays text.
 fn shown_user_text(t: &str) -> String {
-    if let Some(name) = tag(t, "command-name") {
+    let lead = t.trim_start();
+    let command = lead.starts_with("<command-name>") || lead.starts_with("<command-message>");
+    if let Some(name) = tag(t, "command-name").filter(|_| command) {
         let args = tag(t, "command-args").unwrap_or("").trim();
         return if args.is_empty() { name.trim().to_string() } else { format!("{} {}", name.trim(), args) };
     }
@@ -205,15 +246,20 @@ fn written_by_system(origin_kind: Option<&str>, prompt_source: Option<&str>) -> 
 }
 
 fn user_body(offset: u64, content: &Value) -> NodeBody {
-    let blocks: Vec<Value> = match content {
-        Value::String(t) => vec![serde_json::json!({"type": "text", "text": t})],
-        Value::Array(a) => a.clone(),
+    // Borrowed, not cloned: the blocks may carry megabytes of base64.
+    let single;
+    let blocks: &[Value] = match content {
+        Value::String(t) => {
+            single = [serde_json::json!({"type": "text", "text": t})];
+            &single
+        }
+        Value::Array(a) => a,
         _ => return NodeBody::Other,
     };
     if blocks.iter().any(|b| s(b, "type") == Some("tool_result")) {
         let mut ord = 0;
         let mut out = Vec::new();
-        for b in &blocks {
+        for b in blocks {
             if s(b, "type") == Some("tool_result") {
                 let id = s(b, "tool_use_id").unwrap_or("").to_string();
                 let err = flag(b, "is_error");
@@ -229,20 +275,21 @@ fn user_body(offset: u64, content: &Value) -> NodeBody {
         return NodeBody::ToolResults(out);
     }
     let mut ord = 0;
-    let images = refs_of(offset, &mut ord, &blocks);
+    let images = refs_of(offset, &mut ord, blocks);
     let texts: Vec<&str> = blocks
         .iter()
         .filter(|b| s(b, "type") == Some("text"))
         .filter_map(|b| s(b, "text"))
         .collect();
-    if images.is_empty() && !texts.is_empty() && texts.iter().all(|t| is_hidden_text(t)) {
-        return NodeBody::Other;
-    }
     if images.is_empty() && texts.len() == 1 && texts[0].trim_start().starts_with("<task-notification>") {
         // Older lines of a background task's notification carry no origin.
         return notice_body(content);
     }
-    let joined = texts.iter().map(|t| shown_user_text(t)).collect::<Vec<_>>().join("\n\n");
+    let shown: Vec<String> = texts.iter().map(|t| strip_reminders(t)).filter(|t| !is_hidden_text(t)).collect();
+    if images.is_empty() && !texts.is_empty() && shown.is_empty() {
+        return NodeBody::Other;
+    }
+    let joined = shown.iter().map(|t| shown_user_text(t)).collect::<Vec<_>>().join("\n\n");
     if joined.is_empty() && images.is_empty() {
         return NodeBody::Other;
     }
@@ -295,6 +342,9 @@ fn image_content(v: &Value) -> Option<&Vec<Value>> {
     content.and_then(Value::as_array)
 }
 
+/// An assistant line. Claude Code writes one content block per assistant
+/// line; a mixed text + tool_use line (never seen in real transcripts) keeps
+/// its text.
 fn assistant_body(content: &Value) -> NodeBody {
     let Some(blocks) = content.as_array() else {
         return match content.as_str() {
@@ -310,8 +360,8 @@ fn assistant_body(content: &Value) -> NodeBody {
         .filter(|b| s(b, "type") == Some("tool_use"))
         .map(|b| {
             let name = s(b, "name").unwrap_or("");
-            let input = b.get("input").cloned().unwrap_or(Value::Null);
-            (s(b, "id").unwrap_or("").to_string(), name.to_string(), tool_target(name, &input))
+            let input = b.get("input").unwrap_or(&Value::Null);
+            (s(b, "id").unwrap_or("").to_string(), name.to_string(), tool_target(name, input))
         })
         .collect();
     let texts: Vec<&str> = blocks
@@ -320,8 +370,6 @@ fn assistant_body(content: &Value) -> NodeBody {
         .filter_map(|b| s(b, "text"))
         .filter(|t| !t.is_empty())
         .collect();
-    // Claude Code writes one content block per assistant line; a mixed
-    // text + tool_use line (never seen in real transcripts) keeps its text.
     if !texts.is_empty() {
         let (text, truncated) = cap_text(&texts.join("\n\n"));
         return NodeBody::AssistantText { text, truncated };
@@ -373,16 +421,26 @@ fn valid_b64(d: &str) -> bool {
 /// Re-reads the line at `offset` and returns `(media_type, base64)` of the
 /// image with the given ordinal. Any mismatch means the file changed: `Gone`.
 pub fn read_image(path: &Path, offset: u64, ordinal: u32) -> Result<(String, String), ImageError> {
-    let mut f = File::open(path).map_err(|_| ImageError::Io)?;
+    read_image_limited(path, offset, ordinal, MAX_LINE)
+}
+
+/// [`read_image`] with the longest accepted line passed in (tests).
+fn read_image_limited(path: &Path, offset: u64, ordinal: u32, max_line: usize) -> Result<(String, String), ImageError> {
+    let mut f = File::open(path).map_err(|e| match e.kind() {
+        io::ErrorKind::NotFound => ImageError::Gone,
+        _ => ImageError::Io,
+    })?;
     f.seek(SeekFrom::Start(offset)).map_err(|_| ImageError::Gone)?;
     let mut buf = Vec::new();
-    BufReader::new(f.take(MAX_LINE as u64 + 1))
+    // Up to the limit plus the newline, as the transcript reader accepts it.
+    BufReader::new(f.take(max_line as u64 + 1))
         .read_until(b'\n', &mut buf)
         .map_err(|_| ImageError::Io)?;
-    if buf.len() > MAX_LINE {
+    let line = buf.strip_suffix(b"\n").unwrap_or(&buf);
+    if line.len() > max_line {
         return Err(ImageError::Gone);
     }
-    let line = std::str::from_utf8(&buf).map_err(|_| ImageError::Gone)?;
+    let line = std::str::from_utf8(line).map_err(|_| ImageError::Gone)?;
     let v: Value = serde_json::from_str(line.trim_end()).map_err(|_| ImageError::Gone)?;
     let content = image_content(&v).ok_or(ImageError::Gone)?;
     let mut found = None;
@@ -456,6 +514,9 @@ pub struct Conversation {
     items: Vec<ConvItem>,
     images: HashSet<(u64, u32)>,
     epoch: u32,
+    /// How often the items were rebuilt (tests).
+    #[cfg(test)]
+    rebuilds: usize,
 }
 
 impl Conversation {
@@ -469,6 +530,8 @@ impl Conversation {
             items: Vec::new(),
             images: HashSet::new(),
             epoch: next_epoch(),
+            #[cfg(test)]
+            rebuilds: 0,
         }
     }
 
@@ -496,7 +559,8 @@ impl Conversation {
             self.items.clear();
             self.epoch = next_epoch();
         }
-        let changed = reset || !fresh.is_empty();
+        // Hidden lines alone change nothing shown: they never move the leaf.
+        let changed = reset || fresh.iter().any(|n| n.body != NodeBody::Other);
         for n in fresh {
             if n.body != NodeBody::Other {
                 self.leaf = Some(n.uuid.clone());
@@ -510,12 +574,18 @@ impl Conversation {
     }
 
     fn rebuild(&mut self) {
+        #[cfg(test)]
+        {
+            self.rebuilds += 1;
+        }
         let shown = shown_nodes(&self.nodes, current_chain(&self.nodes, self.leaf.as_deref()));
+        // Hidden nodes take no part in the prefix check below: one joining
+        // the middle (a side line of a shown API message) shows nothing.
         let uuids: Vec<String> = shown
             .iter()
             .filter_map(|l| match l {
-                Link::Node(n) => Some(n.uuid.clone()),
-                Link::Jump(_) => None,
+                Link::Node(n) if n.body != NodeBody::Other => Some(n.uuid.clone()),
+                _ => None,
             })
             .collect();
         let old = std::mem::replace(&mut self.items, group(&shown));
@@ -525,12 +595,19 @@ impl Conversation {
         }
         self.images.clear();
         for item in &self.items {
-            let refs: &mut dyn Iterator<Item = &ImageRef> = match item {
-                ConvItem::User { images, .. } => &mut images.iter(),
-                ConvItem::Steps { steps, .. } => &mut steps.iter().flat_map(|s| &s.images),
-                _ => continue,
-            };
-            self.images.extend(refs.map(|r| (r.offset, r.ordinal)));
+            match item {
+                ConvItem::User { images, .. } => {
+                    for r in images {
+                        self.images.insert((r.offset, r.ordinal));
+                    }
+                }
+                ConvItem::Steps { steps, .. } => {
+                    for r in steps.iter().flat_map(|s| &s.images) {
+                        self.images.insert((r.offset, r.ordinal));
+                    }
+                }
+                _ => {}
+            }
         }
         self.shown = uuids;
     }
@@ -677,6 +754,8 @@ fn group(chain: &[Link]) -> Vec<ConvItem> {
                         if room > 2 {
                             t.push_str("\n\n");
                             t.push_str(prefix(text, room - 2));
+                            // No bare blank line where the cut fell.
+                            t.truncate(t.trim_end().len());
                         }
                         *tr = true;
                     }
@@ -707,10 +786,11 @@ fn group(chain: &[Link]) -> Vec<ConvItem> {
                 for (id, is_error, images) in results {
                     let Some(&(i, j)) = steps_at.get(id.as_str()) else { continue };
                     if let ConvItem::Steps { steps, .. } = &mut items[i] {
+                        // A result written again for the same call replaces the first.
                         let s = &mut steps[j];
                         s.done = true;
                         s.is_error = *is_error;
-                        s.images.extend(images.iter().cloned());
+                        s.images = images.clone();
                     }
                 }
             }
@@ -1425,6 +1505,146 @@ mod tests {
     fn serializes_notice() {
         let item = ConvItem::Notice { text: "done".into(), at_ms: 3 };
         assert_eq!(serde_json::to_value(&item).unwrap(), serde_json::json!({"kind":"notice","text":"done","atMs":3}));
+    }
+
+    #[test]
+    fn repeated_tool_result_replaces_the_step_images() {
+        let mut t = Tx::new();
+        t.push(u("u1", None, "show"));
+        t.push(tu("rd", "u1", "t1", "Read", serde_json::json!({"file_path": "/x/a.png"})));
+        t.push(tr("r1", "rd", "t1", false, 1));
+        let (off2, _) = t.push(tr("r2", "r1", "t1", false, 1));
+        let c = t.conv();
+        let ConvItem::Steps { steps, .. } = &all(&c)[1] else { panic!() };
+        assert_eq!(steps[0].images, vec![ImageRef { offset: off2, ordinal: 0, media_type: "image/png".into() }]);
+    }
+
+    #[test]
+    fn command_tags_mid_sentence_stay_text() {
+        let text_of = |c: &str| {
+            let NodeBody::UserText { text, .. } = parse_node(0, &user(c, "")).unwrap().body else { panic!() };
+            text
+        };
+        let mid = r#""how do I write <command-name>/model</command-name> in a hook?""#;
+        assert_eq!(text_of(mid), "how do I write <command-name>/model</command-name> in a hook?");
+        let lead = r#""  \n<command-name>/clear</command-name>""#;
+        assert_eq!(text_of(lead), "/clear");
+    }
+
+    #[test]
+    fn system_reminders_inside_human_text_are_stripped() {
+        let text_of = |c: &str| {
+            let NodeBody::UserText { text, .. } = parse_node(0, &user(c, "")).unwrap().body else { panic!() };
+            text
+        };
+        let inline = r#""fix this<system-reminder>\nsecret note\n</system-reminder> please""#;
+        assert_eq!(text_of(inline), "fix this please");
+        let blocks = r#"[{"type":"text","text":"<system-reminder>x</system-reminder>"},{"type":"text","text":"real"}]"#;
+        assert_eq!(text_of(blocks), "real");
+        let leading = r#""<system-reminder>x</system-reminder>\nhello""#;
+        assert_eq!(text_of(leading), "hello");
+        let lines = r#""line one<system-reminder>x</system-reminder>\nline two\n\n<system-reminder>y</system-reminder>\n\nend""#;
+        assert_eq!(text_of(lines), "line one\nline two\n\nend");
+        let unclosed = r#""hi <system-reminder>never closed""#;
+        assert_eq!(text_of(unclosed), "hi");
+        // Only reminders: hidden as before.
+        let only = r#""<system-reminder>x</system-reminder>""#;
+        assert_eq!(parse_node(0, &user(only, "")).unwrap().body, NodeBody::Other);
+    }
+
+    #[test]
+    fn cut_text_has_no_trailing_blank_line() {
+        let first = "x".repeat(MAX_TEXT - 2);
+        let c = serde_json::json!([{"type":"text","text":first}, {"type":"text","text":"y".repeat(10)}]);
+        let NodeBody::UserText { text, truncated, .. } = parse_node(0, &user(&c.to_string(), "")).unwrap().body else {
+            panic!()
+        };
+        assert!(truncated);
+        assert_eq!(text, first);
+        let mut t = Tx::new();
+        t.push(u("u1", None, "go"));
+        t.push(a("a1", "u1", &"x".repeat(MAX_TEXT - 3)));
+        t.push(a("a2", "a1", "çç"));
+        let ConvItem::Assistant { text, truncated, .. } = &all(&t.conv())[1] else { panic!() };
+        assert!(*truncated);
+        assert_eq!(text.len(), MAX_TEXT - 3);
+    }
+
+    #[test]
+    fn read_image_of_a_missing_file_is_gone() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(read_image(&dir.path().join("nope.jsonl"), 0, 0), Err(ImageError::Gone));
+    }
+
+    #[test]
+    fn read_image_line_limit_matches_the_transcript_reader() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("s.jsonl");
+        let line = r#"{"message":{"content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AAAA"}}]}}"#;
+        std::fs::write(&p, format!("{line}\n")).unwrap();
+        // A line of exactly the limit, plus its newline, is read.
+        assert_eq!(read_image_limited(&p, 0, 0, line.len()), Ok(("image/png".into(), "AAAA".into())));
+        // One byte over the limit is refused.
+        assert_eq!(read_image_limited(&p, 0, 0, line.len() - 1), Err(ImageError::Gone));
+        // Without a final newline the limit is the same.
+        std::fs::write(&p, line).unwrap();
+        assert_eq!(read_image_limited(&p, 0, 0, line.len()), Ok(("image/png".into(), "AAAA".into())));
+        assert_eq!(read_image_limited(&p, 0, 0, line.len() - 1), Err(ImageError::Gone));
+    }
+
+    #[test]
+    fn nested_tool_result_images_count_in_one_order() {
+        let png = |d: &str| serde_json::json!({"type":"image","source":{"type":"base64","media_type":"image/png","data":d}});
+        let content = serde_json::json!([
+            {"type":"tool_result","tool_use_id":"a","content":[png("A0"), {"type":"tool_result","content":[png("A1")]}]},
+            png("TOP"),
+            {"type":"tool_result","tool_use_id":"b","content":[{"type":"text","text":"t"}, png("B0")]},
+        ]);
+        let mut t = Tx::new();
+        let (off, _) = t.push(line("user", "r", None, content));
+        let NodeBody::ToolResults(r) = parse_node(off, &std::fs::read_to_string(&t.path).unwrap()).unwrap().body else {
+            panic!()
+        };
+        let ords: Vec<(&str, Vec<u32>)> = r.iter().map(|(id, _, im)| (id.as_str(), im.iter().map(|i| i.ordinal).collect())).collect();
+        assert_eq!(ords, [("a", vec![0, 1]), ("b", vec![3])]);
+        for (ord, data) in [(0, "A0"), (1, "A1"), (2, "TOP"), (3, "B0")] {
+            assert_eq!(read_image(&t.path, off, ord), Ok(("image/png".into(), data.into())), "{ord}");
+        }
+    }
+
+    #[test]
+    fn hidden_lines_alone_do_not_rebuild() {
+        let mut t = Tx::new();
+        t.push(u("u1", None, "go"));
+        let mut c = t.conv();
+        let before = c.rebuilds;
+        t.push(think("th", "u1"));
+        c.update().unwrap();
+        assert_eq!(c.rebuilds, before);
+        t.push(a("a1", "th", "ok"));
+        c.update().unwrap();
+        assert_eq!(c.rebuilds, before + 1);
+        assert_eq!(kinds(&all(&c)), ["U:go", "A:ok"]);
+    }
+
+    #[test]
+    fn hidden_nodes_do_not_take_part_in_the_epoch_check() {
+        let mut t = Tx::new();
+        t.push(u("u1", None, "go"));
+        t.push(tu_msg("t1", "u1", "c1", "msg_a"));
+        // A hidden line of the next API message, written on a side branch.
+        let mut th = think("thb", "u1");
+        th["message"]["id"] = "msg_b".into();
+        t.push(th);
+        t.push(tr("r1", "t1", "c1", false, 0));
+        let mut c = t.conv();
+        let e0 = c.page(None).epoch;
+        let mut a2 = a("a2", "r1", "done");
+        a2["message"]["id"] = "msg_b".into();
+        t.push(a2);
+        c.update().unwrap();
+        assert_eq!(kinds(&all(&c)), ["U:go", "S1", "A:done"]);
+        assert_eq!(c.page(None).epoch, e0, "only a new item was added");
     }
 
     #[test]
