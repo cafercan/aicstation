@@ -164,6 +164,8 @@ export const de: Dict = {
   "err.adopt_in_progress": "Diese Sitzung wird bereits in die App verschoben",
   "err.adopt_timeout": "Der Claude-Prozess außerhalb der App wurde beendet, ist aber noch nicht geschlossen. Setzen Sie die Sitzung fort, sobald sie als geschlossen angezeigt wird.",
   "err.adopt_resume_failed": "Der Claude-Prozess außerhalb der App wurde beendet, aber die Sitzung konnte hier nicht geöffnet werden ({detail}). Setzen Sie sie über den Tab „Terminal“ fort.",
+  "err.conv_unavailable": "Das Protokoll dieser Sitzung wurde nicht gefunden.",
+  "err.conv_image_gone": "Das Bild ist nicht mehr im Protokoll enthalten.",
   "err.resume_folder_mismatch": "Fortsetzen im Projektordner der Sitzung nicht möglich",
   "err.folder_unknown": "Unbekannter Ordner",
   "err.folder_network": "Netzwerkpfade werden nicht unterstützt",

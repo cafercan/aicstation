@@ -164,6 +164,8 @@ export const es: Dict = {
   "err.adopt_in_progress": "Esta sesión ya se está moviendo a la aplicación",
   "err.adopt_timeout": "El proceso de Claude externo a la aplicación se finalizó, pero aún no se ha cerrado. Reanude la sesión cuando aparezca como cerrada.",
   "err.adopt_resume_failed": "El proceso de Claude externo a la aplicación se finalizó, pero la sesión no se pudo abrir aquí ({detail}). Reanúdela desde la pestaña Terminal.",
+  "err.conv_unavailable": "No se encontró la transcripción de esta sesión.",
+  "err.conv_image_gone": "La imagen ya no está en la transcripción.",
   "err.resume_folder_mismatch": "No se puede reanudar en la carpeta del proyecto de la sesión",
   "err.folder_unknown": "Carpeta desconocida",
   "err.folder_network": "No se admiten rutas de red",

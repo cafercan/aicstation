@@ -5,6 +5,9 @@
 const COMMANDS: &[&str] = &[
     "get_snapshot",
     "get_session_detail",
+    "get_conversation_page",
+    "get_conversation_since",
+    "get_conversation_image",
     "get_history",
     "open_folder",
     "pty_spawn",

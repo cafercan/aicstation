@@ -161,6 +161,8 @@ export const en: Dict = {
   "err.adopt_in_progress": "This session is already being moved to the app",
   "err.adopt_timeout": "The outside Claude process was ended but has not closed yet. Resume the session once it shows as closed.",
   "err.adopt_resume_failed": "The outside Claude process was ended, but the session could not be opened here ({detail}). Resume it from the Terminal tab.",
+  "err.conv_unavailable": "This session's transcript could not be found.",
+  "err.conv_image_gone": "The image is no longer in the transcript.",
   "err.resume_folder_mismatch": "Cannot resume in the session's project folder",
   "err.folder_unknown": "Unknown folder",
   "err.folder_network": "Network paths are not supported",

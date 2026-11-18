@@ -161,10 +161,49 @@ export interface SessionDetail {
   changedFiles?: ChangedFile[];
 }
 
+export interface ConvImageRef {
+  offset: number;
+  ordinal: number;
+  mediaType: string;
+}
+
+export interface ConvStep {
+  tool: string;
+  target: string;
+  done: boolean;
+  isError: boolean;
+  images: ConvImageRef[];
+}
+
+export type ConvItem =
+  | { kind: "user"; text: string; truncated: boolean; images: ConvImageRef[]; atMs: number }
+  | { kind: "assistant"; text: string; truncated: boolean; atMs: number }
+  | { kind: "steps"; steps: ConvStep[]; atMs: number }
+  | { kind: "compacted"; atMs: number };
+
+export interface ConvPage {
+  epoch: number;
+  total: number;
+  start: number;
+  items: ConvItem[];
+}
+
+export interface ConvImage {
+  mediaType: string;
+  /** Base64, as stored in the transcript. */
+  data: string;
+}
+
 export const getSnapshot = () => invoke<Snapshot>("get_snapshot");
 export const getHistory = () => invoke<HistoryView>("get_history");
 export const getSessionDetail = (sessionId: string) =>
   invoke<SessionDetail | null>("get_session_detail", { sessionId });
+export const getConversationPage = (sessionId: string, before?: number) =>
+  invoke<ConvPage>("get_conversation_page", { sessionId, before: before ?? null });
+export const getConversationSince = (sessionId: string, epoch: number, from: number) =>
+  invoke<ConvPage>("get_conversation_since", { sessionId, epoch, from });
+export const getConversationImage = (sessionId: string, offset: number, ordinal: number) =>
+  invoke<ConvImage>("get_conversation_image", { sessionId, offset, ordinal });
 export const openFolder = (path: string) => invoke<void>("open_folder", { path });
 export interface PtyInfo { id: number; pid: number }
 

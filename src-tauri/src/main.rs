@@ -340,6 +340,9 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::get_snapshot,
             commands::get_session_detail,
+            commands::get_conversation_page,
+            commands::get_conversation_since,
+            commands::get_conversation_image,
             commands::get_history,
             commands::open_folder,
             commands::pty_spawn,

@@ -4,6 +4,7 @@
 use crate::errors;
 use station_core::history::{cost_on_rows, HistoryIndex, HistoryRow};
 use station_core::host::HostKind;
+use station_core::conversation::{read_image, ConvPage, Conversation, ImageError};
 use station_core::locate::{cwd_matches_project_dir, is_session_id, Locator};
 use station_core::monitor::{AdoptRefusal, AdoptSource, ClosedKey, Monitor, SessionDetail, Snapshot};
 use station_core::registry::ProcessProbe;
@@ -16,6 +17,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime};
 
 const MAX_ID_LEN: usize = 64;
+const CONV_CACHE: usize = 2;
 /// A cached snapshot older than this is recomputed by `get_snapshot` (guards
 /// against a stalled background thread).
 const SNAPSHOT_MAX_AGE: Duration = Duration::from_secs(3);
@@ -66,6 +68,14 @@ struct ResumeSource {
     project_dir: String,
 }
 
+/// One image of the conversation, base64 as stored in the transcript.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConvImage {
+    pub media_type: String,
+    pub data: String,
+}
+
 pub struct AppState {
     monitor: Mutex<Monitor>,
     history: Mutex<HistoryIndex>,
@@ -87,6 +97,8 @@ pub struct AppState {
     search_gen: AtomicU32,
     /// Session ids with a move into the app under way (`adopt_session`).
     adopting: Mutex<HashSet<String>>,
+    /// Open conversations, most recent first (at most [`CONV_CACHE`]).
+    conversations: Mutex<Vec<(String, Conversation)>>,
 }
 
 /// Holds a session id in `AppState::adopting`; dropping it releases the id.
@@ -150,6 +162,7 @@ impl AppState {
             closed_cache: Mutex::new(None),
             search_gen: AtomicU32::new(0),
             adopting: Mutex::new(HashSet::new()),
+            conversations: Mutex::new(Vec::new()),
         };
         state.publish_history();
         state
@@ -188,6 +201,54 @@ impl AppState {
 
     fn live_ids(&self) -> HashSet<String> {
         self.fresh_cache(|c| c.snap.sessions.iter().map(|s| s.session_id.clone()).collect())
+    }
+
+    /// Runs `f` on the session's conversation after bringing it up to date.
+    fn with_conversation<R>(&self, id: &str, f: impl FnOnce(&Conversation) -> R) -> Result<R, String> {
+        if !is_session_id(id) {
+            return Err(errors::SESSION_INVALID.into());
+        }
+        let mut cache = lock(&self.conversations);
+        let at = match cache.iter().position(|(i, _)| i == id) {
+            Some(at) => at,
+            None => {
+                let path = Locator::new(self.projects_dir.clone())
+                    .transcript(id)
+                    .ok_or_else(|| errors::CONV_UNAVAILABLE.to_string())?;
+                cache.insert(0, (id.to_string(), Conversation::new(path)));
+                cache.truncate(CONV_CACHE);
+                0
+            }
+        };
+        let entry = cache.remove(at);
+        cache.insert(0, entry);
+        let conv = &mut cache[0].1;
+        if conv.update().is_err() {
+            cache.remove(0);
+            return Err(errors::CONV_UNAVAILABLE.into());
+        }
+        Ok(f(&cache[0].1))
+    }
+
+    pub fn conversation_page(&self, id: &str, before: Option<u32>) -> Result<ConvPage, String> {
+        self.with_conversation(id, |c| c.page(before))
+    }
+
+    pub fn conversation_since(&self, id: &str, epoch: u32, from: u32) -> Result<ConvPage, String> {
+        self.with_conversation(id, |c| c.since(epoch, from))
+    }
+
+    pub fn conversation_image(&self, id: &str, offset: u64, ordinal: u32) -> Result<ConvImage, String> {
+        let (path, known) =
+            self.with_conversation(id, |c| (c.path().to_path_buf(), c.has_image(offset, ordinal)))?;
+        if !known {
+            return Err(errors::CONV_IMAGE_GONE.into());
+        }
+        match read_image(&path, offset, ordinal) {
+            Ok((media_type, data)) => Ok(ConvImage { media_type, data }),
+            Err(ImageError::Gone) => Err(errors::CONV_IMAGE_GONE.into()),
+            Err(ImageError::Io) => Err(errors::CONV_UNAVAILABLE.into()),
+        }
     }
 
     pub fn get_session_detail(&self, session_id: &str) -> Option<SessionDetail> {
@@ -611,6 +672,47 @@ pub async fn get_session_detail(
     tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().get_session_detail(&session_id))
         .await
         .map_err(|e| errors::with(errors::TASK_FAILED, e))
+}
+
+/// Conversation commands run on the blocking pool (they read the transcript).
+#[tauri::command]
+pub async fn get_conversation_page(
+    app: tauri::AppHandle,
+    session_id: String,
+    before: Option<u32>,
+) -> Result<ConvPage, String> {
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().conversation_page(&session_id, before))
+        .await
+        .map_err(|e| errors::with(errors::TASK_FAILED, e))?
+}
+
+#[tauri::command]
+pub async fn get_conversation_since(
+    app: tauri::AppHandle,
+    session_id: String,
+    epoch: u32,
+    from: u32,
+) -> Result<ConvPage, String> {
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().conversation_since(&session_id, epoch, from))
+        .await
+        .map_err(|e| errors::with(errors::TASK_FAILED, e))?
+}
+
+#[tauri::command]
+pub async fn get_conversation_image(
+    app: tauri::AppHandle,
+    session_id: String,
+    offset: u64,
+    ordinal: u32,
+) -> Result<ConvImage, String> {
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().conversation_image(&session_id, offset, ordinal)
+    })
+    .await
+    .map_err(|e| errors::with(errors::TASK_FAILED, e))?
 }
 
 /// Content search on the blocking pool (it streams every transcript).
@@ -1372,6 +1474,74 @@ mod tests {
         fs::remove_file(&reg).unwrap();
         assert!(state.wait_not_live(ADOPT_ID, Duration::from_secs(10)).is_ok());
     }
+
+    const CONV_A: &str = "cccccccc-2222-4333-8444-555555555555";
+    const CONV_B: &str = "cccccccd-2222-4333-8444-555555555555";
+    const CONV_C: &str = "ccccccce-2222-4333-8444-555555555555";
+
+    fn conv_state(tmp: &Path, ids: &[&str]) -> AppState {
+        let claude = tmp.join("claude");
+        let proj = claude.join("projects").join("C--demo");
+        fs::create_dir_all(claude.join("sessions")).unwrap();
+        fs::create_dir_all(&proj).unwrap();
+        for id in ids {
+            fs::write(
+                proj.join(format!("{id}.jsonl")),
+                r#"{"type":"user","uuid":"u1","parentUuid":null,"timestamp":"2026-01-01T00:00:00Z","message":{"content":"hello"}}"#.to_string() + "\n",
+            )
+            .unwrap();
+        }
+        AppState::new(claude, tmp.join("c.json"), Box::new(FakeProbe(HashMap::new())))
+    }
+
+    #[test]
+    fn conversation_page_reads_transcript() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = conv_state(tmp.path(), &[CONV_A]);
+        let page = state.conversation_page(CONV_A, None).unwrap();
+        assert_eq!((page.total, page.start, page.items.len()), (1, 0, 1));
+        let since = state.conversation_since(CONV_A, page.epoch, 0).unwrap();
+        assert_eq!(since.items.len(), 1);
+    }
+
+    #[test]
+    fn conversation_rejects_bad_id() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = conv_state(tmp.path(), &[]);
+        assert_eq!(state.conversation_page("../x", None).unwrap_err(), errors::SESSION_INVALID);
+        assert_eq!(state.conversation_since("../x", 0, 0).unwrap_err(), errors::SESSION_INVALID);
+        assert_eq!(state.conversation_image("../x", 0, 0).unwrap_err(), errors::SESSION_INVALID);
+    }
+
+    #[test]
+    fn conversation_unavailable_without_transcript() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = conv_state(tmp.path(), &[]);
+        assert_eq!(state.conversation_page(CONV_A, None).unwrap_err(), errors::CONV_UNAVAILABLE);
+        assert_eq!(state.conversation_image(CONV_A, 0, 0).unwrap_err(), errors::CONV_UNAVAILABLE);
+    }
+
+    #[test]
+    fn conversation_image_refuses_unknown_ref() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = conv_state(tmp.path(), &[CONV_A]);
+        assert_eq!(state.conversation_image(CONV_A, 0, 0).unwrap_err(), errors::CONV_IMAGE_GONE);
+        assert_eq!(state.conversation_image(CONV_A, 999_999, 3).unwrap_err(), errors::CONV_IMAGE_GONE);
+    }
+
+    #[test]
+    fn conversation_cache_keeps_two() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = conv_state(tmp.path(), &[CONV_A, CONV_B, CONV_C]);
+        for id in [CONV_A, CONV_B, CONV_C] {
+            state.conversation_page(id, None).unwrap();
+        }
+        let ids: Vec<String> = lock(&state.conversations).iter().map(|(i, _)| i.clone()).collect();
+        assert_eq!(ids, [CONV_C, CONV_B]);
+        state.conversation_page(CONV_B, None).unwrap();
+        let ids: Vec<String> = lock(&state.conversations).iter().map(|(i, _)| i.clone()).collect();
+        assert_eq!(ids, [CONV_B, CONV_C]);
+    }
 }
 
 // ---- terminals (ConPTY) ----------------------------------------------------
@@ -1639,4 +1809,5 @@ pub async fn set_usage_bridge(app: tauri::AppHandle, on: bool) -> Result<bool, S
 #[tauri::command]
 pub async fn git_dirty(cwd: String) -> Option<bool> {
     tauri::async_runtime::spawn_blocking(move || crate::gitstat::dirty(&cwd)).await.ok().flatten()
+
 }

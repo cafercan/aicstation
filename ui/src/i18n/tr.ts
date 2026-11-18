@@ -171,6 +171,8 @@ export const tr = {
   "err.adopt_in_progress": "Bu oturum zaten uygulamaya taşınıyor",
   "err.adopt_timeout": "Uygulama dışındaki Claude işlemi sonlandırıldı ama henüz kapanmadı. Oturum kapalı görününce devam ettirin.",
   "err.adopt_resume_failed": "Uygulama dışındaki Claude işlemi sonlandırıldı ama oturum burada açılamadı ({detail}). Terminal sekmesinden devam ettirin.",
+  "err.conv_unavailable": "Bu oturumun konuşma kaydı bulunamadı.",
+  "err.conv_image_gone": "Görsel artık konuşma kaydında yok.",
   "err.resume_folder_mismatch": "Oturumun proje klasöründe devam edilemiyor",
   "err.folder_unknown": "Bilinmeyen klasör",
   "err.folder_network": "Ağ yolları desteklenmiyor",
