@@ -42,6 +42,8 @@ export const de: Dict = {
   "card.lastTool": "zuletzt: {tool}",
   "card.lastActivity": "letzte Aktivität {t}",
   "card.goto": "Zum Tab",
+  "remote.on": "Remote Control ist an: auf claude.ai öffnen",
+  "remote.openFailed": "claude.ai konnte nicht geöffnet werden: {err}",
   "card.noSubagents": "keine Subagenten",
   "card.agentsRunning": { one: "1 Agent läuft", other: "{n} Agenten laufen" },
   "card.agentsFinished": { one: "1 Agent beendet", other: "{n} Agenten beendet" },

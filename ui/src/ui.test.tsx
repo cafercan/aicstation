@@ -10,6 +10,10 @@ import type { SessionCard } from "./api";
 import { getLang, setLang } from "./i18n";
 import { getTheme } from "./theme";
 import { setOsForTests } from "./platform";
+import { openRemoteControl } from "./api";
+
+const { openRemote } = vi.hoisted(() => ({ openRemote: vi.fn() }));
+vi.mock("./api", async (orig) => ({ ...(await orig<typeof import("./api")>()), openRemoteControl: openRemote }));
 
 function card(over: Partial<SessionCard> = {}): SessionCard {
   return {
@@ -429,4 +433,27 @@ test("kenar çubuğu alt bloğu: kapalı gelir, ok düğmesiyle açılır/kapan�
   expect(again.getAttribute("aria-expanded")).toBe("true");
   fireEvent.click(again);
   expect(localStorage.getItem("station.footerOpen")).toBe("0");
+});
+
+test("kart: Remote Control simgesi yalnızca remoteControl açıkken görünür; tıklama oturumu açmaz", async () => {
+  const onOpen = vi.fn();
+  openRemote.mockReset();
+  openRemote.mockResolvedValue(undefined);
+  const { unmount } = render(<SessionCardView card={card({ remoteControl: false })} now={0} onOpen={onOpen} />);
+  expect(screen.queryByRole("button", { name: /Remote Control açık/ })).toBeNull();
+  unmount();
+  render(<SessionCardView card={card({ remoteControl: true })} now={0} onOpen={onOpen} />);
+  const b = screen.getByRole("button", { name: "Remote Control açık: claude.ai'de aç" });
+  fireEvent.keyDown(b, { key: "Enter" });
+  fireEvent.click(b);
+  expect(openRemoteControl).toHaveBeenCalledWith("s1");
+  expect(onOpen).not.toHaveBeenCalled();
+});
+
+test("kart: Remote Control açılamazsa hata kartta gösterilir", async () => {
+  openRemote.mockReset();
+  openRemote.mockRejectedValue("no_browser");
+  render(<SessionCardView card={card({ remoteControl: true })} now={0} onOpen={() => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: /Remote Control açık/ }));
+  expect((await screen.findByRole("alert")).textContent).toContain("claude.ai açılamadı");
 });

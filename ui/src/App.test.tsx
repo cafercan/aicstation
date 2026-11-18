@@ -233,3 +233,16 @@ test("kapalı oturumun Terminal sekmesi Devam et sunar; kayıt gelmeden dönül�
   await push([card({ sessionId: "s-gone", parentPid: 60 })]);
   expect(tab("Terminal").getAttribute("aria-selected")).toBe("true");
 });
+
+test("Remote Control açık oturumda sekme satırı simgeyi gösterir ve tıklama oturum kimliğini iletir", async () => {
+  fake.add(1, 50);
+  snap.sessions = [card({ sessionId: "s-rc", name: "uzak", parentPid: 50, remoteControl: true }),
+    card({ sessionId: "s-no", name: "yerel", pid: 8, parentPid: 51 })];
+  const { container } = render(<App />);
+  await waitFor(() => expect(container.querySelector(".grid .card")).toBeTruthy());
+  fireEvent.click(Array.from(container.querySelectorAll(".grid .card")).find((c) => c.textContent!.includes("uzak"))!);
+  const btn = screen.getByRole("tablist").querySelector("button.remote")!;
+  expect(btn).toBeTruthy();
+  fireEvent.click(btn);
+  expect(invoke).toHaveBeenCalledWith("open_remote_control", { sessionId: "s-rc" });
+});

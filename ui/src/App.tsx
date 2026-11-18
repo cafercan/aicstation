@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  getHistory, getSnapshot, hideToTray, onNavigate, onSnapshot, onTrayQuit, openSystemTerminal, setFocusContext,
+  getHistory, getSnapshot, hideToTray, onNavigate, onSnapshot, onTrayQuit, openRemoteControl, openSystemTerminal, setFocusContext,
   type HistoryView, type Snapshot,
 } from "./api";
 import SessionTabs from "./components/SessionTabs";
@@ -15,7 +15,7 @@ import ConversationPage from "./conversation/ConversationPage";
 import SettingsPage from "./pages/Settings";
 import { currentSettings, loadSettings, pushLang } from "./settings";
 import { statusKind } from "./format";
-import { useLang, useT } from "./i18n";
+import { errorText, useLang, useT } from "./i18n";
 import { useTheme } from "./theme";
 import {
   allTerminalIds, closeTerminal, confirmClose, killOrphans, openResumeTerminal, openTerminal, sessionsIn,
@@ -203,6 +203,13 @@ export default function App() {
     else setView(term !== undefined ? { terminal: term } : { session: bar.sessionId, tab });
   };
 
+  const barCard = bar ? snapshot.sessions.find((s) => s.sessionId === bar.sessionId) : undefined;
+  const [remoteErr, setRemoteErr] = useState<string | null>(null);
+  const openRemote = (id: string) => {
+    setRemoteErr(null);
+    openRemoteControl(id).catch((e: unknown) => setRemoteErr(t("remote.openFailed", { err: errorText(e) })));
+  };
+
   let page;
   if (view === "dashboard") {
     page = <Dashboard snapshot={snapshot} history={history} now={now}
@@ -246,6 +253,7 @@ export default function App() {
           : <SideRail />}
         <div className="main-col">
           {bar && <SessionTabs active={bar.active} onSelect={selectTab}
+            remote={barCard?.remoteControl ? () => openRemote(bar.sessionId) : undefined} remoteError={remoteErr}
             extra={barInTabs ? <AreaBar {...area} inline /> : undefined} />}
           <main className="main">
             {page}

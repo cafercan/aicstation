@@ -42,6 +42,8 @@ export const zh: Dict = {
   "card.lastTool": "最近：{tool}",
   "card.lastActivity": "最近活动 {t}",
   "card.goto": "转到标签页",
+  "remote.on": "Remote Control 已开启：在 claude.ai 打开",
+  "remote.openFailed": "无法打开 claude.ai：{err}",
   "card.noSubagents": "无子智能体",
   "card.agentsRunning": "{n} 个智能体运行中",
   "card.agentsFinished": "{n} 个智能体已完成",

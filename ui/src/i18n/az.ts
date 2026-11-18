@@ -42,6 +42,8 @@ export const az: Dict = {
   "card.lastTool": "son: {tool}",
   "card.lastActivity": "son fəaliyyət {t}",
   "card.goto": "Vərəqə keç",
+  "remote.on": "Remote Control açıqdır: claude.ai-də aç",
+  "remote.openFailed": "claude.ai açıla bilmədi: {err}",
   "card.noSubagents": "alt agent yoxdur",
   "card.agentsRunning": "{n} agent işləyir",
   "card.agentsFinished": "{n} agent tamamlandı",

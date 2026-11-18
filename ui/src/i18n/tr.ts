@@ -45,6 +45,8 @@ export const tr = {
   "card.lastTool": "son: {tool}",
   "card.lastActivity": "son hareket {t}",
   "card.goto": "Sekmeye git",
+  "remote.on": "Remote Control açık: claude.ai'de aç",
+  "remote.openFailed": "claude.ai açılamadı: {err}",
   "card.noSubagents": "alt ajan yok",
   "card.agentsRunning": "{n} ajan çalışıyor",
   "card.agentsFinished": "{n} ajan tamamlandı",

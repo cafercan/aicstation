@@ -214,3 +214,8 @@ table.hist td .est { display: block; font-size: 11px; }
 }
 .conv-viewer-close:hover { background: rgba(0, 0, 0, .7); }
 .conv-viewer-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.remote { flex: none; display: inline-flex; align-items: center; vertical-align: middle; margin-left: 6px; background: none; border: 1px solid var(--muted); border-radius: 4px; color: var(--accent); padding: 2px 4px; line-height: 1; cursor: pointer; }
+.remote:hover { color: var(--strong); border-color: var(--accent); }
+.remote:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.session-tabs button.remote { margin: 0 0 4px 8px; border-radius: 4px; padding: 3px 5px; align-self: center; border: 1px solid var(--muted); color: var(--accent); }

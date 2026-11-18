@@ -42,6 +42,8 @@ export const ru: Dict = {
   "card.lastTool": "последний: {tool}",
   "card.lastActivity": "последняя активность {t}",
   "card.goto": "Перейти на вкладку",
+  "remote.on": "Remote Control включён: открыть на claude.ai",
+  "remote.openFailed": "Не удалось открыть claude.ai: {err}",
   "card.noSubagents": "нет субагентов",
   "card.agentsRunning": {
     one: "{n} агент работает", few: "{n} агента работают", many: "{n} агентов работают", other: "{n} агента работают",
