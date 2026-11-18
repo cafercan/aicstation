@@ -22,8 +22,8 @@ export function openSessionView(
  * that holds a terminal follows whatever runs in that terminal: a new session
  * id (`/clear`, `/resume`) keeps the tab, no session left makes it the plain
  * terminal, a closed terminal falls back to the Info tab. Without a
- * terminal, once the session runs in an app terminal the Info tab attaches
- * it and the Terminal tab switches to it; a Terminal tab also switches to a
+ * terminal, once the session runs in an app terminal the Conversation and
+ * Info tabs attach it and the Terminal tab switches to it; a Terminal tab also switches to a
  * terminal that Resume/Move started for this session before the registry
  * lists it (`pending`: terminal id -> session id; the newest wins).
  * Returns `v` itself when nothing changes.
@@ -43,7 +43,7 @@ export function resolveView(
   const host = card && card.pid
     ? terminals.find((t) => sessionsIn(t, [card]).length > 0)
     : undefined;
-  if (host) return v.tab === "info" ? { session: v.session, tab: "info", terminal: host.id } : { terminal: host.id };
+  if (host) return v.tab === "terminal" ? { terminal: host.id } : { session: v.session, tab: v.tab, terminal: host.id };
   if (v.tab !== "terminal") return v;
   const waiting = terminals.filter((t) => pending.get(t.id) === v.session).map((t) => t.id);
   return waiting.length > 0 ? { terminal: Math.max(...waiting) } : v;
@@ -61,7 +61,7 @@ export function viewAfterClose(v: View, id: number, other: number | null): View 
 }
 
 /**
- * The `Terminal | Info` tab bar for a view, or null when it has none
+ * The `Terminal | Conversation | Info` tab bar for a view, or null when it has none
  * (non-session pages, a plain shell terminal, a terminal that is gone).
  */
 export function tabBarFor(

@@ -130,3 +130,25 @@ test("move_state", () => {
   expect(moveState(card({ movable: false, status: "busy", agentsRunning: 1 })).reason).toBe("notMovable");
   expect(moveState(card({ status: "waiting", agentsRunning: 1 })).reason).toBe("waiting");
 });
+
+test("conversation_tab_keeps_session_and_terminal_when_hosted", () => {
+  const sessions = [card({ sessionId: "a", parentPid: 20 })];
+  const v: View = { session: "a", tab: "conversation" };
+  expect(resolveView(v, [term(1, 10), term(2, 20)], sessions, NONE))
+    .toEqual({ session: "a", tab: "conversation", terminal: 2 });
+  const held: View = { session: "a", tab: "conversation", terminal: 2 };
+  expect(resolveView(held, [term(2, 20)], sessions, NONE)).toBe(held);
+  expect(tabBarFor(held, [term(2, 20)], sessions)).toEqual({ sessionId: "a", terminal: 2, active: "conversation" });
+});
+
+test("conversation_tab_follows_clear_to_new_session", () => {
+  const v: View = { session: "a", tab: "conversation", terminal: 1 };
+  const sessions = [card({ sessionId: "b", parentPid: 10 })];
+  expect(resolveView(v, [term(1, 10)], sessions, NONE)).toEqual({ session: "b", tab: "conversation", terminal: 1 });
+});
+
+test("conversation_tab_without_host_stays", () => {
+  const v: View = { session: "a", tab: "conversation" };
+  const closed = [card({ sessionId: "a", pid: 0, parentPid: null })];
+  expect(resolveView(v, [term(2, 20)], closed, new Map([[2, "a"]]))).toBe(v);
+});

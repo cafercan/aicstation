@@ -133,3 +133,84 @@ table.hist td .est { display: block; font-size: 11px; }
 .placeholder .place-actions .btn { margin-left: 0; }
 .placeholder .btn:disabled, .placeholder .btn:disabled:hover { opacity: .5; cursor: default; border-color: var(--border); color: var(--text); }
 .placeholder .meta { margin: 4px 0 0; }
+
+/* Conversation tab: transcript list, message box or placeholder at the bottom. */
+.conv { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--bg); }
+.conv-list { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 18px 10px; }
+.conv-items { max-width: 880px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px; }
+.conv-status { color: var(--muted); text-align: center; padding: 28px 0; }
+.conv-note { color: var(--muted); font-size: 11px; margin-top: 4px; }
+.conv-user { display: flex; justify-content: flex-end; }
+.conv-bubble {
+  max-width: 78%; background: var(--raised); border: 1px solid var(--border); border-radius: 14px 14px 4px 14px;
+  padding: 8px 12px; color: var(--text); line-height: 1.5;
+}
+.conv-user-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.conv-bubble .conv-thumbs { justify-content: flex-end; margin-top: 6px; }
+.conv-assistant { color: var(--text); line-height: 1.55; overflow-wrap: anywhere; min-width: 0; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p, .md ul, .md ol { margin: 0 0 8px; }
+.md ul, .md ol { padding-left: 22px; }
+.md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { margin: 12px 0 6px; color: var(--strong); line-height: 1.3; }
+.md h1 { font-size: 17px; } .md h2 { font-size: 15.5px; } .md h3, .md h4, .md h5, .md h6 { font-size: 13.5px; }
+.md strong { color: var(--strong); }
+.md code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; background: var(--raised); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+.md pre {
+  margin: 0 0 8px; padding: 8px 10px; background: var(--surface-b); border: 1px solid var(--border); border-radius: 8px;
+  overflow-x: auto; line-height: 1.45;
+}
+.md pre code { background: none; border: 0; padding: 0; white-space: pre; }
+.conv-steps { min-width: 0; }
+.conv-steps-head { display: flex; align-items: center; gap: 10px; min-height: 22px; }
+.conv-steps-line {
+  flex: 1; min-width: 0; text-align: left; background: transparent; border: 0; padding: 2px 0; font: inherit; font-size: 12px;
+  color: var(--muted); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.conv-steps-line:hover { color: var(--text); }
+.conv-steps-line:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.conv-steps-line .chev { display: inline-block; transition: transform .15s; }
+.conv-steps-line[aria-expanded="true"] .chev { transform: rotate(90deg); }
+.conv-step-list { list-style: none; margin: 4px 0 0; padding: 0 0 0 12px; border-left: 2px solid var(--border); font-size: 12px; }
+.conv-step-list li { display: flex; align-items: center; gap: 8px; padding: 2px 0; color: var(--dim); min-width: 0; }
+.conv-step-list .tool { color: var(--text); flex: none; }
+.conv-step-list .target { font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.conv-step-list li.err .tool, .conv-step-list li.err .mark { color: var(--danger); }
+.conv-step-list li.running .tool { color: var(--muted); }
+.conv-step-list .conv-thumbs { margin-left: auto; }
+.conv-thumbs { display: flex; flex-wrap: wrap; gap: 6px; flex: none; }
+.conv-thumb {
+  height: 56px; min-width: 56px; max-width: 160px; padding: 0; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface-b); overflow: hidden; cursor: zoom-in; display: inline-flex; align-items: center; justify-content: center;
+}
+.conv-thumb img { height: 56px; width: auto; max-width: 160px; object-fit: cover; display: block; }
+.conv-thumb:hover { border-color: var(--border-strong); }
+.conv-thumb:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.conv-thumb.loading { width: 56px; cursor: default; }
+.conv-thumb.broken { width: 56px; color: var(--muted); cursor: default; }
+.conv-divider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 11px; margin: 6px 0; }
+.conv-divider::before, .conv-divider::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
+.conv-foot { flex: none; border-top: 1px solid var(--border); background: var(--surface-b); padding: 10px 18px; }
+.conv-foot .placeholder { margin: 0 auto; box-shadow: none; }
+.conv-composer { max-width: 880px; margin: 0 auto; }
+.conv-composer-row { display: flex; align-items: flex-end; gap: 8px; }
+.conv-composer textarea {
+  flex: 1; min-height: 38px; max-height: 30vh; resize: vertical; padding: 8px 10px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px; font: inherit; line-height: 1.45; outline: none;
+}
+.conv-composer textarea:focus { border-color: var(--accent); }
+.conv-composer textarea:disabled { opacity: .6; }
+.conv-composer .btn { margin-left: 0; }
+.conv-composer .btn:disabled, .conv-composer .btn:disabled:hover { opacity: .5; cursor: default; border-color: var(--border); color: var(--text); }
+.conv-composer-note { display: flex; align-items: center; gap: 8px; margin-top: 6px; color: var(--waiting-text); font-size: 12px; }
+.conv-composer .meta { margin: 6px 0 0; }
+/* Image popup over the whole app. */
+.conv-viewer { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, .78); display: flex; align-items: center; justify-content: center; }
+.conv-viewer-box { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.conv-viewer-box img { max-width: 90vw; max-height: 90vh; object-fit: contain; border-radius: 4px; box-shadow: 0 8px 40px rgba(0, 0, 0, .5); }
+.conv-viewer-close {
+  position: absolute; top: 14px; right: 18px; width: 34px; height: 34px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .35);
+  background: rgba(0, 0, 0, .45); color: #fff; font-size: 20px; line-height: 1; cursor: pointer;
+}
+.conv-viewer-close:hover { background: rgba(0, 0, 0, .7); }
+.conv-viewer-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

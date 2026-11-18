@@ -11,6 +11,7 @@ import Dashboard from "./pages/Dashboard";
 import History from "./pages/History";
 import SessionDetailPage from "./pages/SessionDetail";
 import SessionTerminalPlaceholder from "./pages/SessionTerminalPlaceholder";
+import ConversationPage from "./conversation/ConversationPage";
 import SettingsPage from "./pages/Settings";
 import { currentSettings, loadSettings, pushLang } from "./settings";
 import { statusKind } from "./format";
@@ -192,6 +193,16 @@ export default function App() {
   const focusKey = focusIds.join("\n");
   useEffect(() => { setFocusContext(focusKey ? focusKey.split("\n") : []).catch(() => {}); }, [focusKey]);
 
+  // Terminal | Conversation | Info: follows the active pane in a split; the
+  // other tabs keep the terminal (and leave the split as it is).
+  const bar = tabBarFor(view, terminals, snapshot.sessions);
+  const selectTab = (tab: SessionTab) => {
+    if (!bar) return;
+    const term = bar.terminal;
+    if (tab !== "terminal") setView(term !== undefined ? { session: bar.sessionId, tab, terminal: term } : { session: bar.sessionId, tab });
+    else setView(term !== undefined ? { terminal: term } : { session: bar.sessionId, tab });
+  };
+
   let page;
   if (view === "dashboard") {
     page = <Dashboard snapshot={snapshot} history={history} now={now}
@@ -205,6 +216,10 @@ export default function App() {
     page = <SessionTerminalPlaceholder key={view.session} sessionId={view.session}
       card={snapshot.sessions.find((s) => s.sessionId === view.session)} onResume={onResume} onAdopted={onAdopted}
       onTerminal={(id) => setView({ terminal: id })} />;
+  } else if ("session" in view && view.tab === "conversation") {
+    page = <ConversationPage key={view.session} sessionId={view.session}
+      card={snapshot.sessions.find((s) => s.sessionId === view.session)} onResume={onResume} onAdopted={onAdopted}
+      onTerminal={(id) => setView({ terminal: id })} onShowTerminal={() => selectTab("terminal")} />;
   } else if ("session" in view) {
     page = <SessionDetailPage key={view.session} sessionId={view.session}
       live={snapshot.sessions.some((s) => s.sessionId === view.session)} onResume={onResume}
@@ -217,15 +232,6 @@ export default function App() {
       </div>
     );
   }
-
-  // Terminal | Info: follows the active pane in a split; Info leaves the split as it is.
-  const bar = tabBarFor(view, terminals, snapshot.sessions);
-  const selectTab = (tab: SessionTab) => {
-    if (!bar) return;
-    const term = bar.terminal;
-    if (tab === "info") setView(term !== undefined ? { session: bar.sessionId, tab, terminal: term } : { session: bar.sessionId, tab });
-    else setView(term !== undefined ? { terminal: term } : { session: bar.sessionId, tab });
-  };
 
   const sideOpen = sidebarOpen.use();
   // The split controls share the tab row when both are on screen.

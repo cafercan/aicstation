@@ -2,10 +2,11 @@ import type { ReactNode } from "react";
 import { useT } from "../i18n";
 import type { SessionTab } from "./Sidebar";
 
-const TABS: SessionTab[] = ["terminal", "info"];
+const TABS: SessionTab[] = ["terminal", "conversation", "info"];
+const LABEL = { terminal: "tabs.terminal", conversation: "tabs.conversation", info: "tabs.info" } as const;
 
 /**
- * `Terminal | Info` bar at the top of the session view; a click only switches the tab.
+ * `Terminal | Conversation | Info` bar at the top of the session view; a click only switches the tab.
  * `extra` (the split controls) goes to the right end of the same row.
  */
 export default function SessionTabs({ active, onSelect, extra }: {
@@ -17,7 +18,7 @@ export default function SessionTabs({ active, onSelect, extra }: {
       {TABS.map((tab) => (
         <button key={tab} type="button" role="tab" aria-selected={tab === active}
           className={tab === active ? "on" : undefined} onClick={() => { if (tab !== active) onSelect(tab); }}>
-          {t(tab === "terminal" ? "tabs.terminal" : "tabs.info")}
+          {t(LABEL[tab])}
         </button>
       ))}
       {extra}

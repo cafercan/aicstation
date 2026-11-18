@@ -13,6 +13,7 @@ const invoke = vi.hoisted(() => vi.fn(async (cmd: string, _args?: unknown): Prom
   if (cmd === "pty_kill") return undefined;
   if (cmd === "get_session_detail") return null;
   if (cmd === "set_focus_context") return null;
+  if (cmd === "get_conversation_page") return { epoch: 1, total: 1, start: 0, items: [{ kind: "user", text: "sohbet metni", truncated: false, images: [], atMs: 1 }] };
   return { rows: [], todayCost: 0, todayTokens: 0, todayComplete: true, indexing: false };
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke, Channel: class {} }));
@@ -135,6 +136,22 @@ test("sekmeye tıklamak Terminal ile Bilgi arasında geçer; Bilgi'de terminal s
   expect(tab("Terminal").getAttribute("aria-selected")).toBe("true");
   expect(termVisible(1)).toBe("true");
   expect(screen.queryByText("Oturum bulunamadı.")).toBeNull();
+});
+
+test("Sohbet sekmesi konuşmayı gösterir, terminal satırı seçili kalır; Onay notu Terminal sekmesine döner", async () => {
+  fake.add(1, 50);
+  snap.sessions = [card({ sessionId: "s-app", name: "uygulama", parentPid: 50, status: "waiting" })];
+  const { container } = render(<App />);
+  await waitFor(() => expect(container.querySelector(".grid .card")).toBeTruthy());
+  fireEvent.click(container.querySelector(".grid .card")!);
+  fireEvent.click(tab("Sohbet"));
+  expect(tab("Sohbet").getAttribute("aria-selected")).toBe("true");
+  expect(termVisible(1)).toBe("false");
+  expect(await screen.findByText("sohbet metni")).toBeTruthy();
+  expect(container.querySelector(".side .item.sub.on")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Terminal sekmesi" }));
+  expect(tab("Terminal").getAttribute("aria-selected")).toBe("true");
+  expect(termVisible(1)).toBe("true");
 });
 
 test("Böl düğmesi oturumun sekme satırında durur; ayrı bir satır kalmaz", async () => {
