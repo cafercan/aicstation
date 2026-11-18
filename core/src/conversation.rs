@@ -1,11 +1,12 @@
 //! Conversation nodes parsed from transcript lines, and on-demand image reading.
-use crate::transcript::tool_target;
+use crate::transcript::{tool_target, TranscriptReader};
 use chrono::DateTime;
 use serde::Serialize;
 use serde_json::Value;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
-use std::path::Path;
+use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
 
 const MAX_TEXT: usize = 64 * 1024;
 const MAX_LINE: usize = crate::transcript::MAX_LINE;
@@ -276,6 +277,263 @@ pub fn read_image(path: &Path, offset: u64, ordinal: u32) -> Result<(String, Str
     Ok((mt.to_string(), data.to_string()))
 }
 
+/// One tool call of a [`ConvItem::Steps`] group.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Step {
+    pub tool: String,
+    pub target: String,
+    /// Its tool result is on the chain.
+    pub done: bool,
+    pub is_error: bool,
+    pub images: Vec<ImageRef>,
+}
+
+/// One displayed entry of the current conversation branch.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum ConvItem {
+    User { text: String, truncated: bool, images: Vec<ImageRef>, at_ms: i64 },
+    Assistant { text: String, truncated: bool, at_ms: i64 },
+    Steps { steps: Vec<Step>, at_ms: i64 },
+    Compacted { at_ms: i64 },
+}
+
+/// Items `start..start + items.len()` of the `total` items of the branch
+/// identified by `epoch`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConvPage {
+    pub epoch: u32,
+    pub total: u32,
+    pub start: u32,
+    pub items: Vec<ConvItem>,
+}
+
+/// Items per page.
+pub const PAGE: u32 = 100;
+
+/// The current branch of one transcript, kept up to date incrementally.
+pub struct Conversation {
+    path: PathBuf,
+    reader: TranscriptReader,
+    nodes: HashMap<String, Node>,
+    leaf: Option<String>,
+    chain: Vec<String>,
+    items: Vec<ConvItem>,
+    images: HashSet<(u64, u32)>,
+    epoch: u32,
+}
+
+impl Conversation {
+    pub fn new(path: PathBuf) -> Self {
+        Self {
+            reader: TranscriptReader::new(path.clone()),
+            path,
+            nodes: HashMap::new(),
+            leaf: None,
+            chain: Vec::new(),
+            items: Vec::new(),
+            images: HashSet::new(),
+            epoch: 0,
+        }
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Reads the lines appended since the last call. A shrunk file clears
+    /// everything and starts a new epoch; a new leaf whose chain does not
+    /// extend the previous one (rewind, edit, retry) also starts one. Lines
+    /// delivered before an io error are kept.
+    pub fn update(&mut self) -> io::Result<()> {
+        let mut reset = false;
+        let mut fresh = Vec::new();
+        let res = self.reader.read_lines_at(
+            || reset = true,
+            |at, l| fresh.extend(parse_node(at, l)),
+        );
+        if reset {
+            self.nodes.clear();
+            self.leaf = None;
+            self.chain.clear();
+            self.epoch = self.epoch.wrapping_add(1);
+        }
+        let changed = reset || !fresh.is_empty();
+        for n in fresh {
+            if n.body != NodeBody::Other {
+                self.leaf = Some(n.uuid.clone());
+            }
+            self.nodes.insert(n.uuid.clone(), n);
+        }
+        if changed {
+            self.rebuild();
+        }
+        res
+    }
+
+    fn rebuild(&mut self) {
+        let chain = current_chain(&self.nodes, self.leaf.as_deref());
+        let uuids: Vec<String> = chain
+            .iter()
+            .filter_map(|l| match l {
+                Link::Node(n) => Some(n.uuid.clone()),
+                Link::Jump(_) => None,
+            })
+            .collect();
+        if !uuids.starts_with(&self.chain) {
+            self.epoch = self.epoch.wrapping_add(1);
+        }
+        self.items = group(&chain);
+        self.images.clear();
+        for item in &self.items {
+            let refs: &mut dyn Iterator<Item = &ImageRef> = match item {
+                ConvItem::User { images, .. } => &mut images.iter(),
+                ConvItem::Steps { steps, .. } => &mut steps.iter().flat_map(|s| &s.images),
+                _ => continue,
+            };
+            self.images.extend(refs.map(|r| (r.offset, r.ordinal)));
+        }
+        self.chain = uuids;
+    }
+
+    fn total(&self) -> u32 {
+        self.items.len() as u32
+    }
+
+    fn slice(&self, start: u32, end: u32) -> ConvPage {
+        ConvPage {
+            epoch: self.epoch,
+            total: self.total(),
+            start,
+            items: self.items[start as usize..end as usize].to_vec(),
+        }
+    }
+
+    /// The (at most) `PAGE` items ending before index `before` (default: the end).
+    pub fn page(&self, before: Option<u32>) -> ConvPage {
+        let end = before.unwrap_or(self.total()).min(self.total());
+        self.slice(end.saturating_sub(PAGE), end)
+    }
+
+    /// Items from index `from` on when `epoch` is still current; otherwise
+    /// the newest page (the caller then replaces what it has).
+    pub fn since(&self, epoch: u32, from: u32) -> ConvPage {
+        if epoch != self.epoch {
+            return self.page(None);
+        }
+        self.slice(from.min(self.total()), self.total())
+    }
+
+    /// True when the image is shown somewhere on the current branch.
+    pub fn has_image(&self, offset: u64, ordinal: u32) -> bool {
+        self.images.contains(&(offset, ordinal))
+    }
+}
+
+enum Link<'a> {
+    Node(&'a Node),
+    /// The walk crossed to a logical parent at a node that is not a compact
+    /// boundary; carries that node's time.
+    Jump(i64),
+}
+
+/// The chain from `leaf` back to its root, in file order. A missing parent
+/// continues at the logical parent (compaction); a cycle ends the walk.
+fn current_chain<'a>(nodes: &'a HashMap<String, Node>, leaf: Option<&str>) -> Vec<Link<'a>> {
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    let mut cur = leaf.and_then(|u| nodes.get(u));
+    while let Some(n) = cur {
+        if !seen.insert(n.uuid.as_str()) {
+            break;
+        }
+        out.push(Link::Node(n));
+        cur = match n.parent.as_deref().and_then(|p| nodes.get(p)) {
+            Some(p) => Some(p),
+            None => {
+                let lp = n
+                    .logical_parent
+                    .as_deref()
+                    .and_then(|p| nodes.get(p))
+                    .filter(|p| !seen.contains(p.uuid.as_str()));
+                if lp.is_some() && n.body != NodeBody::CompactBoundary {
+                    out.push(Link::Jump(n.at_ms));
+                }
+                lp
+            }
+        };
+    }
+    out.reverse();
+    out
+}
+
+/// Groups a chain into displayed items (see [`ConvItem`]).
+fn group(chain: &[Link]) -> Vec<ConvItem> {
+    let mut items = Vec::new();
+    // tool_use id -> (item index, step index)
+    let mut steps_at: HashMap<&str, (usize, usize)> = HashMap::new();
+    for link in chain {
+        let n = match link {
+            Link::Jump(at_ms) => {
+                items.push(ConvItem::Compacted { at_ms: *at_ms });
+                continue;
+            }
+            Link::Node(n) => n,
+        };
+        match &n.body {
+            NodeBody::UserText { text, truncated, images } => items.push(ConvItem::User {
+                text: text.clone(),
+                truncated: *truncated,
+                images: images.clone(),
+                at_ms: n.at_ms,
+            }),
+            NodeBody::AssistantText { text, truncated } => match items.last_mut() {
+                Some(ConvItem::Assistant { text: t, truncated: tr, .. }) => {
+                    t.push_str("\n\n");
+                    t.push_str(text);
+                    *tr |= *truncated;
+                }
+                _ => items.push(ConvItem::Assistant { text: text.clone(), truncated: *truncated, at_ms: n.at_ms }),
+            },
+            NodeBody::ToolUses(uses) => {
+                if !matches!(items.last(), Some(ConvItem::Steps { .. })) {
+                    items.push(ConvItem::Steps { steps: Vec::new(), at_ms: n.at_ms });
+                }
+                let i = items.len() - 1;
+                let Some(ConvItem::Steps { steps, .. }) = items.last_mut() else { unreachable!() };
+                for (id, tool, target) in uses {
+                    if !id.is_empty() {
+                        steps_at.insert(id, (i, steps.len()));
+                    }
+                    steps.push(Step {
+                        tool: tool.clone(),
+                        target: target.clone(),
+                        done: false,
+                        is_error: false,
+                        images: Vec::new(),
+                    });
+                }
+            }
+            NodeBody::ToolResults(results) => {
+                for (id, is_error, images) in results {
+                    let Some(&(i, j)) = steps_at.get(id.as_str()) else { continue };
+                    if let ConvItem::Steps { steps, .. } = &mut items[i] {
+                        let s = &mut steps[j];
+                        s.done = true;
+                        s.is_error = *is_error;
+                        s.images.extend(images.iter().cloned());
+                    }
+                }
+            }
+            NodeBody::CompactBoundary => items.push(ConvItem::Compacted { at_ms: n.at_ms }),
+            NodeBody::Other => {}
+        }
+    }
+    items
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -418,5 +676,335 @@ mod tests {
         let mut f = File::create(&bad).unwrap();
         writeln!(f, r#"{{"message":{{"content":[{{"type":"image","source":{{"type":"base64","media_type":"image/png","data":"AA<>"}}}}]}}}}"#).unwrap();
         assert_eq!(read_image(&bad, 0, 0), Err(ImageError::Gone));
+    }
+
+    /// Hand-made transcript written line by line; line `n` gets timestamp
+    /// `T0 + n` seconds.
+    struct Tx {
+        _dir: tempfile::TempDir,
+        path: PathBuf,
+        off: u64,
+        n: i64,
+    }
+
+    const T0: i64 = 1_767_225_600_000;
+
+    impl Tx {
+        fn new() -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("s.jsonl");
+            File::create(&path).unwrap();
+            Self { _dir: dir, path, off: 0, n: 0 }
+        }
+
+        /// Appends a line; returns (byte offset, at_ms).
+        fn push(&mut self, mut v: Value) -> (u64, i64) {
+            let at = T0 + self.n * 1000;
+            v["timestamp"] = Value::from(chrono::DateTime::from_timestamp_millis(at).unwrap().to_rfc3339());
+            self.n += 1;
+            let line = format!("{v}\n");
+            let mut f = std::fs::OpenOptions::new().append(true).open(&self.path).unwrap();
+            f.write_all(line.as_bytes()).unwrap();
+            let off = self.off;
+            self.off += line.len() as u64;
+            (off, at)
+        }
+
+        fn conv(&self) -> Conversation {
+            let mut c = Conversation::new(self.path.clone());
+            c.update().unwrap();
+            c
+        }
+    }
+
+    fn img() -> Value {
+        serde_json::json!({"type":"image","source":{"type":"base64","media_type":"image/png","data":"AAAA"}})
+    }
+
+    fn line(kind: &str, uuid: &str, parent: Option<&str>, content: Value) -> Value {
+        serde_json::json!({"type": kind, "uuid": uuid, "parentUuid": parent, "message": {"content": content}})
+    }
+
+    fn u(uuid: &str, parent: Option<&str>, text: &str) -> Value {
+        line("user", uuid, parent, Value::from(text))
+    }
+
+    fn u_img(uuid: &str, parent: Option<&str>, text: &str) -> Value {
+        line("user", uuid, parent, serde_json::json!([{"type":"text","text":text}, img()]))
+    }
+
+    fn a(uuid: &str, parent: &str, text: &str) -> Value {
+        line("assistant", uuid, Some(parent), serde_json::json!([{"type":"text","text":text}]))
+    }
+
+    fn think(uuid: &str, parent: &str) -> Value {
+        line("assistant", uuid, Some(parent), serde_json::json!([{"type":"thinking","thinking":"hm"}]))
+    }
+
+    fn tu(uuid: &str, parent: &str, id: &str, name: &str, input: Value) -> Value {
+        line("assistant", uuid, Some(parent), serde_json::json!([{"type":"tool_use","id":id,"name":name,"input":input}]))
+    }
+
+    fn bash(uuid: &str, parent: &str, id: &str) -> Value {
+        tu(uuid, parent, id, "Bash", serde_json::json!({"command": "ls"}))
+    }
+
+    fn tr(uuid: &str, parent: &str, id: &str, err: bool, images: usize) -> Value {
+        let inner: Vec<Value> = (0..images).map(|_| img()).collect();
+        line("user", uuid, Some(parent), serde_json::json!([{"type":"tool_result","tool_use_id":id,"is_error":err,"content":inner}]))
+    }
+
+    fn kinds(items: &[ConvItem]) -> Vec<String> {
+        items
+            .iter()
+            .map(|i| match i {
+                ConvItem::User { text, .. } => format!("U:{text}"),
+                ConvItem::Assistant { text, .. } => format!("A:{text}"),
+                ConvItem::Steps { steps, .. } => format!("S{}", steps.len()),
+                ConvItem::Compacted { .. } => "C".to_string(),
+            })
+            .collect()
+    }
+
+    fn all(c: &Conversation) -> Vec<ConvItem> {
+        c.page(None).items
+    }
+
+    #[test]
+    fn groups_text_and_steps() {
+        let mut t = Tx::new();
+        let (_, at_u) = t.push(u("u1", None, "hi"));
+        let (_, at_a) = t.push(a("a1", "u1", "let me look"));
+        t.push(think("th", "a1"));
+        t.push(a("a2", "th", "more"));
+        let (_, at_s) = t.push(bash("b1", "a2", "t1"));
+        t.push(tr("r1", "b1", "t1", false, 0));
+        t.push(think("th2", "r1"));
+        t.push(bash("b2", "th2", "t2"));
+        t.push(tr("r2", "b2", "t2", true, 0));
+        t.push(tu("rd", "r2", "t3", "Read", serde_json::json!({"file_path": "/x/grid.jpg"})));
+        t.push(tr("r3", "rd", "t3", false, 0));
+        let (_, at_end) = t.push(a("a3", "r3", "done"));
+        let items = all(&t.conv());
+        assert_eq!(kinds(&items), ["U:hi", "A:let me look\n\nmore", "S3", "A:done"]);
+        let ats: Vec<i64> = items
+            .iter()
+            .map(|i| match i {
+                ConvItem::User { at_ms, .. }
+                | ConvItem::Assistant { at_ms, .. }
+                | ConvItem::Steps { at_ms, .. }
+                | ConvItem::Compacted { at_ms } => *at_ms,
+            })
+            .collect();
+        assert_eq!(ats, [at_u, at_a, at_s, at_end]);
+        let ConvItem::Steps { steps, .. } = &items[2] else { panic!() };
+        let tools: Vec<_> = steps.iter().map(|s| (s.tool.as_str(), s.target.as_str(), s.done, s.is_error)).collect();
+        assert_eq!(tools, [("Bash", "ls", true, false), ("Bash", "ls", true, true), ("Read", "grid.jpg", true, false)]);
+    }
+
+    #[test]
+    fn user_message_breaks_steps_and_unknown_result_is_ignored() {
+        let mut t = Tx::new();
+        t.push(u("u1", None, "go"));
+        t.push(bash("b1", "u1", "t1"));
+        t.push(u("u2", Some("b1"), "stop"));
+        t.push(tr("r0", "u2", "nope", true, 1));
+        t.push(bash("b2", "r0", "t2"));
+        let items = all(&t.conv());
+        assert_eq!(kinds(&items), ["U:go", "S1", "U:stop", "S1"]);
+        let ConvItem::Steps { steps, .. } = &items[1] else { panic!() };
+        assert!(!steps[0].done);
+        assert!(steps[0].images.is_empty());
+    }
+
+    #[test]
+    fn tool_result_marks_step_done_with_image() {
+        let mut t = Tx::new();
+        t.push(u("u1", None, "show"));
+        t.push(tu("rd", "u1", "t1", "Read", serde_json::json!({"file_path": "/x/grid.jpg"})));
+        let (off, _) = t.push(tr("r1", "rd", "t1", false, 1));
+        let items = all(&t.conv());
+        let ConvItem::Steps { steps, .. } = &items[1] else { panic!("{items:?}") };
+        assert_eq!(
+            steps[0],
+            Step {
+                tool: "Read".into(),
+                target: "grid.jpg".into(),
+                done: true,
+                is_error: false,
+                images: vec![ImageRef { offset: off, ordinal: 0, media_type: "image/png".into() }],
+            }
+        );
+    }
+
+    #[test]
+    fn rewind_shows_current_branch_and_bumps_epoch() {
+        let mut t = Tx::new();
+        t.push(u("u0", None, "start"));
+        t.push(a("a0", "u0", "ok"));
+        t.push(u("ua", Some("a0"), "A"));
+        t.push(a("aa", "ua", "reply"));
+        let mut c = t.conv();
+        assert_eq!(kinds(&all(&c)), ["U:start", "A:ok", "U:A", "A:reply"]);
+        let e0 = c.page(None).epoch;
+        t.push(u("ub", Some("a0"), "B"));
+        c.update().unwrap();
+        assert_eq!(kinds(&all(&c)), ["U:start", "A:ok", "U:B"]);
+        assert!(c.page(None).epoch > e0);
+        // Extending the branch keeps the epoch.
+        let e1 = c.page(None).epoch;
+        t.push(a("ab", "ub", "reply B"));
+        c.update().unwrap();
+        assert_eq!(kinds(&all(&c)), ["U:start", "A:ok", "U:B", "A:reply B"]);
+        assert_eq!(c.page(None).epoch, e1);
+    }
+
+    #[test]
+    fn compaction_keeps_history_with_divider() {
+        let mut t = Tx::new();
+        t.push(u("u1", None, "before"));
+        t.push(a("a1", "u1", "old reply"));
+        let mut c = t.conv();
+        let e0 = c.page(None).epoch;
+        let mut cb = line("system", "cb", None, Value::Null);
+        cb["subtype"] = "compact_boundary".into();
+        cb["logicalParentUuid"] = "a1".into();
+        let (_, at_cb) = t.push(cb);
+        let mut sum = u("sum", Some("cb"), "summary text");
+        sum["isCompactSummary"] = true.into();
+        t.push(sum);
+        t.push(u("u2", Some("sum"), "after"));
+        c.update().unwrap();
+        let items = all(&c);
+        assert_eq!(kinds(&items), ["U:before", "A:old reply", "C", "U:after"]);
+        assert_eq!(items[2], ConvItem::Compacted { at_ms: at_cb });
+        assert_eq!(c.page(None).epoch, e0);
+    }
+
+    #[test]
+    fn jump_without_boundary_node_gets_divider() {
+        let mut t = Tx::new();
+        t.push(u("u1", None, "before"));
+        let mut n = u("u2", None, "after");
+        n["logicalParentUuid"] = "u1".into();
+        let (_, at) = t.push(n);
+        let items = all(&t.conv());
+        assert_eq!(kinds(&items), ["U:before", "C", "U:after"]);
+        assert_eq!(items[1], ConvItem::Compacted { at_ms: at });
+    }
+
+    #[test]
+    fn parent_cycle_terminates() {
+        let mut t = Tx::new();
+        t.push(u("x", Some("y"), "one"));
+        t.push(u("y", Some("x"), "two"));
+        assert_eq!(kinds(&all(&t.conv())), ["U:one", "U:two"]);
+    }
+
+    #[test]
+    fn since_resends_last_item_and_newer() {
+        let mut t = Tx::new();
+        t.push(u("u1", None, "go"));
+        t.push(bash("b1", "u1", "t1"));
+        let mut c = t.conv();
+        let p = c.page(None);
+        assert_eq!(p.total, 2);
+        let last = p.total - 1;
+        t.push(tr("r1", "b1", "t1", false, 0));
+        t.push(bash("b2", "r1", "t2"));
+        c.update().unwrap();
+        let s = c.since(p.epoch, last);
+        assert_eq!(s.start, last);
+        assert_eq!(s.total, 2);
+        assert_eq!(kinds(&s.items), ["S2"]);
+        let s = c.since(p.epoch, 99);
+        assert_eq!((s.start, s.items.len()), (2, 0));
+    }
+
+    #[test]
+    fn since_with_old_epoch_returns_newest_page() {
+        let mut t = Tx::new();
+        t.push(u("u0", None, "start"));
+        t.push(u("ua", Some("u0"), "A"));
+        let mut c = t.conv();
+        let e0 = c.page(None).epoch;
+        t.push(u("ub", Some("u0"), "B"));
+        c.update().unwrap();
+        let s = c.since(e0, 1);
+        assert_ne!(s.epoch, e0);
+        assert_eq!(s, c.page(None));
+        assert_eq!((s.start, s.total), (0, 2));
+        assert_eq!(kinds(&s.items), ["U:start", "U:B"]);
+    }
+
+    #[test]
+    fn truncated_file_resets_and_bumps_epoch() {
+        let mut t = Tx::new();
+        t.push(u("u0", None, "old"));
+        t.push(u("u1", Some("u0"), "old 2"));
+        let mut c = t.conv();
+        let e0 = c.page(None).epoch;
+        std::fs::write(&t.path, "").unwrap();
+        c.update().unwrap();
+        assert_eq!(c.page(None).total, 0);
+        assert_eq!(c.page(None).epoch, e0 + 1);
+    }
+
+    #[test]
+    fn page_returns_newest_100_of_5000() {
+        let mut t = Tx::new();
+        let mut text = String::new();
+        for i in 0..5000 {
+            let parent = (i > 0).then(|| format!("u{}", i - 1));
+            text.push_str(&format!("{}\n", u(&format!("u{i}"), parent.as_deref(), &format!("m{i}"))));
+        }
+        std::fs::write(&t.path, text).unwrap();
+        t.off = 0;
+        let c = t.conv();
+        let p = c.page(None);
+        assert_eq!((p.total, p.start, p.items.len()), (5000, 4900, 100));
+        assert_eq!(kinds(&p.items[..1]), ["U:m4900"]);
+        let p = c.page(Some(4900));
+        assert_eq!((p.total, p.start, p.items.len()), (5000, 4800, 100));
+        let p = c.page(Some(50));
+        assert_eq!((p.start, p.items.len()), (0, 50));
+        let p = c.page(Some(9999));
+        assert_eq!((p.start, p.items.len()), (4900, 100));
+    }
+
+    #[test]
+    fn has_image_only_for_current_chain() {
+        let mut t = Tx::new();
+        t.push(u("u0", None, "start"));
+        let (off_a, _) = t.push(u_img("ua", Some("u0"), "A"));
+        t.push(tu("rd", "ua", "t1", "Read", serde_json::json!({"file_path": "/x/a.png"})));
+        let (off_r, _) = t.push(tr("r1", "rd", "t1", false, 2));
+        let mut c = t.conv();
+        assert!(c.has_image(off_a, 0));
+        assert!(c.has_image(off_r, 0));
+        assert!(c.has_image(off_r, 1));
+        assert!(!c.has_image(off_r, 2));
+        let (off_b, _) = t.push(u_img("ub", Some("u0"), "B"));
+        c.update().unwrap();
+        assert!(!c.has_image(off_a, 0));
+        assert!(!c.has_image(off_r, 0));
+        assert!(c.has_image(off_b, 0));
+    }
+
+    #[test]
+    fn serializes_items_with_kind_tag() {
+        let item = ConvItem::Steps {
+            steps: vec![Step { tool: "Bash".into(), target: "ls".into(), done: true, is_error: false, images: vec![] }],
+            at_ms: 5,
+        };
+        assert_eq!(
+            serde_json::to_value(&item).unwrap(),
+            serde_json::json!({"kind":"steps","atMs":5,"steps":[{"tool":"Bash","target":"ls","done":true,"isError":false,"images":[]}]})
+        );
+        let page = ConvPage { epoch: 1, total: 0, start: 0, items: vec![ConvItem::Compacted { at_ms: 2 }] };
+        assert_eq!(
+            serde_json::to_value(&page).unwrap(),
+            serde_json::json!({"epoch":1,"total":0,"start":0,"items":[{"kind":"compacted","atMs":2}]})
+        );
     }
 }
