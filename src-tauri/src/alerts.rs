@@ -285,6 +285,7 @@ mod tests {
             host_kind: HostKind::Other,
             agents_running: 0,
             movable: false,
+            remote_control: false,
         }
     }
 

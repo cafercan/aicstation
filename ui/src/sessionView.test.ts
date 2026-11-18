@@ -10,7 +10,7 @@ function card(over: Partial<SessionCard>): SessionCard {
     model: null, contextPct: null, costUsd: 0,
     tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 },
     agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 0,
-    gitBranch: null, hostKind: "other", movable: true, agentsRunning: 0, ...over,
+    gitBranch: null, hostKind: "other", movable: true, agentsRunning: 0, remoteControl: false, ...over,
   };
 }
 

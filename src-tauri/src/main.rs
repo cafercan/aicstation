@@ -348,6 +348,8 @@ fn main() {
             commands::pty_spawn,
             commands::pty_spawn_resume,
             commands::adopt_session,
+            commands::send_to_session,
+            commands::open_remote_control,
             commands::pty_write,
             commands::pty_resize,
             commands::pty_kill,

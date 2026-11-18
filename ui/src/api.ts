@@ -55,6 +55,8 @@ export interface SessionCard {
   movable: boolean;
   /** Agents of this session currently running. */
   agentsRunning: number;
+  /** Remote Control is on for the session (claude.ai/code can open it). */
+  remoteControl: boolean;
 }
 
 export type HostKind = "embedded" | "windowsTerminal" | "other";
@@ -205,6 +207,14 @@ export const getConversationSince = (sessionId: string, epoch: number, from: num
 export const getConversationImage = (sessionId: string, offset: number, ordinal: number) =>
   invoke<ConvImage>("get_conversation_image", { sessionId, offset, ordinal });
 export const openFolder = (path: string) => invoke<void>("open_folder", { path });
+/**
+ * Message box: sends `text` to the session's app terminal as a paste plus
+ * Enter. Only the id and the text are sent; the backend finds the terminal.
+ */
+export const sendToSession = (sessionId: string, text: string) =>
+  invoke<void>("send_to_session", { sessionId, text });
+/** Opens the session on claude.ai/code in the system browser; only the id is sent. */
+export const openRemoteControl = (sessionId: string) => invoke<void>("open_remote_control", { sessionId });
 export interface PtyInfo { id: number; pid: number }
 
 /** Only the session id is sent; the backend validates it and finds the folder. */

@@ -69,6 +69,16 @@ pub fn open_folder(dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Opens an app-built `https://` URL in the default browser through
+/// `xdg-open`. The URL starts with `https:`, so it can never be read as an option.
+pub fn open_url(url: &str) -> std::io::Result<()> {
+    let opener = find_program(OsStr::new("xdg-open"), std::env::var_os("PATH").as_deref())
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "xdg-open"))?;
+    let mut child = Command::new(opener).arg(url).spawn()?;
+    std::thread::spawn(move || child.wait());
+    Ok(())
+}
+
 /// The terminal emulator to open: `$TERMINAL` when it names a program,
 /// otherwise the first of [`TERMINALS`] that is installed.
 pub(crate) fn terminal_program(terminal_env: Option<&OsStr>, path: Option<&OsStr>) -> Option<PathBuf> {

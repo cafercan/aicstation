@@ -17,6 +17,8 @@
     "allow-pty-spawn",
     "allow-pty-spawn-resume",
     "allow-adopt-session",
+    "allow-send-to-session",
+    "allow-open-remote-control",
     "allow-pty-write",
     "allow-pty-resize",
     "allow-pty-kill",

@@ -234,6 +234,9 @@ These are guarantees of the code in this repository:
   make their own connections, outside the app's control. Programs you run in
   an embedded terminal, such as `claude` itself, use the network as they
   normally would.
+- **Remote Control opens only on a click.** Only clicking a session's Remote
+  Control mark opens `claude.ai/code/<session>`, in your system browser; the
+  app itself still makes no network request.
 - **No hooks; one setting, reversible.** It does not install Claude Code
   hooks. It changes one key of Claude Code's `settings.json`, `statusLine`,
   for **Show Claude usage limits**: once at the first start (the option is on
@@ -476,6 +479,8 @@ Claude ve Claude Code, Anthropic'in ticari markalarıdır.
 
 **Gizlilik:** `~/.claude` yalnızca okunur (`sessions/*.key` hiç açılmaz).
 Uygulamanın kendisi ağ isteği yapmaz; telemetri ve otomatik güncelleme yoktur.
+Yalnızca bir oturumun Remote Control işaretine tıklayınca `claude.ai/code/<oturum>`
+sistem tarayıcısında açılır; uygulama yine kendisi istek yapmaz.
 Hook kurmaz. Claude Code ayarlarından yalnızca `statusLine`'ı, "Claude
 kullanım limitlerini göster" için değiştirir (ilk açılışta bir kez, varsayılan
 açık); kendi status line'ın çalışmaya devam eder, kapatınca ya da uygulama

@@ -7,7 +7,7 @@ use station_core::host::HostKind;
 use station_core::conversation::{read_image, ConvPage, Conversation, ImageError};
 use station_core::locate::{cwd_matches_project_dir, is_session_id, Locator};
 use station_core::monitor::{AdoptRefusal, AdoptSource, ClosedKey, Monitor, SessionDetail, Snapshot};
-use station_core::registry::ProcessProbe;
+use station_core::registry::{is_bridge_id, LiveSession, ProcessProbe, SessionStatus};
 use station_core::search::{search_transcripts_limited, validate_query, Limits, SearchOutcome};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -504,6 +504,34 @@ impl AppState {
                 .map(|s| (s.pid, s.name.clone()))
         })
         .ok_or_else(|| errors::SESSION_NOT_LIVE.into())
+    }
+
+    /// The shell pid of the app terminal a live session runs in, for sending
+    /// it text. Read fresh from the registry (never the cached snapshot): a
+    /// session waiting for an answer is `send_waiting` (the text would land in
+    /// its prompt), one outside an app terminal is `send_not_embedded`.
+    pub fn send_target(&self, id: &str) -> Result<u32, String> {
+        let l = self.fresh_live(id)?;
+        if l.status == SessionStatus::Waiting || l.waiting_for.is_some() {
+            return Err(errors::SEND_WAITING.into());
+        }
+        self.probe.terminal_pid(l.pid).ok_or_else(|| errors::SEND_NOT_EMBEDDED.into())
+    }
+
+    /// `https://claude.ai/code/<bridge id>` of a live session with Remote
+    /// Control on, read fresh from the registry; `remote_off` otherwise.
+    pub fn remote_url(&self, id: &str) -> Result<String, String> {
+        let bridge = self.fresh_live(id)?.bridge_session_id.filter(|b| is_bridge_id(b)).ok_or(errors::REMOTE_OFF)?;
+        Ok(format!("https://claude.ai/code/{bridge}"))
+    }
+
+    /// The registry entry of a live session, read fresh; `session_invalid`
+    /// for a malformed id, `session_not_live` when it is not live.
+    fn fresh_live(&self, id: &str) -> Result<LiveSession, String> {
+        if !is_session_id(id) {
+            return Err(errors::SESSION_INVALID.into());
+        }
+        lock(&self.monitor).live_session(id, self.probe.as_ref()).ok_or_else(|| errors::SESSION_NOT_LIVE.into())
     }
 
     /// First cwd and transcript folder of a closed session. Only an indexed
@@ -1341,7 +1369,13 @@ mod tests {
         fn host_kind(&self, _pid: u32) -> station_core::host::HostKind {
             station_core::host::HostKind::Embedded
         }
+        fn terminal_pid(&self, _pid: u32) -> Option<u32> {
+            Some(EMBED_SHELL)
+        }
     }
+
+    /// Shell pid of the app terminal `EmbeddedProbe` reports.
+    const EMBED_SHELL: u32 = 4242;
 
     /// Live ADOPT_ID (pid 5151, interactive CLI, `status`) whose first cwd is
     /// the existing `work` folder. `in_project`: the transcript sits in
@@ -1362,11 +1396,16 @@ mod tests {
     }
 
     fn write_registry(reg: &Path, cwd: &str, status: &str) {
+        write_registry_with(reg, cwd, status, "");
+    }
+
+    /// `write_registry` plus raw JSON members (`extra` starts with a comma).
+    fn write_registry_with(reg: &Path, cwd: &str, status: &str, extra: &str) {
         let cwd = serde_json::to_string(cwd).unwrap();
         fs::write(
             reg,
             format!(
-                r#"{{"pid":5151,"sessionId":"{ADOPT_ID}","cwd":{cwd},"procStart":"888","status":"{status}","kind":"interactive","entrypoint":"cli"}}"#
+                r#"{{"pid":5151,"sessionId":"{ADOPT_ID}","cwd":{cwd},"procStart":"888","status":"{status}","kind":"interactive","entrypoint":"cli"{extra}}}"#
             ),
         )
         .unwrap();
@@ -1542,6 +1581,68 @@ mod tests {
         let ids: Vec<String> = lock(&state.conversations).iter().map(|(i, _)| i.clone()).collect();
         assert_eq!(ids, [CONV_B, CONV_C]);
     }
+
+    #[test]
+    fn send_target_refuses_waiting() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, work, reg) = adopt_files(tmp.path(), "idle", true);
+        let w = work.to_string_lossy().into_owned();
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(EmbeddedProbe(adopt_probe())));
+        assert_eq!(state.get_snapshot().sessions[0].status, station_core::registry::SessionStatus::Idle);
+        // The cached snapshot still says idle; the registry no longer does.
+        write_registry(&reg, &w, "waiting");
+        assert_eq!(state.send_target(ADOPT_ID).unwrap_err(), errors::SEND_WAITING);
+        write_registry_with(&reg, &w, "idle", r#","waitingFor":"permission""#);
+        assert_eq!(state.send_target(ADOPT_ID).unwrap_err(), errors::SEND_WAITING);
+        write_registry_with(&reg, &w, "busy", r#","waitingFor":"permission""#);
+        assert_eq!(state.send_target(ADOPT_ID).unwrap_err(), errors::SEND_WAITING);
+    }
+
+    #[test]
+    fn send_target_allows_busy_and_idle() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, work, reg) = adopt_files(tmp.path(), "idle", true);
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(EmbeddedProbe(adopt_probe())));
+        assert_eq!(state.send_target(ADOPT_ID), Ok(EMBED_SHELL));
+        write_registry(&reg, &work.to_string_lossy(), "busy");
+        assert_eq!(state.send_target(ADOPT_ID), Ok(EMBED_SHELL));
+        assert_eq!(state.send_target("../x").unwrap_err(), errors::SESSION_INVALID);
+        assert_eq!(state.send_target(CLOSED_ID).unwrap_err(), errors::SESSION_NOT_LIVE);
+    }
+
+    #[test]
+    fn send_target_refuses_when_not_in_app_terminal() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, _, _) = adopt_files(tmp.path(), "idle", true);
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(adopt_probe()));
+        assert_eq!(state.send_target(ADOPT_ID).unwrap_err(), errors::SEND_NOT_EMBEDDED);
+    }
+
+    #[test]
+    fn remote_url_built_from_registry() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, work, reg) = adopt_files(tmp.path(), "busy", true);
+        write_registry_with(&reg, &work.to_string_lossy(), "busy", r#","bridgeSessionId":"session_01Va8WwprzgHk7fZBzuoLdPo""#);
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(adopt_probe()));
+        assert!(state.get_snapshot().sessions[0].remote_control);
+        assert_eq!(state.remote_url(ADOPT_ID).unwrap(), "https://claude.ai/code/session_01Va8WwprzgHk7fZBzuoLdPo");
+        assert_eq!(state.remote_url("../x").unwrap_err(), errors::SESSION_INVALID);
+        assert_eq!(state.remote_url(CLOSED_ID).unwrap_err(), errors::SESSION_NOT_LIVE);
+    }
+
+    #[test]
+    fn remote_url_off() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, work, reg) = adopt_files(tmp.path(), "idle", true);
+        let w = work.to_string_lossy().into_owned();
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(adopt_probe()));
+        assert!(!state.get_snapshot().sessions[0].remote_control);
+        assert_eq!(state.remote_url(ADOPT_ID).unwrap_err(), errors::REMOTE_OFF);
+        for bad in [r#""session_../x""#, r#""https://evil.example/session_a""#, r#""cse_01A""#, "7"] {
+            write_registry_with(&reg, &w, "idle", &format!(r#","bridgeSessionId":{bad}"#));
+            assert_eq!(state.remote_url(ADOPT_ID).unwrap_err(), errors::REMOTE_OFF, "{bad}");
+        }
+    }
 }
 
 // ---- terminals (ConPTY) ----------------------------------------------------
@@ -1676,6 +1777,40 @@ pub fn adopt_session(
 #[tauri::command(async)]
 pub fn pty_write(state: tauri::State<'_, PtyManager>, id: u32, data: String) -> Result<(), String> {
     state.write(id, &data)
+}
+
+/// Gap between the paste and the Enter that submits it, so Claude Code has
+/// taken the paste in before the `\r` arrives.
+const SUBMIT_DELAY: Duration = Duration::from_millis(60);
+
+/// Message box: sends `text` to the session as a bracketed paste, then Enter.
+/// Only the id and the text come from the UI. The text is cleaned by
+/// `paste_payload`; the terminal is the app terminal the session's process
+/// runs in, found from a fresh registry read (`send_target`), never one the
+/// UI names. Runs on the blocking pool (it sleeps between the two writes).
+#[tauri::command]
+pub async fn send_to_session(app: tauri::AppHandle, session_id: String, text: String) -> Result<(), String> {
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || {
+        let payload = crate::pty::paste_payload(&text).map_err(String::from)?;
+        let shell = app.state::<AppState>().send_target(&session_id)?;
+        let ptys = app.state::<PtyManager>();
+        let id = ptys.id_for_pid(shell).ok_or(errors::SEND_NOT_EMBEDDED)?;
+        ptys.write(id, &payload)?;
+        std::thread::sleep(SUBMIT_DELAY);
+        ptys.write(id, "\r")
+    })
+    .await
+    .map_err(|e| errors::with(errors::TASK_FAILED, e))?
+}
+
+/// Remote Control mark: opens `https://claude.ai/code/<bridge id>` in the
+/// system browser. Only the session id comes from the UI; the bridge id is
+/// read from the registry and checked by `is_bridge_id`.
+#[tauri::command(async)]
+pub fn open_remote_control(app: tauri::State<'_, AppState>, session_id: String) -> Result<(), String> {
+    let url = app.remote_url(&session_id)?;
+    crate::platform::open_url(&url).map_err(|e| errors::with(errors::URL_OPEN_FAILED, e))
 }
 
 #[tauri::command(async)]

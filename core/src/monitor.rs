@@ -52,6 +52,8 @@ pub struct SessionCard {
     pub movable: bool,
     /// Agents currently running (own + nested), same scope as the snapshot total.
     pub agents_running: u32,
+    /// Remote Control is on (the registry carries a valid `bridgeSessionId`).
+    pub remote_control: bool,
 }
 
 /// What a move into the app needs, taken from the live session.
@@ -291,6 +293,7 @@ fn make_card(
         host_kind,
         movable: live.is_some_and(|l| l.movable),
         agents_running: running_agents(&tree.roots),
+        remote_control: live.is_some_and(|l| l.bridge_session_id.is_some()),
     }
 }
 
@@ -485,6 +488,11 @@ impl Monitor {
             }
             _ => Err(AdoptRefusal::NotLive),
         }
+    }
+
+    /// The live registry entry of `id`, read fresh (never the cached snapshot).
+    pub fn live_session(&self, id: &str, probe: &dyn ProcessProbe) -> Option<LiveSession> {
+        read_live_sessions(&self.claude_dir.join("sessions"), probe).into_iter().find(|l| l.session_id == id)
     }
 
     /// Detail of a live session (cheap: incremental state). `None` if not live.
@@ -1131,5 +1139,26 @@ mod tests {
         let snap = m.refresh(&FakeProbe, SystemTime::now());
         assert_eq!(snap.sessions[0].agents_running, 1);
         assert!(snap.sessions[0].movable);
+    }
+
+    #[test]
+    fn card_marks_remote_control_and_live_session_reads_fresh() {
+        let e = Env::new();
+        e.reg_with(1, &id(1), "idle", r#","bridgeSessionId":"session_01Va8WwprzgHk7fZBzuoLdPo""#);
+        e.reg_with(2, &id(2), "busy", "");
+        let mut m = e.mon();
+        let snap = m.refresh(&FakeProbe, now());
+        let card = |sid: &str| snap.sessions.iter().find(|c| c.session_id == sid).unwrap().clone();
+        assert!(card(&id(1)).remote_control);
+        assert!(!card(&id(2)).remote_control);
+        assert!(serde_json::to_string(&card(&id(1))).unwrap().contains(r#""remoteControl":true"#));
+        let l = m.live_session(&id(1), &FakeProbe).unwrap();
+        assert_eq!(l.bridge_session_id.as_deref(), Some("session_01Va8WwprzgHk7fZBzuoLdPo"));
+        // Read fresh: a change after the snapshot shows at once.
+        e.reg_with(1, &id(1), "waiting", "");
+        let l = m.live_session(&id(1), &FakeProbe).unwrap();
+        assert_eq!((l.status, l.bridge_session_id), (SessionStatus::Waiting, None));
+        assert!(m.live_session(&id(9), &FakeProbe).is_none());
+        assert!(m.live_session(&id(1), &DeadProbe).is_none());
     }
 }
