@@ -160,11 +160,11 @@ fn user_body(offset: u64, content: &Value) -> NodeBody {
     let joined = texts
         .iter()
         .map(|t| match tag(t, "command-name") {
-            Some(name) if t.trim_start().starts_with("<command-name>") => {
+            Some(name) => {
                 let args = tag(t, "command-args").unwrap_or("").trim();
                 if args.is_empty() { name.trim().to_string() } else { format!("{} {}", name.trim(), args) }
             }
-            _ => t.to_string(),
+            None => t.to_string(),
         })
         .collect::<Vec<_>>()
         .join("\n\n");
@@ -200,6 +200,8 @@ fn assistant_body(content: &Value) -> NodeBody {
         .filter_map(|b| s(b, "text"))
         .filter(|t| !t.is_empty())
         .collect();
+    // Claude Code writes one content block per assistant line; a mixed
+    // text + tool_use line (never seen in real transcripts) keeps its text.
     if !texts.is_empty() {
         let (text, truncated) = cap_text(&texts.join("\n\n"));
         return NodeBody::AssistantText { text, truncated };
@@ -365,6 +367,18 @@ mod tests {
         let n = parse_node(0, &user(c, "")).unwrap();
         let NodeBody::UserText { text, .. } = n.body else { panic!() };
         assert_eq!(text, "/model opus");
+    }
+
+    #[test]
+    fn command_wrapper_found_anywhere_in_text() {
+        let text_of = |c: &str| {
+            let NodeBody::UserText { text, .. } = parse_node(0, &user(c, "")).unwrap().body else { panic!() };
+            text
+        };
+        let a = r#""<command-message>model</command-message><command-name>/model</command-name><command-args>opus</command-args>""#;
+        assert_eq!(text_of(a), "/model opus");
+        let b = r#""<command-name>/model</command-name>\n            <command-message>model</command-message>\n            <command-args></command-args>""#;
+        assert_eq!(text_of(b), "/model");
     }
 
     #[test]
