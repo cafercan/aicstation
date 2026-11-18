@@ -107,6 +107,9 @@ export default function ConversationPage({ sessionId, card, onShowTerminal, onTe
       // Cleared before the merge renders, so the layout effect can load the next page.
       loadingOlder.current = false;
       if (!alive.current) return;
+      // A since call replaced the window meanwhile: this page no longer fits.
+      const cur = convRef.current;
+      if (!cur || cur.epoch !== s.epoch || cur.start !== s.start) return;
       prepended.current = listRef.current?.scrollHeight ?? null;
       merge(p);
     }, () => { loadingOlder.current = false; });

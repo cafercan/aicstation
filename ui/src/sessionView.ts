@@ -21,7 +21,8 @@ export function openSessionView(
  * Follow-the-terminal rules (spec, "Decisions from review"). A session view
  * that holds a terminal follows whatever runs in that terminal: a new session
  * id (`/clear`, `/resume`) keeps the tab, no session left makes it the plain
- * terminal, a closed terminal falls back to the Info tab. Without a
+ * terminal, a closed terminal is dropped (the Terminal tab falls back to the
+ * Info tab, the other tabs stay). Without a
  * terminal, once the session runs in an app terminal the Conversation and
  * Info tabs attach it and the Terminal tab switches to it; a Terminal tab also switches to a
  * terminal that Resume/Move started for this session before the registry
@@ -34,7 +35,7 @@ export function resolveView(
   if (typeof v !== "object" || !("session" in v)) return v;
   if (v.terminal !== undefined) {
     const entry = terminals.find((t) => t.id === v.terminal);
-    if (!entry) return { session: v.session, tab: "info" };
+    if (!entry) return { session: v.session, tab: v.tab === "terminal" ? "info" : v.tab };
     const inside = sessionsIn(entry, sessions)[0];
     if (!inside) return { terminal: entry.id };
     return inside.sessionId === v.session ? v : { session: inside.sessionId, tab: v.tab, terminal: entry.id };

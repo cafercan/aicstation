@@ -39,7 +39,8 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent }: 
         <textarea value={text} rows={2} disabled={waiting} placeholder={t("conv.placeholder")}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
+            // keyCode 229: WebKitGTK can send the Enter that commits an IME word with isComposing false.
+            if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
             e.preventDefault();
             send();
           }} />

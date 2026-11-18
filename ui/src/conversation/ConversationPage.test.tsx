@@ -152,6 +152,26 @@ test("scrolled to the top loads the older page", async () => {
   expect(invoke).toHaveBeenCalledWith("get_conversation_page", { sessionId: "s1", before: 1 });
 });
 
+test("an older page that arrives after a since reset is dropped", async () => {
+  let resolveOlder: (p: ConvPage) => void = () => {};
+  serve({
+    get_conversation_page: (a) => (a.before == null
+      ? page(ITEMS.slice(1, 2), { epoch: 1, start: 1, total: 2 })
+      : new Promise<ConvPage>((r) => { resolveOlder = r; })),
+    get_conversation_since: () => page([{ kind: "assistant", text: "yeni dal", truncated: false, atMs: 9 }],
+      { epoch: 2, start: 0, total: 1 }),
+  });
+  const { rerender } = render(<ConversationPage sessionId="s1" card={card({ lastActivityMs: 1 })} {...props} />);
+  expect(await screen.findByText("kalın")).toBeTruthy();
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith("get_conversation_page", { sessionId: "s1", before: 1 }));
+  rerender(<ConversationPage sessionId="s1" card={card({ lastActivityMs: 2 })} {...props} />);
+  expect(await screen.findByText("yeni dal")).toBeTruthy();
+  await act(async () => { resolveOlder(page(ITEMS.slice(0, 1), { epoch: 1, start: 0, total: 2 })); });
+  expect(screen.queryByText("merhaba")).toBeNull();
+  expect(screen.queryByText("kalın")).toBeNull();
+  expect(screen.getByText("yeni dal")).toBeTruthy();
+});
+
 test("outside-app card shows the Move to app button instead of the composer", async () => {
   terminalForPid.mockImplementation(() => undefined);
   serve({ get_conversation_page: () => page([]) });
@@ -209,6 +229,16 @@ test("composer: Shift+Enter does not send", () => {
   // Blank text is not sent either.
   fireEvent.change(box, { target: { value: "  " } });
   fireEvent.keyDown(box, { key: "Enter" });
+  expect(invoke).not.toHaveBeenCalled();
+});
+
+test("composer: Enter that commits an IME word does not send", () => {
+  serve({ send_to_session: () => undefined });
+  render(<Composer sessionId="s1" status="idle" onShowTerminal={noop} />);
+  const box = screen.getByRole("textbox");
+  fireEvent.change(box, { target: { value: "日本" } });
+  fireEvent.keyDown(box, { key: "Enter", keyCode: 229 });
+  fireEvent.keyDown(box, { key: "Enter", isComposing: true });
   expect(invoke).not.toHaveBeenCalled();
 });
 

@@ -30,7 +30,7 @@ export default function ImageThumb({ sessionId, image, onOpen }: {
     if (typeof IntersectionObserver === "undefined" || !el) { setVisible(true); return; }
     const io = new IntersectionObserver((entries) => {
       if (entries.some((e) => e.isIntersecting)) { setVisible(true); io.disconnect(); }
-    }, { rootMargin: "300px" });
+    }, { root: el.closest(".conv-list"), rootMargin: "300px" });
     io.observe(el);
     return () => io.disconnect();
   }, [url]);

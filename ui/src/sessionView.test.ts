@@ -152,3 +152,10 @@ test("conversation_tab_without_host_stays", () => {
   const closed = [card({ sessionId: "a", pid: 0, parentPid: null })];
   expect(resolveView(v, [term(2, 20)], closed, new Map([[2, "a"]]))).toBe(v);
 });
+
+test("conversation_tab_stays_when_its_terminal_is_gone", () => {
+  const v: View = { session: "a", tab: "conversation", terminal: 1 };
+  expect(resolveView(v, [], [], NONE)).toEqual({ session: "a", tab: "conversation" });
+  const info: View = { session: "a", tab: "info", terminal: 1 };
+  expect(resolveView(info, [], [], NONE)).toEqual({ session: "a", tab: "info" });
+});
