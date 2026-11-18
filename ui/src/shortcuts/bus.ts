@@ -24,7 +24,7 @@ export function focusSearch(): boolean {
 }
 
 /** Registers focusing (and selecting) `ref`'s input while `enabled`. */
-export function useSearchFocus(ref: RefObject<HTMLInputElement>, enabled = true): void {
+export function useSearchFocus(ref: RefObject<HTMLInputElement | null>, enabled = true): void {
   useEffect(() => {
     if (!enabled) return;
     return registerSearchFocus(() => { ref.current?.focus(); ref.current?.select(); });
