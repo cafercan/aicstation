@@ -213,19 +213,29 @@ impl AppState {
             return Err(errors::SESSION_INVALID.into());
         }
         let locate = || Locator::new(self.projects_dir.clone()).transcript(id);
-        let conv = {
-            let mut cache = lock(&self.conversations);
-            let entry = match cache.iter().position(|(i, _)| i == id) {
-                Some(at) => cache.remove(at),
-                None => {
-                    let path = locate().ok_or_else(|| errors::CONV_UNAVAILABLE.to_string())?;
-                    (id.to_string(), Arc::new(Mutex::new(Conversation::new(path))))
-                }
-            };
+        // The cached entry, moved to the front of the list.
+        let to_front = |cache: &mut Vec<(String, Arc<Mutex<Conversation>>)>| {
+            let at = cache.iter().position(|(i, _)| i == id)?;
+            let entry = cache.remove(at);
             let conv = entry.1.clone();
             cache.insert(0, entry);
-            cache.truncate(CONV_CACHE);
-            conv
+            Some(conv)
+        };
+        let cached = to_front(&mut lock(&self.conversations));
+        let conv = match cached {
+            Some(conv) => conv,
+            None => {
+                // Looked up without the list lock (it walks the project folders).
+                let path = locate().ok_or_else(|| errors::CONV_UNAVAILABLE.to_string())?;
+                let mut cache = lock(&self.conversations);
+                // Another call may have opened it meanwhile.
+                to_front(&mut cache).unwrap_or_else(|| {
+                    let conv = Arc::new(Mutex::new(Conversation::new(path)));
+                    cache.insert(0, (id.to_string(), conv.clone()));
+                    cache.truncate(CONV_CACHE);
+                    conv
+                })
+            }
         };
         let mut conv = lock(&conv);
         if conv.update().is_err() {

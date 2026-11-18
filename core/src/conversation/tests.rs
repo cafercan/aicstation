@@ -745,8 +745,11 @@ fn system_reminders_inside_human_text_are_stripped() {
     assert_eq!(text_of(leading), "hello");
     let lines = r#""line one<system-reminder>x</system-reminder>\nline two\n\n<system-reminder>y</system-reminder>\n\nend""#;
     assert_eq!(text_of(lines), "line one\nline two\n\nend");
+    // Claude Code always closes its reminders: an unclosed tag is the user's text.
     let unclosed = r#""hi <system-reminder>never closed""#;
-    assert_eq!(text_of(unclosed), "hi");
+    assert_eq!(text_of(unclosed), "hi <system-reminder>never closed");
+    let mixed = r#""a<system-reminder>x</system-reminder> b <system-reminder>open""#;
+    assert_eq!(text_of(mixed), "a b <system-reminder>open");
     // Only reminders: hidden as before.
     let only = r#""<system-reminder>x</system-reminder>""#;
     assert_eq!(parse_node(0, &user(only, "")).unwrap().body, NodeBody::Other);
@@ -824,6 +827,35 @@ fn hidden_lines_alone_do_not_rebuild() {
     t.push(a("a1", "th", "ok"));
     c.update().unwrap();
     assert_eq!(c.rebuilds, before + 1);
+    assert_eq!(kinds(&all(&c)), ["U:go", "A:ok"]);
+}
+
+#[test]
+fn hidden_parent_arriving_after_its_child_rebuilds() {
+    // The chain now reaches further back.
+    let mut t = Tx::new();
+    t.push(u("u1", None, "go"));
+    t.push(a("a1", "th", "ok"));
+    let mut c = t.conv();
+    assert_eq!(kinds(&all(&c)), ["A:ok"]);
+    t.push(think("th", "u1"));
+    c.update().unwrap();
+    assert_eq!(kinds(&all(&c)), ["U:go", "A:ok"]);
+}
+
+#[test]
+fn shown_line_written_again_as_hidden_rebuilds() {
+    let mut t = Tx::new();
+    t.push(u("u1", None, "go"));
+    t.push(a("a1", "u1", "ok"));
+    let mut c = t.conv();
+    let mut meta = u("u2", Some("a1"), "again");
+    t.push(meta.clone());
+    c.update().unwrap();
+    assert_eq!(kinds(&all(&c)), ["U:go", "A:ok", "U:again"]);
+    meta["isMeta"] = true.into();
+    t.push(meta);
+    c.update().unwrap();
     assert_eq!(kinds(&all(&c)), ["U:go", "A:ok"]);
 }
 

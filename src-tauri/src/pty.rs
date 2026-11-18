@@ -223,26 +223,41 @@ const APPIMAGE_RUNTIME: &[&str] = &["APPDIR", "APPIMAGE", "ARGV0", "OWD"];
 /// `GDK_PIXBUF_*`, `GIO_*`, `GST_PLUGIN_*`, `GTK_*` module paths,
 /// `PYTHONHOME`/`PYTHONPATH`, `PERLLIB`, `QT_PLUGIN_PATH` and the entries
 /// prepended to `PATH`/`XDG_DATA_DIRS`, while the user's own entries stay.
-/// An `APPDIR` that is not absolute, or is `/`, removes no entries.
+/// Values are handled as bytes, so non-UTF-8 entries survive. An
+/// `XDG_DATA_DIRS` left empty or with only the `/usr/share` the hook added
+/// becomes the XDG default. An `APPDIR` that is not absolute, or is `/`,
+/// removes no entries.
 #[cfg(unix)]
 fn appimage_cleanup(vars: Vec<(OsString, OsString)>) -> Vec<(OsString, OsString)> {
-    let get = |name: &str| vars.iter().find(|(k, _)| k == name).map(|(_, v)| v.to_string_lossy().into_owned());
+    use std::os::unix::ffi::{OsStrExt, OsStringExt};
+    const XDG_DATA_DEFAULT: &str = "/usr/local/share:/usr/share";
+    let get = |name: &str| vars.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone());
     let (Some(_), Some(appdir)) = (get("APPIMAGE"), get("APPDIR")) else {
         return vars;
     };
-    let root = appdir.trim_end_matches('/').to_string();
-    let usable = root.starts_with('/');
-    let inside = |entry: &str| usable && (entry == root || entry.starts_with(&format!("{root}/")));
+    let mut root = appdir.as_bytes();
+    while let Some(r) = root.strip_suffix(b"/") {
+        root = r;
+    }
+    let usable = root.starts_with(b"/");
+    let inside = |entry: &[u8]| {
+        usable && entry.strip_prefix(root).is_some_and(|tail| tail.is_empty() || tail.starts_with(b"/"))
+    };
     vars.into_iter()
         .filter(|(k, _)| !APPIMAGE_RUNTIME.iter().any(|r| k == r))
         .filter_map(|(k, v)| {
-            let text = v.to_string_lossy();
-            let seps: &[char] = if k == "LD_PRELOAD" { &[':', ' ', '\t'] } else { &[':'] };
-            if !text.split(seps).any(&inside) {
+            let preload = k == "LD_PRELOAD";
+            let sep = |b: &u8| *b == b':' || (preload && (*b == b' ' || *b == b'\t'));
+            let bytes = v.as_bytes();
+            if !bytes.split(sep).any(inside) {
                 return Some((k, v));
             }
-            let kept: Vec<&str> = text.split(seps).filter(|e| !e.is_empty() && !inside(e)).collect();
-            (!kept.is_empty()).then(|| (k, OsString::from(kept.join(":"))))
+            let kept: Vec<&[u8]> = bytes.split(sep).filter(|e| !e.is_empty() && !inside(e)).collect();
+            let joined = kept.join(&b':');
+            if k == "XDG_DATA_DIRS" && (joined.is_empty() || joined == b"/usr/share") {
+                return Some((k, OsString::from(XDG_DATA_DEFAULT)));
+            }
+            (!joined.is_empty()).then(|| (k, OsString::from_vec(joined)))
         })
         .collect()
 }
@@ -866,6 +881,7 @@ mod tests {
         assert_eq!(names(child_env(input, &with_effort)), tail(vec!["CLAUDE_EFFORT"]));
     }
 
+    #[cfg(unix)]
     fn pairs(v: Vec<(OsString, OsString)>) -> Vec<(String, String)> {
         v.into_iter().map(|(k, v)| (k.to_string_lossy().into_owned(), v.to_string_lossy().into_owned())).collect()
     }
@@ -938,6 +954,40 @@ mod tests {
         // The user's own LD_LIBRARY_PATH stays as it was.
         let mine = [("APPDIR", "/tmp/.mount_a"), ("APPIMAGE", "/x.AppImage"), ("LD_LIBRARY_PATH", "/opt/lib::/usr/lib")];
         assert_eq!(pairs(child_env(kv(&mine), &HashSet::new())), [("LD_LIBRARY_PATH".to_string(), "/opt/lib::/usr/lib".to_string())]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn child_env_keeps_non_utf8_entries_of_an_appimage_variable() {
+        use std::os::unix::ffi::{OsStrExt, OsStringExt};
+        let vars = vec![
+            (OsString::from("APPDIR"), OsString::from("/tmp/.mount_a")),
+            (OsString::from("APPIMAGE"), OsString::from("/x.AppImage")),
+            (OsString::from("LD_LIBRARY_PATH"), OsString::from_vec(b"/tmp/.mount_a/usr/lib:/opt/\xff/lib".to_vec())),
+            (OsString::from("NAME_\u{e7}"), OsString::from_vec(b"keep \xfe as is".to_vec())),
+        ];
+        let out = child_env(vars, &HashSet::new());
+        let bytes: Vec<(&[u8], &[u8])> = out.iter().map(|(k, v)| (k.as_bytes(), v.as_bytes())).collect();
+        assert_eq!(
+            bytes,
+            [(&b"LD_LIBRARY_PATH"[..], &b"/opt/\xff/lib"[..]), ("NAME_\u{e7}".as_bytes(), &b"keep \xfe as is"[..])]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn child_env_falls_back_to_the_xdg_default_data_dirs() {
+        let xdg = |v: &str| {
+            let input = [("APPDIR", "/tmp/.mount_a"), ("APPIMAGE", "/x.AppImage"), ("XDG_DATA_DIRS", v)];
+            pairs(child_env(kv(&input), &HashSet::new()))
+        };
+        let default = vec![("XDG_DATA_DIRS".to_string(), "/usr/local/share:/usr/share".to_string())];
+        // The AppImage hook prepends its own dirs (and /usr/share) to what the user had.
+        assert_eq!(xdg("/tmp/.mount_a/usr/share:/usr/share:"), default);
+        assert_eq!(xdg("/tmp/.mount_a/usr/share"), default);
+        assert_eq!(xdg("/tmp/.mount_a/usr/share:/usr/share:/opt/share"), [("XDG_DATA_DIRS".to_string(), "/usr/share:/opt/share".to_string())]);
+        // Untouched by the AppImage: kept as the user set it.
+        assert_eq!(xdg("/usr/share"), [("XDG_DATA_DIRS".to_string(), "/usr/share".to_string())]);
     }
 
     #[cfg(windows)]

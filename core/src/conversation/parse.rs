@@ -137,10 +137,10 @@ fn is_hidden_text(t: &str) -> bool {
             .any(|p| t.starts_with(p))
 }
 
-/// `t` without its `<system-reminder>…</system-reminder>` blocks (Claude
-/// Code adds them to the user's text; an unclosed one runs to the end).
-/// Text on both sides of a removed block keeps one run of the whitespace
-/// around it.
+/// `t` without its closed `<system-reminder>…</system-reminder>` blocks
+/// (Claude Code adds them to the user's text and always closes them; an
+/// unclosed tag is the user's own text and stays). Text on both sides of a
+/// removed block keeps one run of the whitespace around it.
 fn strip_reminders(t: &str) -> String {
     const OPEN: &str = "<system-reminder>";
     const CLOSE: &str = "</system-reminder>";
@@ -150,11 +150,9 @@ fn strip_reminders(t: &str) -> String {
     let mut out = String::with_capacity(t.len());
     let mut rest = t;
     while let Some(at) = rest.find(OPEN) {
+        let Some(end) = rest[at + OPEN.len()..].find(CLOSE) else { break };
         out.push_str(&rest[..at]);
-        rest = match rest[at + OPEN.len()..].find(CLOSE) {
-            Some(end) => &rest[at + OPEN.len() + end + CLOSE.len()..],
-            None => "",
-        };
+        rest = &rest[at + OPEN.len() + end + CLOSE.len()..];
         let after = rest.trim_start();
         if !out.ends_with(char::is_whitespace) && !out.is_empty() {
             out.push_str(&rest[..rest.len() - after.len()]);

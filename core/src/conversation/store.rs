@@ -24,6 +24,9 @@ pub struct Conversation {
     path: PathBuf,
     reader: TranscriptReader,
     nodes: HashMap<String, Node>,
+    /// Parents (and logical parents) named by stored nodes but not stored
+    /// yet: one arriving can extend the chain of a node already shown.
+    missing: HashSet<String>,
     leaf: Option<String>,
     /// Uuids of the displayed nodes, in file order.
     shown: Vec<String>,
@@ -41,6 +44,7 @@ impl Conversation {
             reader: TranscriptReader::new(path.clone()),
             path,
             nodes: HashMap::new(),
+            missing: HashSet::new(),
             leaf: None,
             shown: Vec::new(),
             items: Vec::new(),
@@ -70,18 +74,30 @@ impl Conversation {
         );
         if reset {
             self.nodes.clear();
+            self.missing.clear();
             self.leaf = None;
             self.shown.clear();
             self.items.clear();
             self.epoch = next_epoch();
         }
-        // Hidden lines alone change nothing shown: they never move the leaf.
-        let changed = reset || fresh.iter().any(|n| n.body != NodeBody::Other);
+        // A hidden line changes what is shown only when it is the missing
+        // parent of a stored node (the chain reaches further back) or when it
+        // replaces a shown line; otherwise hidden lines alone skip the rebuild.
+        let mut changed = reset;
         for n in fresh {
+            changed |= n.body != NodeBody::Other || self.missing.remove(&n.uuid);
             if n.body != NodeBody::Other {
                 self.leaf = Some(n.uuid.clone());
             }
-            self.nodes.insert(n.uuid.clone(), n);
+            for p in [&n.parent, &n.logical_parent].into_iter().flatten() {
+                if !self.nodes.contains_key(p) && *p != n.uuid {
+                    self.missing.insert(p.clone());
+                }
+            }
+            let uuid = n.uuid.clone();
+            if let Some(old) = self.nodes.insert(uuid, n) {
+                changed |= old.body != NodeBody::Other;
+            }
         }
         if changed {
             self.rebuild();
