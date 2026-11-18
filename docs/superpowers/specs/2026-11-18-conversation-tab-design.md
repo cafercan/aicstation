@@ -257,6 +257,15 @@ everything below.
   child of tool_use #1, with the same `message.id`). Decided during
   implementation: the view includes assistant lines with the same
   `message.id` and the results that answer tool uses it shows.
+- A message typed while Claude works is written only as an `attachment` line
+  (`attachment.type: "queued_command"`, `commandMode: "prompt"`,
+  `origin.kind: "human"`, the text or content blocks in `attachment.prompt`);
+  it shows as a user message. A finished background task arrives as a `user`
+  line (or a queued_command) with `origin.kind: "task-notification"` and a
+  `<task-notification>` text; it shows as a muted note with its `<summary>`.
+  Other system-written prompts (`promptSource: "system"`, other origins),
+  `<bash-stdout>`/`<bash-stderr>` lines are hidden; `<bash-input>` shows as
+  `! cmd`.
 
 ## Left to the builder
 

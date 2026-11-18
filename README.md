@@ -77,12 +77,17 @@ closed session in its own folder.
   appear as thumbnails on their step and open larger in a popup (close with
   Esc, a click outside or the button). Only the current branch is shown:
   messages abandoned by a rewind or edit are hidden. History before a
-  `/compact` stays, with a "Conversation compacted" divider.
+  `/compact` stays, with a "Conversation compacted" divider. Messages typed
+  while Claude works and `!` shell commands show as your messages; a finished
+  background task shows as a short muted note. Tables in Claude's replies
+  show as tables.
 - **Message box**: for a session that runs in an app terminal, text typed in
   the box is sent to the session. Enter sends, Shift+Enter adds a new line;
   multi-line text arrives as one message. The box is disabled while Claude
   waits for approval or an answer. Text already typed in the terminal's own
-  input is sent together with it. Outside the app, the Move to app / Go to
+  input is sent together with it. If the session starts waiting (or leaves
+  the terminal) between the paste and the Enter, the text stays unsent in the
+  terminal's input and the box says so. Outside the app, the Move to app / Go to
   tab placeholder shows instead; a closed session shows Resume.
 - **Remote Control mark**: a live session that has Remote Control on shows a
   small mark on its dashboard card and tab row. Clicking it opens the session
