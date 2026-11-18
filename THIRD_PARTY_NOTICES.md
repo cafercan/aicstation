@@ -13,7 +13,7 @@ license(s) named in the "Used" column.
 
 | License | Packages |
 |---|---|
-| MIT | 224 |
+| MIT | 222 |
 | Apache-2.0 | 4 |
 | BSD-3-Clause | 4 |
 | Zlib | 2 |
@@ -268,7 +268,7 @@ license(s) named in the "Used" column.
 | zlib-rs | 0.6.8 | Zlib | Zlib |
 | zmij | 1.0.23 | MIT | MIT |
 
-## UI packages (npm) (13)
+## UI packages (npm) (11)
 
 | Package | Version | Declared license | Used |
 |---|---|---|---|
@@ -280,11 +280,9 @@ license(s) named in the "Used" column.
 | @xterm/addon-webgl | 0.19.0 | MIT | MIT |
 | @xterm/xterm | 6.0.0 | MIT | MIT |
 | js-base64 | 3.9.6 | BSD-3-Clause | BSD-3-Clause |
-| js-tokens | 4.0.0 | MIT | MIT |
-| loose-envify | 1.4.0 | MIT | MIT |
-| react | 18.3.1 | MIT | MIT |
-| react-dom | 18.3.1 | MIT | MIT |
-| scheduler | 0.23.2 | MIT | MIT |
+| react | 19.3.1 | MIT | MIT |
+| react-dom | 19.3.1 | MIT | MIT |
+| scheduler | 0.28.0 | MIT | MIT |
 
 ## Bundled programs (1)
 
@@ -527,11 +525,9 @@ Packages:
 - @xterm/addon-unicode11 0.9.0 — Copyright (c) 2019, The xterm.js authors (https://github.com/xtermjs/xterm.js)
 - @xterm/addon-webgl 0.19.0 — Copyright (c) 2018, The xterm.js authors (https://github.com/xtermjs/xterm.js)
 - @xterm/xterm 6.0.0 — Copyright (c) 2017-2019, The xterm.js authors (https://github.com/xtermjs/xterm.js); Copyright (c) 2014-2016, SourceLair Private Company (https://www.sourcelair.com); Copyright (c) 2012-2013, Christopher Jeffrey (https://github.com/chjj/)
-- js-tokens 4.0.0 — Copyright (c) 2014, 2015, 2016, 2017, 2018 Simon Lydell
-- loose-envify 1.4.0 — Copyright (c) 2015 Andres Suarez <zertosh@gmail.com>
-- react 18.3.1 — Copyright (c) Facebook, Inc. and its affiliates.
-- react-dom 18.3.1 — Copyright (c) Facebook, Inc. and its affiliates.
-- scheduler 0.23.2 — Copyright (c) Facebook, Inc. and its affiliates.
+- react 19.3.1 — Copyright (c) Meta Platforms, Inc. and affiliates.
+- react-dom 19.3.1 — Copyright (c) Meta Platforms, Inc. and affiliates.
+- scheduler 0.28.0 — Copyright (c) Meta Platforms, Inc. and affiliates.
 - butaglyph 0.5.0 — Copyright (c) 2026 flear (https://github.com/Huseynteymurzade28)
 
 ```text

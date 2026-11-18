@@ -36,7 +36,8 @@ interface Props {
 export default function ConversationPage({ sessionId, card, onShowTerminal, onTerminal, onAdopted, onResume }: Props) {
   const t = useT();
   const [conv, setConv] = useState<ConvState | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  /** Why the first load failed (`code` is the backend error code, `text` its translation). */
+  const [err, setErr] = useState<{ code: string; text: string } | null>(null);
   const [viewing, setViewing] = useState<string | null>(null);
   /** The latest state, also between a merge and its render (async callbacks read it). */
   const convRef = useRef<ConvState | null>(null);
@@ -81,7 +82,7 @@ export default function ConversationPage({ sessionId, card, onShowTerminal, onTe
       merge(p);
     }, (e: unknown) => {
       // Nothing shown yet: say why. Either way the next activity tries again.
-      if (alive.current && !s) setErr(errorText(e));
+      if (alive.current && !s) setErr({ code: typeof e === "string" ? e.split(":")[0] : "", text: errorText(e) });
     }).finally(() => {
       since.current.busy = false;
       if (since.current.again && alive.current) { since.current.again = false; refresh(); }
@@ -143,8 +144,13 @@ export default function ConversationPage({ sessionId, card, onShowTerminal, onTe
 
   const hosted = live && terminalForPid(card.parentPid) !== undefined;
 
+  // A live session has no transcript until its first message (new session,
+  // after /clear): that is an empty conversation, not an error.
+  const notYet = err !== null && live && err.code === "conv_unavailable";
+
   let body;
-  if (err !== null) body = <div className="meta r" role="alert">{err}</div>;
+  if (notYet) body = <div className="conv-status">{t("conv.empty")}</div>;
+  else if (err !== null) body = <div className="meta r" role="alert">{err.text}</div>;
   else if (conv === null) body = <div className="conv-status">{t("conv.loading")}</div>;
   else if (conv.items.length === 0) body = <div className="conv-status">{t("conv.empty")}</div>;
   else {
