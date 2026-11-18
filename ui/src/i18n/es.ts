@@ -333,4 +333,11 @@ export const es: Dict = {
   "help.title": "Atajos de teclado",
   "help.note": "También funcionan dentro de un terminal; las demás teclas van al shell. Ctrl+C / Ctrl+V / Ctrl+F del terminal no cambian. Las teclas son posiciones físicas: las letras están en la misma tecla en cualquier distribución (cirílica, turca F…); para / y \\ la tabla muestra la tecla de este teclado.",
   "help.close": "Cerrar (Esc)",
+  "conv.step.commands": { one: "ejecutó un comando", other: "ejecutó {n} comandos" },
+  "conv.step.readOne": "leyó {name}",
+  "conv.step.readMany": "leyó {n} archivos",
+  "conv.step.editOne": "editó {name}",
+  "conv.step.editMany": "editó {n} archivos",
+  "conv.step.searched": "buscó",
+  "conv.step.used": "usó {tool}",
 };

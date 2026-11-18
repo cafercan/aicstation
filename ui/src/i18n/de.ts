@@ -333,4 +333,11 @@ export const de: Dict = {
   "help.title": "Tastenkürzel",
   "help.note": "Sie funktionieren auch im Terminal; alle anderen Tasten gehen an die Shell. Strg+C / Strg+V / Strg+F des Terminals bleiben unverändert. Tasten sind physische Positionen: Buchstaben liegen in jedem Layout (Kyrillisch, Türkisch F…) auf derselben Taste; für / und \\ zeigt die Tabelle die Taste dieser Tastatur.",
   "help.close": "Schließen (Esc)",
+  "conv.step.commands": { one: "hat einen Befehl ausgeführt", other: "hat {n} Befehle ausgeführt" },
+  "conv.step.readOne": "{name} gelesen",
+  "conv.step.readMany": "{n} Dateien gelesen",
+  "conv.step.editOne": "{name} bearbeitet",
+  "conv.step.editMany": "{n} Dateien bearbeitet",
+  "conv.step.searched": "hat gesucht",
+  "conv.step.used": "hat {tool} verwendet",
 };

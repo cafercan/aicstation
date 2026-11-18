@@ -330,4 +330,11 @@ export const az: Dict = {
   "help.title": "Qısayollar",
   "help.note": "Bunlar terminalda da işləyir; digər bütün düymələr shell-ə gedir. Terminalın öz Ctrl+C / Ctrl+V / Ctrl+F düymələri dəyişməyib. Düymələr fiziki mövqedir: hərflər hər klaviatura düzənində (kiril, türk F…) eyni düymədədir; / və \\ üçün cədvəl bu klaviaturadakı düyməni göstərir.",
   "help.close": "Bağla (Esc)",
+  "conv.step.commands": "{n} əmr icra etdi",
+  "conv.step.readOne": "{name} oxundu",
+  "conv.step.readMany": "{n} fayl oxundu",
+  "conv.step.editOne": "{name} redaktə edildi",
+  "conv.step.editMany": "{n} fayl redaktə edildi",
+  "conv.step.searched": "axtarış etdi",
+  "conv.step.used": "{tool} istifadə etdi",
 };

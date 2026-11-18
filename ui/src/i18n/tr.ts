@@ -340,4 +340,11 @@ export const tr = {
   "help.title": "Kısayollar",
   "help.note": "Bunlar terminaldeyken de çalışır; diğer tüm tuşlar kabuğa gider. Terminalin kendi Ctrl+C / Ctrl+V / Ctrl+F tuşları değişmedi. Tuşlar fiziksel konumdur: harfler her klavye düzeninde (Kiril, Türkçe F…) aynı tuştadır; / ve \\ için tablo bu klavyedeki tuşu gösterir.",
   "help.close": "Kapat (Esc)",
+  "conv.step.commands": "{n} komut çalıştırdı",
+  "conv.step.readOne": "{name} okundu",
+  "conv.step.readMany": "{n} dosya okundu",
+  "conv.step.editOne": "{name} düzenlendi",
+  "conv.step.editMany": "{n} dosya düzenlendi",
+  "conv.step.searched": "arama yaptı",
+  "conv.step.used": "{tool} kullandı",
 } as const satisfies Record<string, string>;

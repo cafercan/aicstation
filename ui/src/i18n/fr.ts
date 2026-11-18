@@ -333,4 +333,11 @@ export const fr: Dict = {
   "help.title": "Raccourcis clavier",
   "help.note": "Ils fonctionnent aussi dans un terminal ; toutes les autres touches vont au shell. Ctrl+C / Ctrl+V / Ctrl+F du terminal restent inchangés. Les touches sont des positions physiques : les lettres restent sur la même touche quelle que soit la disposition (cyrillique, turc F…) ; pour / et \\ le tableau montre la touche de ce clavier.",
   "help.close": "Fermer (Échap)",
+  "conv.step.commands": { one: "a exécuté une commande", other: "a exécuté {n} commandes" },
+  "conv.step.readOne": "a lu {name}",
+  "conv.step.readMany": "a lu {n} fichiers",
+  "conv.step.editOne": "a modifié {name}",
+  "conv.step.editMany": "a modifié {n} fichiers",
+  "conv.step.searched": "a cherché",
+  "conv.step.used": "a utilisé {tool}",
 };

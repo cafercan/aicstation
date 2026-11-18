@@ -330,4 +330,11 @@ export const zh: Dict = {
   "help.title": "键盘快捷键",
   "help.note": "这些快捷键在终端中同样有效；其他按键都会发送到 shell。终端自身的 Ctrl+C / Ctrl+V / Ctrl+F 不变。 按键按物理位置识别：在任何键盘布局（西里尔、土耳其 F 等）下字母都在同一个键上；对于 / 和 \\，表格显示此键盘上对应的键。",
   "help.close": "关闭 (Esc)",
+  "conv.step.commands": "运行了 {n} 条命令",
+  "conv.step.readOne": "读取了 {name}",
+  "conv.step.readMany": "读取了 {n} 个文件",
+  "conv.step.editOne": "编辑了 {name}",
+  "conv.step.editMany": "编辑了 {n} 个文件",
+  "conv.step.searched": "进行了搜索",
+  "conv.step.used": "使用了 {tool}",
 };

@@ -330,4 +330,11 @@ export const en: Dict = {
   "help.title": "Keyboard shortcuts",
   "help.note": "These also work inside a terminal; every other key goes to the shell. The terminal's own Ctrl+C / Ctrl+V / Ctrl+F are unchanged. Keys are physical positions: letters stay on the same key in every layout (Cyrillic, Turkish F…); for / and \\ the table shows the key on this keyboard.",
   "help.close": "Close (Esc)",
+  "conv.step.commands": { one: "ran a command", other: "ran {n} commands" },
+  "conv.step.readOne": "read {name}",
+  "conv.step.readMany": "read {n} files",
+  "conv.step.editOne": "edited {name}",
+  "conv.step.editMany": "edited {n} files",
+  "conv.step.searched": "searched",
+  "conv.step.used": "used {tool}",
 };
