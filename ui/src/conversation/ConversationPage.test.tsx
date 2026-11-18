@@ -156,11 +156,25 @@ test("a failed first load recovers on the next activity", async () => {
     },
   });
   const { rerender } = render(<ConversationPage sessionId="s1" card={card({ lastActivityMs: 1 })} {...props} />);
-  expect((await screen.findByRole("alert")).textContent).toBe("Bu oturumun konuşma kaydı bulunamadı.");
+  // A live session without a transcript yet is simply empty, not an error.
+  expect(await screen.findByText("Henüz mesaj yok.")).toBeTruthy();
+  expect(screen.queryByRole("alert")).toBeNull();
   rerender(<ConversationPage sessionId="s1" card={card({ lastActivityMs: 2 })} {...props} />);
   expect(await screen.findByText("merhaba")).toBeTruthy();
   expect(screen.queryByRole("alert")).toBeNull();
   expect(invoke).not.toHaveBeenCalledWith("get_conversation_since", expect.anything());
+});
+
+test("a closed session without a transcript still says it was not found", async () => {
+  serve({ get_conversation_page: () => { throw "conv_unavailable"; } });
+  render(<ConversationPage sessionId="s1" card={undefined} {...props} />);
+  expect((await screen.findByRole("alert")).textContent).toBe("Bu oturumun konuşma kaydı bulunamadı.");
+});
+
+test("other first-load errors on a live session stay visible", async () => {
+  serve({ get_conversation_page: () => { throw "session_invalid"; } });
+  render(<ConversationPage sessionId="s1" card={card()} {...props} />);
+  expect(await screen.findByRole("alert")).toBeTruthy();
 });
 
 test("thumb shows placeholder on error", async () => {
