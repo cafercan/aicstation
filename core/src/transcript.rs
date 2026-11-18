@@ -51,7 +51,7 @@ fn file_name(p: &str) -> String {
     p.rsplit(['\\', '/']).next().unwrap_or(p).to_string()
 }
 
-fn tool_target(name: &str, input: &Value) -> String {
+pub(crate) fn tool_target(name: &str, input: &Value) -> String {
     let get = |k: &str| input.get(k).and_then(Value::as_str);
     match name {
         "Read" | "Edit" | "Write" | "MultiEdit" | "NotebookEdit" => {
@@ -489,7 +489,7 @@ kısa
         let (_d, mut r) = reader_over("a\nbc");
         assert_eq!(collect_at(&mut r).0, [(0, "a".into())]);
         let mut f = std::fs::OpenOptions::new().append(true).open(&r.path).unwrap();
-        write!(f, "d\n").unwrap();
+        writeln!(f, "d").unwrap();
         assert_eq!(collect_at(&mut r).0, [(2, "bcd".into())]);
     }
 
