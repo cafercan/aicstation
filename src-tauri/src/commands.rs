@@ -2,18 +2,18 @@
 //! wrapper over a plain function on `AppState` so tests can call the handlers
 //! without a webview. All arguments from the UI are untrusted.
 use crate::errors;
+use serde::Serialize;
+use station_core::conversation::{read_image, ConvPage, Conversation, ImageError};
 use station_core::history::{cost_on_rows, HistoryIndex, HistoryRow};
 use station_core::host::HostKind;
-use station_core::conversation::{read_image, ConvPage, Conversation, ImageError};
 use station_core::locate::{cwd_matches_project_dir, is_session_id, Locator};
 use station_core::monitor::{AdoptRefusal, AdoptSource, ClosedKey, Monitor, SessionDetail, Snapshot};
 use station_core::registry::{is_bridge_id, LiveSession, ProcessProbe, SessionStatus};
 use station_core::search::{search_transcripts_limited, validate_query, Limits, SearchOutcome};
-use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
 const MAX_ID_LEN: usize = 64;
@@ -97,8 +97,10 @@ pub struct AppState {
     search_gen: AtomicU32,
     /// Session ids with a move into the app under way (`adopt_session`).
     adopting: Mutex<HashSet<String>>,
-    /// Open conversations, most recent first (at most [`CONV_CACHE`]).
-    conversations: Mutex<Vec<(String, Conversation)>>,
+    /// Open conversations, most recent first (at most [`CONV_CACHE`]). The
+    /// outer lock only guards the list; each conversation has its own, so a
+    /// long first read of one does not hold up the other.
+    conversations: Mutex<Vec<(String, Arc<Mutex<Conversation>>)>>,
 }
 
 /// Holds a session id in `AppState::adopting`; dropping it releases the id.
@@ -204,30 +206,48 @@ impl AppState {
     }
 
     /// Runs `f` on the session's conversation after bringing it up to date.
+    /// A read error keeps what was read so far (the next call reads on); the
+    /// transcript is first looked for once more, in case it moved.
     fn with_conversation<R>(&self, id: &str, f: impl FnOnce(&Conversation) -> R) -> Result<R, String> {
         if !is_session_id(id) {
             return Err(errors::SESSION_INVALID.into());
         }
-        let mut cache = lock(&self.conversations);
-        let at = match cache.iter().position(|(i, _)| i == id) {
-            Some(at) => at,
+        let locate = || Locator::new(self.projects_dir.clone()).transcript(id);
+        // The cached entry, moved to the front of the list.
+        let to_front = |cache: &mut Vec<(String, Arc<Mutex<Conversation>>)>| {
+            let at = cache.iter().position(|(i, _)| i == id)?;
+            let entry = cache.remove(at);
+            let conv = entry.1.clone();
+            cache.insert(0, entry);
+            Some(conv)
+        };
+        let cached = to_front(&mut lock(&self.conversations));
+        let conv = match cached {
+            Some(conv) => conv,
             None => {
-                let path = Locator::new(self.projects_dir.clone())
-                    .transcript(id)
-                    .ok_or_else(|| errors::CONV_UNAVAILABLE.to_string())?;
-                cache.insert(0, (id.to_string(), Conversation::new(path)));
-                cache.truncate(CONV_CACHE);
-                0
+                // Looked up without the list lock (it walks the project folders).
+                let path = locate().ok_or_else(|| errors::CONV_UNAVAILABLE.to_string())?;
+                let mut cache = lock(&self.conversations);
+                // Another call may have opened it meanwhile.
+                to_front(&mut cache).unwrap_or_else(|| {
+                    let conv = Arc::new(Mutex::new(Conversation::new(path)));
+                    cache.insert(0, (id.to_string(), conv.clone()));
+                    cache.truncate(CONV_CACHE);
+                    conv
+                })
             }
         };
-        let entry = cache.remove(at);
-        cache.insert(0, entry);
-        let conv = &mut cache[0].1;
+        let mut conv = lock(&conv);
         if conv.update().is_err() {
-            cache.remove(0);
-            return Err(errors::CONV_UNAVAILABLE.into());
+            match locate().filter(|p| p != conv.path()) {
+                Some(moved) => {
+                    *conv = Conversation::new(moved);
+                    conv.update().map_err(|_| errors::CONV_UNAVAILABLE.to_string())?;
+                }
+                None => return Err(errors::CONV_UNAVAILABLE.into()),
+            }
         }
-        Ok(f(&cache[0].1))
+        Ok(f(&conv))
     }
 
     pub fn conversation_page(&self, id: &str, before: Option<u32>) -> Result<ConvPage, String> {
@@ -1583,6 +1603,67 @@ mod tests {
         state.conversation_page(CONV_B, None).unwrap();
         let ids: Vec<String> = lock(&state.conversations).iter().map(|(i, _)| i.clone()).collect();
         assert_eq!(ids, [CONV_B, CONV_C]);
+    }
+
+    #[test]
+    fn conversation_image_returns_a_shown_image() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = conv_state(tmp.path(), &[CONV_A]);
+        let path = tmp.path().join("claude").join("projects").join("C--demo").join(format!("{CONV_A}.jsonl"));
+        let first = fs::read_to_string(&path).unwrap();
+        let line = r#"{"type":"user","uuid":"u2","parentUuid":"u1","timestamp":"2026-01-01T00:00:01Z","message":{"content":[{"type":"text","text":"look"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"iVBORw0KGgo="}}]}}"#;
+        fs::write(&path, format!("{first}{line}\n")).unwrap();
+        state.conversation_page(CONV_A, None).unwrap();
+        let img = state.conversation_image(CONV_A, first.len() as u64, 0).unwrap();
+        assert_eq!((img.media_type.as_str(), img.data.as_str()), ("image/png", "iVBORw0KGgo="));
+    }
+
+    #[test]
+    fn moved_transcript_is_found_again_at_once() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = conv_state(tmp.path(), &[CONV_A]);
+        state.conversation_page(CONV_A, None).unwrap();
+        let projects = tmp.path().join("claude").join("projects");
+        fs::create_dir_all(projects.join("C--moved")).unwrap();
+        let name = format!("{CONV_A}.jsonl");
+        fs::rename(projects.join("C--demo").join(&name), projects.join("C--moved").join(&name)).unwrap();
+        let page = state.conversation_page(CONV_A, None).unwrap();
+        assert_eq!(page.total, 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_error_keeps_the_conversation() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = conv_state(tmp.path(), &[CONV_A]);
+        let path = tmp.path().join("claude").join("projects").join("C--demo").join(format!("{CONV_A}.jsonl"));
+        let epoch = state.conversation_page(CONV_A, None).unwrap().epoch;
+        // The transcript cannot be opened for a moment.
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |m: u32| fs::set_permissions(&path, fs::Permissions::from_mode(m)).unwrap();
+        mode(0o000);
+        if fs::File::open(&path).is_ok() {
+            mode(0o644);
+            return; // root can still open it: nothing to test here
+        }
+        assert_eq!(state.conversation_page(CONV_A, None).unwrap_err(), errors::CONV_UNAVAILABLE);
+        assert!(lock(&state.conversations).iter().any(|(i, _)| i == CONV_A), "cache entry dropped");
+        mode(0o644);
+        // Read on from where it was: the same epoch, nothing reloaded.
+        assert_eq!(state.conversation_page(CONV_A, None).unwrap().epoch, epoch);
+    }
+
+    #[test]
+    fn a_busy_conversation_does_not_block_another() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = conv_state(tmp.path(), &[CONV_A, CONV_B]);
+        state.conversation_page(CONV_A, None).unwrap();
+        let a = lock(&state.conversations).iter().find(|(i, _)| i == CONV_A).map(|(_, c)| c.clone()).unwrap();
+        // CONV_A is being read (its own lock is held); CONV_B is served meanwhile.
+        let held = lock(&a);
+        assert_eq!(state.conversation_page(CONV_B, None).unwrap().total, 1);
+        drop(held);
+        assert_eq!(state.conversation_page(CONV_A, None).unwrap().total, 1);
     }
 
     #[test]

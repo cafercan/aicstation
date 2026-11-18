@@ -175,3 +175,22 @@ test("bağımsızlık notu ve slogan her dilde; Anthropic ve Claude Code adları
     expect(String(d["about.tagline"]), lang).toContain("Claude Code");
   }
 });
+
+test("send_not_submitted reads without double punctuation in every language", () => {
+  for (const lang of LANGS) {
+    const s = errorText("send_not_submitted:send_waiting", lang);
+    expect(s, lang).toContain(t("err.send_waiting", undefined, lang));
+    expect(s, lang).not.toMatch(/[.。]\s*[)）]|[.。][.。]/);
+  }
+});
+
+test("remote.* keys follow the card.* group in every dictionary", () => {
+  for (const lang of LANGS) {
+    const keys = Object.keys(DICTS[lang]);
+    const card = keys.map((k, i) => (k.startsWith("card.") ? i : -1)).filter((i) => i >= 0);
+    const remote = keys.map((k, i) => (k.startsWith("remote.") ? i : -1)).filter((i) => i >= 0);
+    const last = card[card.length - 1];
+    expect(card, lang).toEqual(card.map((_, j) => card[0] + j));
+    expect(remote, lang).toEqual(remote.map((_, j) => last + 1 + j));
+  }
+});

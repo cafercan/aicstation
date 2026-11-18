@@ -260,4 +260,7 @@ test("Remote Control açma hatası başka oturumun simgesinde görünmez", async
   await waitFor(() => expect(mark().getAttribute("title")).toContain("claude.ai açılamadı"));
   await navigate("s-b");
   expect(mark().getAttribute("title")).not.toContain("claude.ai açılamadı");
+  // Back on the first session: the old error is gone.
+  await navigate("s-a");
+  expect(mark().getAttribute("title")).not.toContain("claude.ai açılamadı");
 });

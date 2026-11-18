@@ -29,7 +29,7 @@ export default function SessionCardView({ card, now, onOpen, onGoto }: Props) {
     const id = setTimeout(() => setNote(null), GOTO_NOTE_MS);
     return () => clearTimeout(id);
   }, [note]);
-  const remote = useRemoteOpen();
+  const remote = useRemoteOpen(GOTO_NOTE_MS);
   const remoteErr = remote.errorFor(card.sessionId);
   const kind = statusKind(card.status, card.pid);
   const running = Math.max(0, card.agentsTotal - card.agentsFinished);

@@ -51,13 +51,14 @@ export function resolveView(
 }
 
 /**
- * View after app terminal `id` is closed: a plain view of it moves to `other`
- * (the remaining split pane) or the dashboard. Session views are left alone;
- * resolveView moves them to the Info tab once the terminal is gone.
+ * View after the user closed app terminal `id`: a view of it, plain or the
+ * Info/Conversation tab of the session it hosted, moves to `other` (the
+ * remaining split pane) or the dashboard, like closing a tab. Other views are
+ * left alone (a terminal that ends on its own goes through resolveView).
  */
 export function viewAfterClose(v: View, id: number, other: number | null): View {
   // Same test as workspace.tsx termOf, kept here so this module stays free of UI imports.
-  if (typeof v !== "object" || "session" in v || v.terminal !== id) return v;
+  if (typeof v !== "object" || v.terminal !== id) return v;
   return other !== null ? { terminal: other } : "dashboard";
 }
 

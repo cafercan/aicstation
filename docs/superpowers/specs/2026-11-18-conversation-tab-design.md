@@ -204,10 +204,15 @@ everything below.
     (author's call; keeps `THIRD_PARTY_NOTICES` and audits unchanged).
   - Thumbnails load lazily (IntersectionObserver), `data:` URL from the
     image command, fixed small size; an in-memory LRU of loaded images
-    (e.g. 30) per view.
+    (e.g. 30) per view. A thumbnail that leaves the view drops its `data:`
+    URL (keeping its width) and takes it back from the LRU, or loads it
+    again, when it returns, so memory stays bounded however far back the
+    user scrolls.
   - Image popup: modal over the app, image fit to the window, Esc / close
     button / click outside to close.
-  - Message box per Goals 2; after sending, the box clears; the message
+  - Message box per Goals 2; after sending, the box clears only when its
+    text still equals what was sent (text edited while the send was on its
+    way stays as it is), and typing clears a send error; the message
     appears when Claude Code writes it to the transcript (no optimistic
     copy).
 - Remote Control icon on `SessionCard` and in the tab row; click calls

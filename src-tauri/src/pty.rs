@@ -179,12 +179,16 @@ const SESSION_MARKER_PREFIXES: &[&str] = &["CLAUDE_CODE_MESSAGING_"];
 /// - Other `CLAUDE_CODE_*` and `CLAUDE_EFFORT` are the user's own settings
 ///   when persistent (kept), otherwise they were set by a parent Claude Code
 ///   session (removed).
+/// - Inside an AppImage (Unix), what its runtime injected is removed (see
+///   [`appimage_cleanup`]).
 /// - Everything else is kept, including NO_COLOR / FORCE_COLOR.
 /// - On Windows `NoDefaultCurrentDirectoryInExePath=1` is added (see `NO_CWD_EXE`).
 pub fn child_env(
     vars: impl IntoIterator<Item = (OsString, OsString)>,
     persistent: &HashSet<String>,
 ) -> Vec<(OsString, OsString)> {
+    #[cfg(unix)]
+    let vars = appimage_cleanup(vars.into_iter().collect());
     let keep = |key: &OsString| {
         let k = key.to_string_lossy().to_ascii_uppercase();
         if SESSION_MARKERS.contains(&k.as_str()) || SESSION_MARKER_PREFIXES.iter().any(|p| k.starts_with(p)) {
@@ -203,6 +207,71 @@ pub fn child_env(
     #[cfg(windows)]
     out.push((NO_CWD_EXE.into(), "1".into()));
     out
+}
+
+/// Variables the AppImage runtime sets about itself.
+#[cfg(unix)]
+const APPIMAGE_RUNTIME: &[&str] = &["APPDIR", "APPIMAGE", "ARGV0", "OWD"];
+
+/// `vars` without what an AppImage's runtime and AppRun hooks injected, so
+/// the programs started from the app (shells, `xdg-open`, the terminal
+/// emulator) do not load the app's bundled libraries and modules. Only when
+/// both `APPIMAGE` and `APPDIR` are set: the runtime's own variables go, and
+/// in every other variable each `:`-separated entry (also space-separated for
+/// `LD_PRELOAD`) that is a path inside `APPDIR` is removed; a variable left
+/// with no entry goes too. That covers `LD_LIBRARY_PATH`, `LD_PRELOAD`,
+/// `GDK_PIXBUF_*`, `GIO_*`, `GST_PLUGIN_*`, `GTK_*` module paths,
+/// `PYTHONHOME`/`PYTHONPATH`, `PERLLIB`, `QT_PLUGIN_PATH` and the entries
+/// prepended to `PATH`/`XDG_DATA_DIRS`, while the user's own entries stay.
+/// Values are handled as bytes, so non-UTF-8 entries survive. An
+/// `XDG_DATA_DIRS` left empty or with only the `/usr/share` the hook added
+/// becomes the XDG default. An `APPDIR` that is not absolute, or is `/`,
+/// removes no entries. Two values that are not paths go too because the
+/// AppImage sets them over the user's: `GTK_THEME` when the GTK hook ran
+/// (it forces Adwaita on everything started from the app) and
+/// `PYTHONDONTWRITEBYTECODE=1` from AppRun.
+#[cfg(unix)]
+fn appimage_cleanup(vars: Vec<(OsString, OsString)>) -> Vec<(OsString, OsString)> {
+    use std::os::unix::ffi::{OsStrExt, OsStringExt};
+    const XDG_DATA_DEFAULT: &str = "/usr/local/share:/usr/share";
+    let get = |name: &str| vars.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone());
+    let (Some(_), Some(appdir)) = (get("APPIMAGE"), get("APPDIR")) else {
+        return vars;
+    };
+    let mut root = appdir.as_bytes();
+    while let Some(r) = root.strip_suffix(b"/") {
+        root = r;
+    }
+    let usable = root.starts_with(b"/");
+    let inside = |entry: &[u8]| {
+        usable && entry.strip_prefix(root).is_some_and(|tail| tail.is_empty() || tail.starts_with(b"/"))
+    };
+    // Set without looking at the user's values, so never the user's own:
+    // the GTK hook (linuxdeploy-plugin-gtk) overwrites GTK_THEME with
+    // "Adwaita:<light|dark>" and marks itself by pointing GTK_DATA_PREFIX at
+    // APPDIR; AppRun sets PYTHONDONTWRITEBYTECODE=1.
+    let gtk_hook = get("GTK_DATA_PREFIX").is_some_and(|p| inside(p.as_bytes()));
+    let injected = |k: &OsString, v: &OsString| {
+        (gtk_hook && k == "GTK_THEME") || (k == "PYTHONDONTWRITEBYTECODE" && v == "1")
+    };
+    vars.into_iter()
+        .filter(|(k, _)| !APPIMAGE_RUNTIME.iter().any(|r| k == r))
+        .filter(|(k, v)| !injected(k, v))
+        .filter_map(|(k, v)| {
+            let preload = k == "LD_PRELOAD";
+            let sep = |b: &u8| *b == b':' || (preload && (*b == b' ' || *b == b'\t'));
+            let bytes = v.as_bytes();
+            if !bytes.split(sep).any(inside) {
+                return Some((k, v));
+            }
+            let kept: Vec<&[u8]> = bytes.split(sep).filter(|e| !e.is_empty() && !inside(e)).collect();
+            let joined = kept.join(&b':');
+            if k == "XDG_DATA_DIRS" && (joined.is_empty() || joined == b"/usr/share") {
+                return Some((k, OsString::from(XDG_DATA_DEFAULT)));
+            }
+            (!joined.is_empty()).then(|| (k, OsString::from_vec(joined)))
+        })
+        .collect()
 }
 
 impl PtyManager {
@@ -822,6 +891,127 @@ mod tests {
         );
         let with_effort = set(&["CLAUDE_EFFORT"]);
         assert_eq!(names(child_env(input, &with_effort)), tail(vec!["CLAUDE_EFFORT"]));
+    }
+
+    #[cfg(unix)]
+    fn pairs(v: Vec<(OsString, OsString)>) -> Vec<(String, String)> {
+        v.into_iter().map(|(k, v)| (k.to_string_lossy().into_owned(), v.to_string_lossy().into_owned())).collect()
+    }
+
+    /// The variables an AppImage runtime and its AppRun hooks set, plus the
+    /// user's own ones they extend.
+    #[cfg(unix)]
+    const APPIMAGE_ENV: &[(&str, &str)] = &[
+        ("APPDIR", "/tmp/.mount_aicstXyZ"),
+        ("APPIMAGE", "/home/u/AI C-Station.AppImage"),
+        ("ARGV0", "./AI C-Station.AppImage"),
+        ("OWD", "/home/u"),
+        ("HOME", "/home/u"),
+        ("PATH", "/tmp/.mount_aicstXyZ/usr/bin:/usr/local/bin:/usr/bin"),
+        ("LD_LIBRARY_PATH", "/tmp/.mount_aicstXyZ/usr/lib:/opt/mine/lib"),
+        ("LD_PRELOAD", "/tmp/.mount_aicstXyZ/usr/lib/libhook.so"),
+        ("XDG_DATA_DIRS", "/tmp/.mount_aicstXyZ/usr/share:/usr/share:/usr/local/share"),
+        ("GDK_PIXBUF_MODULE_FILE", "/tmp/.mount_aicstXyZ/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"),
+        ("GDK_PIXBUF_MODULEDIR", "/tmp/.mount_aicstXyZ/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders"),
+        ("GIO_EXTRA_MODULES", "/tmp/.mount_aicstXyZ/usr/lib/gio/modules"),
+        ("GIO_MODULE_DIR", "/tmp/.mount_aicstXyZ/usr/lib/gio/modules"),
+        ("GSETTINGS_SCHEMA_DIR", "/tmp/.mount_aicstXyZ//usr/share/glib-2.0/schemas"),
+        ("GST_PLUGIN_PATH", "/tmp/.mount_aicstXyZ/usr/lib/gstreamer-1.0"),
+        ("GST_PLUGIN_SYSTEM_PATH_1_0", "/tmp/.mount_aicstXyZ/usr/lib/gstreamer-1.0"),
+        ("GST_PLUGIN_SCANNER", "/tmp/.mount_aicstXyZ/usr/lib/gstreamer1.0/gst-plugin-scanner"),
+        ("GTK_PATH", "/tmp/.mount_aicstXyZ//usr/lib/gtk-3.0"),
+        ("GTK_EXE_PREFIX", "/tmp/.mount_aicstXyZ//usr"),
+        ("GTK_DATA_PREFIX", "/tmp/.mount_aicstXyZ"),
+        ("GTK_IM_MODULE_FILE", "/tmp/.mount_aicstXyZ/usr/lib/gtk-3.0/3.0.0/immodules.cache"),
+        ("PYTHONHOME", "/tmp/.mount_aicstXyZ/usr"),
+        ("PYTHONPATH", "/tmp/.mount_aicstXyZ/usr/lib/python3:/home/u/py"),
+        ("PERLLIB", "/tmp/.mount_aicstXyZ/usr/share/perl5"),
+        ("QT_PLUGIN_PATH", "/tmp/.mount_aicstXyZ/usr/plugins"),
+        ("GTK_THEME", "Adwaita:dark"),
+        ("PYTHONDONTWRITEBYTECODE", "1"),
+        ("DISPLAY", ":0"),
+        ("EDITOR", "/tmp/.mount_aicstXyZ-not-inside/vim"),
+    ];
+
+    #[cfg(unix)]
+    #[test]
+    fn child_env_drops_what_the_appimage_runtime_injected() {
+        let out = pairs(child_env(kv(APPIMAGE_ENV), &HashSet::new()));
+        assert_eq!(
+            out,
+            [
+                ("HOME", "/home/u"),
+                ("PATH", "/usr/local/bin:/usr/bin"),
+                ("LD_LIBRARY_PATH", "/opt/mine/lib"),
+                ("XDG_DATA_DIRS", "/usr/share:/usr/local/share"),
+                ("PYTHONPATH", "/home/u/py"),
+                ("DISPLAY", ":0"),
+                ("EDITOR", "/tmp/.mount_aicstXyZ-not-inside/vim"),
+            ]
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn child_env_keeps_gtk_theme_without_the_appimage_gtk_hook() {
+        // The GTK hook overwrites GTK_THEME and sets GTK_DATA_PREFIX to APPDIR;
+        // without that marker GTK_THEME is the user's own and stays.
+        let env = [("APPDIR", "/tmp/.mount_a"), ("APPIMAGE", "/x.AppImage"), ("GTK_THEME", "Yaru-dark")];
+        assert_eq!(pairs(child_env(kv(&env), &HashSet::new())), [("GTK_THEME".to_string(), "Yaru-dark".to_string())]);
+        // PYTHONDONTWRITEBYTECODE is only the AppRun's when it is "1".
+        let env = [("APPDIR", "/tmp/.mount_a"), ("APPIMAGE", "/x.AppImage"), ("PYTHONDONTWRITEBYTECODE", "yes")];
+        assert_eq!(names(child_env(kv(&env), &HashSet::new())), ["PYTHONDONTWRITEBYTECODE"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn child_env_keeps_everything_outside_an_appimage() {
+        // Without APPIMAGE nothing is an AppImage leftover; with an unusable
+        // APPDIR only the runtime's own variables go.
+        let no_appimage: Vec<_> = APPIMAGE_ENV.iter().copied().filter(|(k, _)| *k != "APPIMAGE").collect();
+        assert_eq!(pairs(child_env(kv(&no_appimage), &HashSet::new())), pairs(kv(&no_appimage)));
+        let root = [("APPDIR", "/"), ("APPIMAGE", "/x.AppImage"), ("LD_LIBRARY_PATH", "/usr/lib")];
+        assert_eq!(names(child_env(kv(&root), &HashSet::new())), ["LD_LIBRARY_PATH"]);
+        let relative = [("APPDIR", "rel"), ("APPIMAGE", "/x.AppImage"), ("LD_LIBRARY_PATH", "rel/lib")];
+        assert_eq!(names(child_env(kv(&relative), &HashSet::new())), ["LD_LIBRARY_PATH"]);
+        // The user's own LD_LIBRARY_PATH stays as it was.
+        let mine = [("APPDIR", "/tmp/.mount_a"), ("APPIMAGE", "/x.AppImage"), ("LD_LIBRARY_PATH", "/opt/lib::/usr/lib")];
+        assert_eq!(pairs(child_env(kv(&mine), &HashSet::new())), [("LD_LIBRARY_PATH".to_string(), "/opt/lib::/usr/lib".to_string())]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn child_env_keeps_non_utf8_entries_of_an_appimage_variable() {
+        use std::os::unix::ffi::{OsStrExt, OsStringExt};
+        let vars = vec![
+            (OsString::from("APPDIR"), OsString::from("/tmp/.mount_a")),
+            (OsString::from("APPIMAGE"), OsString::from("/x.AppImage")),
+            (OsString::from("LD_LIBRARY_PATH"), OsString::from_vec(b"/tmp/.mount_a/usr/lib:/opt/\xff/lib".to_vec())),
+            (OsString::from("NAME_\u{e7}"), OsString::from_vec(b"keep \xfe as is".to_vec())),
+        ];
+        let out = child_env(vars, &HashSet::new());
+        let bytes: Vec<(&[u8], &[u8])> = out.iter().map(|(k, v)| (k.as_bytes(), v.as_bytes())).collect();
+        assert_eq!(
+            bytes,
+            [(&b"LD_LIBRARY_PATH"[..], &b"/opt/\xff/lib"[..]), ("NAME_\u{e7}".as_bytes(), &b"keep \xfe as is"[..])]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn child_env_falls_back_to_the_xdg_default_data_dirs() {
+        let xdg = |v: &str| {
+            let input = [("APPDIR", "/tmp/.mount_a"), ("APPIMAGE", "/x.AppImage"), ("XDG_DATA_DIRS", v)];
+            pairs(child_env(kv(&input), &HashSet::new()))
+        };
+        let default = vec![("XDG_DATA_DIRS".to_string(), "/usr/local/share:/usr/share".to_string())];
+        // The AppImage hook prepends its own dirs (and /usr/share) to what the user had.
+        assert_eq!(xdg("/tmp/.mount_a/usr/share:/usr/share:"), default);
+        assert_eq!(xdg("/tmp/.mount_a/usr/share"), default);
+        assert_eq!(xdg("/tmp/.mount_a/usr/share:/usr/share:/opt/share"), [("XDG_DATA_DIRS".to_string(), "/usr/share:/opt/share".to_string())]);
+        // Untouched by the AppImage: kept as the user set it.
+        assert_eq!(xdg("/usr/share"), [("XDG_DATA_DIRS".to_string(), "/usr/share".to_string())]);
     }
 
     #[cfg(windows)]

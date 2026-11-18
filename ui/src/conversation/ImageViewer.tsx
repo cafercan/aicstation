@@ -17,9 +17,10 @@ export default function ImageViewer({ src, onClose }: { src: string; onClose: ()
     const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     close.current?.focus();
     // Capture phase: Esc closes the viewer and reaches no other shortcut;
-    // Tab and Shift+Tab stay on the close button.
+    // Tab and Shift+Tab stay on the close button. Ctrl/Alt/Meta+Tab are
+    // left to the system.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Tab") {
+      if (e.key === "Tab" && !e.ctrlKey && !e.altKey && !e.metaKey) {
         e.preventDefault();
         close.current?.focus();
         return;

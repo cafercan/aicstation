@@ -206,6 +206,11 @@ export default function App() {
 
   const barCard = bar ? snapshot.sessions.find((s) => s.sessionId === bar.sessionId) : undefined;
   const remote = useRemoteOpen();
+  // A Remote Control error belongs to the visit it happened on: switching
+  // sessions drops it, so coming back does not show it again.
+  const barSession = bar?.sessionId;
+  const clearRemote = remote.clear;
+  useEffect(() => { clearRemote(); }, [barSession, clearRemote]);
 
   let page;
   if (view === "dashboard") {

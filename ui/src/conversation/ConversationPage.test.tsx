@@ -127,9 +127,72 @@ test("viewer is a modal dialog that keeps focus and gives it back", async () => 
   expect(document.activeElement).toBe(close);
   fireEvent.keyDown(document.activeElement!, { key: "Tab", shiftKey: true });
   expect(document.activeElement).toBe(close);
+  // Ctrl/Alt/Meta+Tab are not the viewer's: they are not cancelled.
+  for (const mod of ["ctrlKey", "altKey", "metaKey"]) {
+    expect(fireEvent.keyDown(document.activeElement!, { key: "Tab", [mod]: true })).toBe(true);
+  }
+  expect(fireEvent.keyDown(document.activeElement!, { key: "Tab" })).toBe(false);
   fireEvent.keyDown(document.body, { key: "Escape" });
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(document.activeElement).toBe(thumb);
+});
+
+/** IntersectionObserver stand-in: `show(on)` reports every observed thumb in or out of view. */
+class FakeIO {
+  static all: FakeIO[] = [];
+  el: Element | null = null;
+  constructor(public cb: IntersectionObserverCallback, public opts: IntersectionObserverInit) { FakeIO.all.push(this); }
+  observe(el: Element) { this.el = el; }
+  unobserve() {}
+  disconnect() { this.el = null; }
+  takeRecords() { return []; }
+}
+const show = (on: boolean) => act(async () => {
+  for (const io of FakeIO.all) {
+    if (io.el) io.cb([{ isIntersecting: on, target: io.el } as unknown as IntersectionObserverEntry], io as unknown as IntersectionObserver);
+  }
+});
+
+test("a thumb drops its image out of view and gets it back from the cache", async () => {
+  FakeIO.all = [];
+  vi.stubGlobal("IntersectionObserver", FakeIO);
+  try {
+    serve({
+      get_conversation_page: () => page([{ kind: "user", text: "bak", truncated: false, images: [img(400)], atMs: 1 }]),
+      get_conversation_image: () => ({ mediaType: "image/png", data: "VklT" }),
+    });
+    const { container } = render(<ConversationPage sessionId="s-io" card={card()} {...props} />);
+    const thumb = await screen.findByRole("button", { name: "Resmi aç" });
+    expect(FakeIO.all[0].opts.root).toBe(container.querySelector(".conv-list"));
+    expect(FakeIO.all[0].opts.rootMargin).toBe("300px");
+    expect(thumb.querySelector("img")).toBeNull();
+    await show(true);
+    await waitFor(() => expect(thumb.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,VklT"));
+    await show(false);
+    expect(thumb.querySelector("img")).toBeNull();
+    await show(true);
+    expect(thumb.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,VklT");
+    const loads = invoke.mock.calls.filter(([c]) => c === "get_conversation_image");
+    expect(loads).toHaveLength(1);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+test("a step list opened before a branch change does not stay open on another item", async () => {
+  serve({
+    get_conversation_page: () => page([ITEMS[0], ITEMS[2]], { epoch: 1 }),
+    get_conversation_since: () => page([ITEMS[0], { kind: "steps", atMs: 7, steps: [
+      { tool: "Read", target: "foo.txt", done: true, isError: false, images: [] },
+    ] }], { epoch: 2 }),
+  });
+  const { rerender } = render(<ConversationPage sessionId="s1" card={card({ lastActivityMs: 1 })} {...props} />);
+  const line = await screen.findByRole("button", { name: /1 komut çalıştırdı/ });
+  fireEvent.click(line);
+  expect(line.getAttribute("aria-expanded")).toBe("true");
+  rerender(<ConversationPage sessionId="s1" card={card({ lastActivityMs: 2 })} {...props} />);
+  const other = await screen.findByRole("button", { name: /foo\.txt/ });
+  expect(other.getAttribute("aria-expanded")).toBe("false");
 });
 
 test("background task notices show as a muted line, with a fallback text", async () => {
@@ -334,6 +397,34 @@ test("composer: send error keeps text", async () => {
   expect(box.value).toBe("selam");
 });
 
+test("composer: text edited while the send is on its way stays as it is", async () => {
+  let finish: () => void = () => {};
+  serve({ send_to_session: () => new Promise<void>((r) => { finish = r; }) });
+  render(<Composer sessionId="s1" status="idle" onShowTerminal={noop} />);
+  const box = screen.getByRole("textbox") as HTMLTextAreaElement;
+  fireEvent.change(box, { target: { value: "selam" } });
+  fireEvent.keyDown(box, { key: "Enter" });
+  fireEvent.change(box, { target: { value: "selam, bir de şu" } });
+  await act(async () => { finish(); });
+  expect(box.value).toBe("selam, bir de şu");
+  // Edited to something else entirely: also kept.
+  fireEvent.keyDown(box, { key: "Enter" });
+  fireEvent.change(box, { target: { value: "başka" } });
+  await act(async () => { finish(); });
+  expect(box.value).toBe("başka");
+});
+
+test("composer: typing clears the send error", async () => {
+  serve({ send_to_session: () => { throw "send_waiting"; } });
+  render(<Composer sessionId="s1" status="busy" onShowTerminal={noop} />);
+  const box = screen.getByRole("textbox") as HTMLTextAreaElement;
+  fireEvent.change(box, { target: { value: "selam" } });
+  fireEvent.click(screen.getByRole("button", { name: "Gönder" }));
+  expect(await screen.findByRole("alert")).toBeTruthy();
+  fireEvent.change(box, { target: { value: "selam!" } });
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
 test("composer: text pasted but not submitted says so", async () => {
   serve({ send_to_session: () => { throw "send_not_submitted:send_waiting"; } });
   render(<Composer sessionId="s1" status="busy" onShowTerminal={noop} />);
@@ -341,7 +432,7 @@ test("composer: text pasted but not submitted says so", async () => {
   fireEvent.change(box, { target: { value: "selam" } });
   fireEvent.click(screen.getByRole("button", { name: "Gönder" }));
   expect((await screen.findByRole("alert")).textContent).toBe(
-    "Metin oturumun terminaline yapıştırıldı ama gönderilmedi (Oturum terminalinde bir yanıt bekliyor; önce orada yanıtlanmalı.). "
-      + "Orada silin ya da Terminal sekmesinden gönderin.",
+    "Metin oturumun terminaline yapıştırıldı ama gönderilmedi. Orada silin ya da Terminal sekmesinden gönderin. "
+      + "Neden: Oturum terminalinde bir yanıt bekliyor; önce orada yanıtlanmalı.",
   );
 });

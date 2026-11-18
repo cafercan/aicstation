@@ -44,11 +44,32 @@ pub(crate) fn find_program(name: &OsStr, path: Option<&OsStr>) -> Option<PathBuf
     SYSTEM_BINS.iter().map(PathBuf::from).chain(user).map(|d| d.join(n)).find(|c| exec(c))
 }
 
-/// Runs `program` detached in `cwd` with the cleaned child environment (no
-/// Claude Code session markers), reaping it on a thread.
-fn spawn_detached(program: &Path, args: &[&str], cwd: Option<&Path>) -> std::io::Result<()> {
+/// The child environment of this process (no Claude Code session markers,
+/// nothing an AppImage injected; see `crate::pty::child_env`).
+fn clean_env(vars: impl IntoIterator<Item = (OsString, OsString)>) -> Vec<(OsString, OsString)> {
+    crate::pty::child_env(vars, &Default::default())
+}
+
+/// The `PATH` of an environment.
+fn path_of(env: &[(OsString, OsString)]) -> Option<&OsStr> {
+    env.iter().find(|(k, _)| k == "PATH").map(|(_, v)| v.as_os_str())
+}
+
+/// Runs `program` detached in `cwd` with the cleaned child environment,
+/// reaping it on a thread.
+fn spawn_detached(program: &Path, args: &[&OsStr], cwd: Option<&Path>) -> std::io::Result<()> {
+    spawn_with_env(program, args, cwd, clean_env(std::env::vars_os()))
+}
+
+/// [`spawn_detached`] with exactly `env` as the child's environment.
+fn spawn_with_env(
+    program: &Path,
+    args: &[&OsStr],
+    cwd: Option<&Path>,
+    env: Vec<(OsString, OsString)>,
+) -> std::io::Result<()> {
     let mut cmd = Command::new(program);
-    cmd.args(args).env_clear().envs(crate::pty::child_env(std::env::vars_os(), &Default::default()));
+    cmd.args(args).env_clear().envs(env);
     if let Some(d) = cwd {
         cmd.current_dir(d);
     }
@@ -57,26 +78,25 @@ fn spawn_detached(program: &Path, args: &[&str], cwd: Option<&Path>) -> std::io:
     Ok(())
 }
 
-/// Opens an already validated directory in the file manager.
-pub fn open_folder(dir: &Path) -> std::io::Result<()> {
-    let opener = find_program(OsStr::new("xdg-open"), std::env::var_os("PATH").as_deref())
+/// Hands `target` to `xdg-open`, found on the cleaned environment's PATH (an
+/// AppImage's own bin folder is not on it) and run with that environment.
+/// The callers pass an absolute path or an `https:` URL, so it can never be
+/// read as an option.
+fn xdg_open(target: &OsStr) -> std::io::Result<()> {
+    let env = clean_env(std::env::vars_os());
+    let opener = find_program(OsStr::new("xdg-open"), path_of(&env))
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "xdg-open"))?;
-    // `dir` is absolute (starts with `/`), so it can never be read as an option.
-    let mut cmd = Command::new(opener);
-    cmd.arg(dir);
-    let mut child = cmd.spawn()?;
-    std::thread::spawn(move || child.wait());
-    Ok(())
+    spawn_with_env(&opener, &[target], None, env)
 }
 
-/// Opens an app-built `https://` URL in the default browser through
-/// `xdg-open`. The URL starts with `https:`, so it can never be read as an option.
+/// Opens an already validated directory in the file manager.
+pub fn open_folder(dir: &Path) -> std::io::Result<()> {
+    xdg_open(dir.as_os_str())
+}
+
+/// Opens an app-built `https://` URL in the default browser.
 pub fn open_url(url: &str) -> std::io::Result<()> {
-    let opener = find_program(OsStr::new("xdg-open"), std::env::var_os("PATH").as_deref())
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "xdg-open"))?;
-    let mut child = Command::new(opener).arg(url).spawn()?;
-    std::thread::spawn(move || child.wait());
-    Ok(())
+    xdg_open(OsStr::new(url))
 }
 
 /// The terminal emulator to open: `$TERMINAL` when it names a program,
@@ -171,6 +191,64 @@ mod tests {
         let _ = child.wait();
         assert_eq!(r, Err(crate::errors::SESSION_NOT_LIVE.to_string()));
         assert!(alive);
+    }
+
+    #[test]
+    fn detached_program_gets_the_cleaned_environment() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("env.txt");
+        // Run through sh: executing a file this process just wrote can fail
+        // with "text file busy" while another test thread forks.
+        let script = dir.path().join("dump-env");
+        // Written to a temporary name and renamed, so the test never reads a half-written file.
+        std::fs::write(&script, format!("#!/bin/sh\nprintf '%s|' \"$1\" > \"{0}.tmp\"\nenv >> \"{0}.tmp\"\nmv \"{0}.tmp\" \"{0}\"\n", out.display())).unwrap();
+        let vars = [
+            ("PATH", "/tmp/.mount_t/usr/bin:/usr/bin:/bin"),
+            ("APPDIR", "/tmp/.mount_t"),
+            ("APPIMAGE", "/home/u/app.AppImage"),
+            ("LD_LIBRARY_PATH", "/tmp/.mount_t/usr/lib"),
+            ("CLAUDECODE", "1"),
+            ("KEEP_ME", "yes"),
+        ]
+        .map(|(k, v)| (OsString::from(k), OsString::from(v)));
+        spawn_with_env(Path::new("/bin/sh"), &[script.as_os_str(), OsStr::new("https://claude.ai/x")], None, clean_env(vars))
+            .unwrap();
+        let t = std::time::Instant::now();
+        while !out.exists() {
+            assert!(t.elapsed() < std::time::Duration::from_secs(5), "script did not run");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let text = std::fs::read_to_string(&out).unwrap();
+        let (arg, env) = text.split_once('|').unwrap();
+        assert_eq!(arg, "https://claude.ai/x");
+        let lines: Vec<&str> = env.lines().collect();
+        assert!(lines.contains(&"KEEP_ME=yes"), "{env}");
+        assert!(lines.contains(&"PATH=/usr/bin:/bin"), "{env}");
+        for gone in ["APPDIR=", "APPIMAGE=", "LD_LIBRARY_PATH=", "CLAUDECODE="] {
+            assert!(!lines.iter().any(|l| l.starts_with(gone)), "{gone} leaked: {env}");
+        }
+    }
+
+    #[test]
+    fn opener_is_looked_up_on_the_cleaned_path() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let appdir = dir.path().join("mount");
+        let mine = dir.path().join("bin");
+        let name = "sahte-opener-4b1d";
+        for d in [appdir.join("usr").join("bin"), mine.clone()] {
+            std::fs::create_dir_all(&d).unwrap();
+            std::fs::write(d.join(name), "#!/bin/sh\n").unwrap();
+            std::fs::set_permissions(d.join(name), std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let path = std::env::join_paths([appdir.join("usr").join("bin"), mine.clone()]).unwrap();
+        let vars = vec![
+            (OsString::from("APPDIR"), appdir.clone().into_os_string()),
+            (OsString::from("APPIMAGE"), OsString::from("/x.AppImage")),
+            (OsString::from("PATH"), path),
+        ];
+        let env = clean_env(vars);
+        assert_eq!(find_program(OsStr::new(name), path_of(&env)), Some(mine.join(name)));
     }
 
     #[test]

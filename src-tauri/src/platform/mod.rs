@@ -56,17 +56,27 @@ pub use unix::{open_external_terminal, open_folder, open_url};
 #[cfg(unix)]
 pub(crate) use unix::find_program;
 
+/// Starts explorer.exe (absolute path, never resolved through PATH) with
+/// `arg` and reaps it on a thread. Its exit code is not the result:
+/// explorer.exe hands the work to the running shell and often exits with 1.
+#[cfg(windows)]
+fn explorer(arg: &std::ffi::OsStr) -> std::io::Result<()> {
+    let mut child = std::process::Command::new(explorer_exe()).arg(arg).spawn()?;
+    std::thread::spawn(move || child.wait());
+    Ok(())
+}
+
 /// Opens `dir` (already validated) in Explorer.
 #[cfg(windows)]
 pub fn open_folder(dir: &Path) -> std::io::Result<()> {
-    std::process::Command::new(explorer_exe()).arg(dir).spawn().map(|_| ())
+    explorer(dir.as_os_str())
 }
 
 /// Opens an app-built `https://` URL in the default browser through
-/// explorer.exe (absolute path, never resolved through PATH).
+/// explorer.exe.
 #[cfg(windows)]
 pub fn open_url(url: &str) -> std::io::Result<()> {
-    std::process::Command::new(explorer_exe()).arg(url).spawn().map(|_| ())
+    explorer(std::ffi::OsStr::new(url))
 }
 
 /// Brings the Windows Terminal window hosting `pid` forward and selects the

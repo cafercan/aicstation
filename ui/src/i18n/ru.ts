@@ -42,8 +42,6 @@ export const ru: Dict = {
   "card.lastTool": "последний: {tool}",
   "card.lastActivity": "последняя активность {t}",
   "card.goto": "Перейти на вкладку",
-  "remote.on": "Remote Control включён: открыть на claude.ai",
-  "remote.openFailed": "Не удалось открыть claude.ai: {err}",
   "card.noSubagents": "нет субагентов",
   "card.agentsRunning": {
     one: "{n} агент работает", few: "{n} агента работают", many: "{n} агентов работают", other: "{n} агента работают",
@@ -53,6 +51,8 @@ export const ru: Dict = {
   },
   "card.toolSuccess": "успешных вызовов",
   "card.context": "контекст {pct}",
+  "remote.on": "Remote Control включён: открыть на claude.ai",
+  "remote.openFailed": "Не удалось открыть claude.ai: {err}",
   "donut.label": "Агентов: {total}, работают: {running}, завершены: {finished}",
   "donut.agents": "агенты",
 
@@ -186,7 +186,7 @@ export const ru: Dict = {
   "err.send_too_large": "Текст слишком длинный (не более 32 КБ).",
   "err.send_waiting": "Сеанс ждёт ответа в своём терминале; сначала нужно ответить там.",
   "err.send_not_embedded": "Этот сеанс не работает в терминале приложения, поэтому отправить ему текст нельзя.",
-  "err.send_not_submitted": "Текст вставлен в терминал сеанса, но не отправлен ({detail}). Удалите его там или отправьте на вкладке «Терминал».",
+  "err.send_not_submitted": "Текст вставлен в терминал сеанса, но не отправлен. Удалите его там или отправьте на вкладке «Терминал». Причина: {detail}",
   "err.remote_off": "Для этого сеанса Remote Control не включён.",
   "err.url_open_failed": "Не удалось открыть браузер",
   "err.resume_folder_mismatch": "Невозможно продолжить в папке проекта сессии",

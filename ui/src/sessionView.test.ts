@@ -85,14 +85,25 @@ test("info_view_attaches_terminal_when_session_moves_into_app", () => {
   expect(resolveView(v, [term(2, 20)], closed, NONE)).toBe(v);
 });
 
-test("closing_terminal_redirects_only_plain_terminal_views", () => {
+test("closing_a_terminal_leaves_every_view_of_it", () => {
   expect(viewAfterClose({ terminal: 1 }, 1, 2)).toEqual({ terminal: 2 });
   expect(viewAfterClose({ terminal: 1 }, 1, null)).toBe("dashboard");
   const other: View = { terminal: 3 };
   expect(viewAfterClose(other, 1, null)).toBe(other);
+  // Closing the terminal a session view shows (its Info or Conversation tab)
+  // leaves that view too, like closing a plain terminal.
+  const conv: View = { session: "a", tab: "conversation", terminal: 1 };
+  expect(viewAfterClose(conv, 1, 2)).toEqual({ terminal: 2 });
+  expect(viewAfterClose(conv, 1, null)).toBe("dashboard");
+  expect(viewAfterClose({ session: "a", tab: "info", terminal: 1 }, 1, null)).toBe("dashboard");
+  // A session view of another terminal, or without one, stays.
+  const elsewhere: View = { session: "a", tab: "info", terminal: 3 };
+  expect(viewAfterClose(elsewhere, 1, null)).toBe(elsewhere);
+  const outside: View = { session: "a", tab: "conversation" };
+  expect(viewAfterClose(outside, 1, null)).toBe(outside);
+  // A terminal that went away on its own (shell exited): resolveView keeps
+  // the session and moves a Terminal tab to Info.
   const sv: View = { session: "a", tab: "terminal", terminal: 1 };
-  expect(viewAfterClose(sv, 1, null)).toBe(sv);
-  // resolveView then falls back to Info once the terminal is gone.
   expect(resolveView(sv, [], [], NONE)).toEqual({ session: "a", tab: "info" });
 });
 
