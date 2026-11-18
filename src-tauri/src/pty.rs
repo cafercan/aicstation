@@ -226,7 +226,10 @@ const APPIMAGE_RUNTIME: &[&str] = &["APPDIR", "APPIMAGE", "ARGV0", "OWD"];
 /// Values are handled as bytes, so non-UTF-8 entries survive. An
 /// `XDG_DATA_DIRS` left empty or with only the `/usr/share` the hook added
 /// becomes the XDG default. An `APPDIR` that is not absolute, or is `/`,
-/// removes no entries.
+/// removes no entries. Two values that are not paths go too because the
+/// AppImage sets them over the user's: `GTK_THEME` when the GTK hook ran
+/// (it forces Adwaita on everything started from the app) and
+/// `PYTHONDONTWRITEBYTECODE=1` from AppRun.
 #[cfg(unix)]
 fn appimage_cleanup(vars: Vec<(OsString, OsString)>) -> Vec<(OsString, OsString)> {
     use std::os::unix::ffi::{OsStrExt, OsStringExt};
@@ -243,8 +246,17 @@ fn appimage_cleanup(vars: Vec<(OsString, OsString)>) -> Vec<(OsString, OsString)
     let inside = |entry: &[u8]| {
         usable && entry.strip_prefix(root).is_some_and(|tail| tail.is_empty() || tail.starts_with(b"/"))
     };
+    // Set without looking at the user's values, so never the user's own:
+    // the GTK hook (linuxdeploy-plugin-gtk) overwrites GTK_THEME with
+    // "Adwaita:<light|dark>" and marks itself by pointing GTK_DATA_PREFIX at
+    // APPDIR; AppRun sets PYTHONDONTWRITEBYTECODE=1.
+    let gtk_hook = get("GTK_DATA_PREFIX").is_some_and(|p| inside(p.as_bytes()));
+    let injected = |k: &OsString, v: &OsString| {
+        (gtk_hook && k == "GTK_THEME") || (k == "PYTHONDONTWRITEBYTECODE" && v == "1")
+    };
     vars.into_iter()
         .filter(|(k, _)| !APPIMAGE_RUNTIME.iter().any(|r| k == r))
+        .filter(|(k, v)| !injected(k, v))
         .filter_map(|(k, v)| {
             let preload = k == "LD_PRELOAD";
             let sep = |b: &u8| *b == b':' || (preload && (*b == b' ' || *b == b'\t'));
@@ -916,6 +928,7 @@ mod tests {
         ("PERLLIB", "/tmp/.mount_aicstXyZ/usr/share/perl5"),
         ("QT_PLUGIN_PATH", "/tmp/.mount_aicstXyZ/usr/plugins"),
         ("GTK_THEME", "Adwaita:dark"),
+        ("PYTHONDONTWRITEBYTECODE", "1"),
         ("DISPLAY", ":0"),
         ("EDITOR", "/tmp/.mount_aicstXyZ-not-inside/vim"),
     ];
@@ -932,12 +945,23 @@ mod tests {
                 ("LD_LIBRARY_PATH", "/opt/mine/lib"),
                 ("XDG_DATA_DIRS", "/usr/share:/usr/local/share"),
                 ("PYTHONPATH", "/home/u/py"),
-                ("GTK_THEME", "Adwaita:dark"),
                 ("DISPLAY", ":0"),
                 ("EDITOR", "/tmp/.mount_aicstXyZ-not-inside/vim"),
             ]
             .map(|(k, v)| (k.to_string(), v.to_string()))
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn child_env_keeps_gtk_theme_without_the_appimage_gtk_hook() {
+        // The GTK hook overwrites GTK_THEME and sets GTK_DATA_PREFIX to APPDIR;
+        // without that marker GTK_THEME is the user's own and stays.
+        let env = [("APPDIR", "/tmp/.mount_a"), ("APPIMAGE", "/x.AppImage"), ("GTK_THEME", "Yaru-dark")];
+        assert_eq!(pairs(child_env(kv(&env), &HashSet::new())), [("GTK_THEME".to_string(), "Yaru-dark".to_string())]);
+        // PYTHONDONTWRITEBYTECODE is only the AppRun's when it is "1".
+        let env = [("APPDIR", "/tmp/.mount_a"), ("APPIMAGE", "/x.AppImage"), ("PYTHONDONTWRITEBYTECODE", "yes")];
+        assert_eq!(names(child_env(kv(&env), &HashSet::new())), ["PYTHONDONTWRITEBYTECODE"]);
     }
 
     #[cfg(unix)]
