@@ -1,4 +1,19 @@
-import { useT } from "../i18n";
+import { useState } from "react";
+import { openRemoteControl } from "../api";
+import { errorText, useT } from "../i18n";
+
+/** Opens a session's Remote Control page; keeps the last failure with the session it belongs to. */
+export function useRemoteOpen() {
+  const t = useT();
+  const [failure, setFailure] = useState<{ id: string; msg: string } | null>(null);
+  const open = (id: string) => {
+    setFailure(null);
+    openRemoteControl(id).catch((e: unknown) => setFailure({ id, msg: t("remote.openFailed", { err: errorText(e) }) }));
+  };
+  /** The failure message, only for this session. */
+  const errorFor = (id: string) => (failure?.id === id ? failure.msg : null);
+  return { open, errorFor };
+}
 
 /** Small "Remote Control is on" mark; a click opens the session on claude.ai (the caller does the work). */
 export default function RemoteMark({ onOpen, className = "remote", error }: {

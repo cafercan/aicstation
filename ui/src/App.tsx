@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  getHistory, getSnapshot, hideToTray, onNavigate, onSnapshot, onTrayQuit, openRemoteControl, openSystemTerminal, setFocusContext,
+  getHistory, getSnapshot, hideToTray, onNavigate, onSnapshot, onTrayQuit, openSystemTerminal, setFocusContext,
   type HistoryView, type Snapshot,
 } from "./api";
+import { useRemoteOpen } from "./components/RemoteMark";
 import SessionTabs from "./components/SessionTabs";
 import Sidebar, { SideRail, sidebarOpen, type SessionTab, type View } from "./components/Sidebar";
 import StatusBar from "./components/StatusBar";
@@ -15,7 +16,7 @@ import ConversationPage from "./conversation/ConversationPage";
 import SettingsPage from "./pages/Settings";
 import { currentSettings, loadSettings, pushLang } from "./settings";
 import { statusKind } from "./format";
-import { errorText, useLang, useT } from "./i18n";
+import { useLang, useT } from "./i18n";
 import { useTheme } from "./theme";
 import {
   allTerminalIds, closeTerminal, confirmClose, killOrphans, openResumeTerminal, openTerminal, sessionsIn,
@@ -204,11 +205,7 @@ export default function App() {
   };
 
   const barCard = bar ? snapshot.sessions.find((s) => s.sessionId === bar.sessionId) : undefined;
-  const [remoteErr, setRemoteErr] = useState<string | null>(null);
-  const openRemote = (id: string) => {
-    setRemoteErr(null);
-    openRemoteControl(id).catch((e: unknown) => setRemoteErr(t("remote.openFailed", { err: errorText(e) })));
-  };
+  const remote = useRemoteOpen();
 
   let page;
   if (view === "dashboard") {
@@ -253,7 +250,7 @@ export default function App() {
           : <SideRail />}
         <div className="main-col">
           {bar && <SessionTabs active={bar.active} onSelect={selectTab}
-            remote={barCard?.remoteControl ? () => openRemote(bar.sessionId) : undefined} remoteError={remoteErr}
+            remote={barCard?.remoteControl ? () => remote.open(bar.sessionId) : undefined} remoteError={remote.errorFor(bar.sessionId)}
             extra={barInTabs ? <AreaBar {...area} inline /> : undefined} />}
           <main className="main">
             {page}

@@ -13,6 +13,7 @@ const invoke = vi.hoisted(() => vi.fn(async (cmd: string, _args?: unknown): Prom
   if (cmd === "pty_kill") return undefined;
   if (cmd === "get_session_detail") return null;
   if (cmd === "set_focus_context") return null;
+  if (cmd === "open_remote_control") throw "no_browser";
   if (cmd === "get_conversation_page") return { epoch: 1, total: 1, start: 0, items: [{ kind: "user", text: "sohbet metni", truncated: false, images: [], atMs: 1 }] };
   return { rows: [], todayCost: 0, todayTokens: 0, todayComplete: true, indexing: false };
 }));
@@ -245,4 +246,18 @@ test("Remote Control açık oturumda sekme satırı simgeyi gösterir ve tıklam
   expect(btn).toBeTruthy();
   fireEvent.click(btn);
   expect(invoke).toHaveBeenCalledWith("open_remote_control", { sessionId: "s-rc" });
+});
+
+test("Remote Control açma hatası başka oturumun simgesinde görünmez", async () => {
+  snap.sessions = [card({ sessionId: "s-a", name: "a", remoteControl: true }),
+    card({ sessionId: "s-b", name: "b", pid: 8, remoteControl: true })];
+  const { container } = render(<App />);
+  await waitFor(() => expect(container.querySelector(".grid .card")).toBeTruthy());
+  await waitFor(() => expect(events.has("navigate")).toBe(true));
+  await navigate("s-a");
+  const mark = () => screen.getByRole("tablist").querySelector("button.remote")!;
+  fireEvent.click(mark());
+  await waitFor(() => expect(mark().getAttribute("title")).toContain("claude.ai açılamadı"));
+  await navigate("s-b");
+  expect(mark().getAttribute("title")).not.toContain("claude.ai açılamadı");
 });

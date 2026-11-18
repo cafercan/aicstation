@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { openRemoteControl, type SessionCard } from "../api";
+import type { SessionCard } from "../api";
 import {
   agentColor, clampPct, fmtBreakdown, fmtContext, fmtElapsed, fmtEstCost, fmtTokens, statusColor, statusKind, statusLabel,
   toolSuccess, usageSum,
 } from "../format";
 import { errorText, useT } from "../i18n";
 import AgentDonut from "./AgentDonut";
-import RemoteMark from "./RemoteMark";
+import RemoteMark, { useRemoteOpen } from "./RemoteMark";
 import SessionMark from "./SessionMark";
 
 /** How long the "Go to tab" note stays on the card. */
@@ -29,7 +29,8 @@ export default function SessionCardView({ card, now, onOpen, onGoto }: Props) {
     const id = setTimeout(() => setNote(null), GOTO_NOTE_MS);
     return () => clearTimeout(id);
   }, [note]);
-  const [remoteErr, setRemoteErr] = useState<string | null>(null);
+  const remote = useRemoteOpen();
+  const remoteErr = remote.errorFor(card.sessionId);
   const kind = statusKind(card.status, card.pid);
   const running = Math.max(0, card.agentsTotal - card.agentsFinished);
   const finished = Math.max(0, card.agentsFinished);
@@ -49,10 +50,7 @@ export default function SessionCardView({ card, now, onOpen, onGoto }: Props) {
       <div className="top">
         <h4><SessionMark color={statusColor(kind)} /><span className="name">{card.name}</span>
           {card.remoteControl && (
-            <RemoteMark onOpen={() => {
-              setRemoteErr(null);
-              openRemoteControl(card.sessionId).catch((err: unknown) => setRemoteErr(t("remote.openFailed", { err: errorText(err) })));
-            }} />
+            <RemoteMark onOpen={() => remote.open(card.sessionId)} />
           )}</h4>
         <div className="st">
           <span className="badge">{statusLabel(card.status, card.pid)}</span>
