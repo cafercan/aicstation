@@ -29,7 +29,11 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent }: 
         // Keep only what was typed while the send was on its way.
         setText((cur) => (cur.startsWith(sent) ? cur.slice(sent.length) : cur));
         onSent?.();
-      }, (e: unknown) => setErr(t("conv.sendFailed", { err: errorText(e) })))
+      }, (e: unknown) => {
+        // Pasted but not submitted: the message says the text sits in the terminal.
+        const pasted = typeof e === "string" && e.startsWith("send_not_submitted");
+        setErr(pasted ? errorText(e) : t("conv.sendFailed", { err: errorText(e) }));
+      })
       .finally(() => { sendingRef.current = false; setSending(false); });
   };
 

@@ -161,6 +161,10 @@ table.hist td .est { display: block; font-size: 11px; }
   overflow-x: auto; line-height: 1.45;
 }
 .md pre code { background: none; border: 0; padding: 0; white-space: pre; }
+.md-table-wrap { margin: 0 0 8px; max-width: 100%; overflow-x: auto; }
+.md-table { border-collapse: collapse; font-size: 12.5px; line-height: 1.45; overflow-wrap: normal; }
+.md-table th, .md-table td { border: 1px solid var(--border); padding: 4px 9px; text-align: left; vertical-align: top; }
+.md-table th { background: var(--raised); color: var(--strong); font-weight: 600; }
 .conv-steps { min-width: 0; }
 .conv-steps-head { display: flex; align-items: center; gap: 10px; min-height: 22px; }
 .conv-steps-line {
@@ -190,6 +194,10 @@ table.hist td .est { display: block; font-size: 11px; }
 .conv-thumb.broken { width: 56px; color: var(--muted); cursor: default; }
 .conv-divider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 11px; margin: 6px 0; }
 .conv-divider::before, .conv-divider::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
+.conv-notice {
+  color: var(--muted); font-size: 11px; text-align: center; margin: 2px 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .conv-foot { flex: none; border-top: 1px solid var(--border); background: var(--surface-b); padding: 10px 18px; }
 .conv-foot .placeholder { margin: 0 auto; box-shadow: none; }
 .conv-composer { max-width: 880px; margin: 0 auto; }

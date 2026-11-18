@@ -82,3 +82,50 @@ test("many unmatched link openers stay fast and keep their text", () => {
   expect(c.textContent).toContain("[a[a[a");
   expect(c.querySelector("span[title='x']")?.textContent).toBe("a");
 });
+
+const cells = (row: Element) => [...row.children].map((c) => c.textContent);
+
+test("pipe table with header, separator and body rows", () => {
+  const c = html("Intro\n\n| Ad | **Durum** |\n|---|:-:|\n| a | `x` |\n| b |\n\nafter");
+  const wrap = c.querySelector(".md-table-wrap");
+  const table = wrap?.querySelector("table.md-table");
+  expect(table).toBeTruthy();
+  expect(cells(table!.querySelector("thead tr")!)).toEqual(["Ad", "Durum"]);
+  expect(table!.querySelector("thead th strong")?.textContent).toBe("Durum");
+  const rows = [...table!.querySelectorAll("tbody tr")];
+  expect(rows.map(cells)).toEqual([["a", "x"], ["b", ""]]);
+  expect(rows[0].querySelector("td code")?.textContent).toBe("x");
+  expect([...c.querySelectorAll("p")].map((p) => p.textContent)).toEqual(["Intro", "after"]);
+});
+
+test("table without outer pipes, extra cells dropped, escaped pipe kept", () => {
+  const c = html("a | b\n--- | ---\nx | y | z\nm \\| n | o");
+  const rows = [...c.querySelectorAll("table tbody tr")];
+  expect(cells(c.querySelector("thead tr")!)).toEqual(["a", "b"]);
+  expect(rows.map(cells)).toEqual([["x", "y"], ["m | n", "o"]]);
+});
+
+test("table right after a paragraph line ends the paragraph", () => {
+  const c = html("Sonuç:\n| k | v |\n| - | - |\n| 1 | 2 |");
+  expect(c.querySelector("p")?.textContent).toBe("Sonuç:");
+  expect(c.querySelectorAll("tbody tr")).toHaveLength(1);
+});
+
+test("pipes without a separator row stay a paragraph", () => {
+  const c = html("| a | b |\n| c | d |");
+  expect(c.querySelector("table")).toBeNull();
+  expect(c.querySelector("p")?.textContent).toBe("| a | b |\n| c | d |");
+  // A separator with a different cell count is no table either.
+  expect(html("| a | b |\n| --- |\n| c | d |").querySelector("table")).toBeNull();
+});
+
+test("a big table stays fast", () => {
+  const src = "| a | b |\n|---|---|\n" + "| x | y |\n".repeat(2000) + "|".repeat(100000) + "\n" + "\\|".repeat(100000)
+    + "\n\n" + "a|b\n".repeat(30000);
+  const t = Date.now();
+  const c = html(src);
+  expect(Date.now() - t).toBeLessThan(3000);
+  expect(c.querySelectorAll("tbody tr").length).toBe(2002);
+  // Pipe lines without a separator row: one paragraph, each line checked once.
+  expect(c.querySelectorAll("p")).toHaveLength(1);
+});

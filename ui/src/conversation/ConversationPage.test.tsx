@@ -102,8 +102,65 @@ test("thumb opens viewer and Esc closes it", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Kapat" }));
   expect(screen.queryByRole("dialog")).toBeNull();
   fireEvent.click(thumb);
-  fireEvent.click(screen.getByRole("dialog").parentElement!);
+  fireEvent.click(screen.getByRole("dialog").querySelector("img")!);
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  fireEvent.click(screen.getByRole("dialog"));
   expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test("viewer is a modal dialog that keeps focus and gives it back", async () => {
+  serve({
+    get_conversation_page: () => page([{ kind: "user", text: "bak", truncated: false, images: [img(210)], atMs: 1 }]),
+    get_conversation_image: () => ({ mediaType: "image/png", data: "QUJE" }),
+  });
+  render(<ConversationPage sessionId="s-focus" card={card()} {...props} />);
+  const thumb = await screen.findByRole("button", { name: "Resmi aç" });
+  await waitFor(() => expect(thumb.querySelector("img")).toBeTruthy());
+  thumb.focus();
+  fireEvent.click(thumb);
+  const dialog = screen.getByRole("dialog");
+  expect(dialog.getAttribute("aria-modal")).toBe("true");
+  const close = screen.getByRole("button", { name: "Kapat" });
+  expect(dialog.contains(close)).toBe(true);
+  expect(document.activeElement).toBe(close);
+  fireEvent.keyDown(document.activeElement!, { key: "Tab" });
+  expect(document.activeElement).toBe(close);
+  fireEvent.keyDown(document.activeElement!, { key: "Tab", shiftKey: true });
+  expect(document.activeElement).toBe(close);
+  fireEvent.keyDown(document.body, { key: "Escape" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(thumb);
+});
+
+test("background task notices show as a muted line, with a fallback text", async () => {
+  serve({
+    get_conversation_page: () => page([
+      { kind: "assistant", text: "çalışıyorum", truncated: false, atMs: 1 },
+      { kind: "notice", text: "Background command \"ls\" completed", atMs: 2 },
+      { kind: "notice", text: "", atMs: 3 },
+    ]),
+  });
+  render(<ConversationPage sessionId="s1" card={card()} {...props} />);
+  const note = await screen.findByText("Background command \"ls\" completed");
+  expect(note.className).toBe("conv-notice");
+  expect(note.closest(".conv-bubble")).toBeNull();
+  expect(screen.getByText("Arka plan görevi bitti").className).toBe("conv-notice");
+});
+
+test("a failed first load recovers on the next activity", async () => {
+  let calls = 0;
+  serve({
+    get_conversation_page: () => {
+      if (calls++ === 0) throw "conv_unavailable";
+      return page(ITEMS.slice(0, 1));
+    },
+  });
+  const { rerender } = render(<ConversationPage sessionId="s1" card={card({ lastActivityMs: 1 })} {...props} />);
+  expect((await screen.findByRole("alert")).textContent).toBe("Bu oturumun konuşma kaydı bulunamadı.");
+  rerender(<ConversationPage sessionId="s1" card={card({ lastActivityMs: 2 })} {...props} />);
+  expect(await screen.findByText("merhaba")).toBeTruthy();
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(invoke).not.toHaveBeenCalledWith("get_conversation_since", expect.anything());
 });
 
 test("thumb shows placeholder on error", async () => {
@@ -261,4 +318,16 @@ test("composer: send error keeps text", async () => {
   expect((await screen.findByRole("alert")).textContent)
     .toBe("Gönderilemedi: Oturum terminalinde bir yanıt bekliyor; önce orada yanıtlanmalı.");
   expect(box.value).toBe("selam");
+});
+
+test("composer: text pasted but not submitted says so", async () => {
+  serve({ send_to_session: () => { throw "send_not_submitted:send_waiting"; } });
+  render(<Composer sessionId="s1" status="busy" onShowTerminal={noop} />);
+  const box = screen.getByRole("textbox") as HTMLTextAreaElement;
+  fireEvent.change(box, { target: { value: "selam" } });
+  fireEvent.click(screen.getByRole("button", { name: "Gönder" }));
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "Metin oturumun terminaline yapıştırıldı ama gönderilmedi (Oturum terminalinde bir yanıt bekliyor; önce orada yanıtlanmalı.). "
+      + "Orada silin ya da Terminal sekmesinden gönderin.",
+  );
 });

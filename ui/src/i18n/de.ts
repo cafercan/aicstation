@@ -347,6 +347,7 @@ export const de: Dict = {
   "conv.loading": "Wird geladen…",
   "conv.empty": "Noch keine Nachrichten.",
   "conv.compacted": "Unterhaltung zusammengefasst",
+  "conv.taskFinished": "Hintergrundaufgabe abgeschlossen",
   "conv.truncated": "(gekürzt)",
   "conv.imageFailed": "Bild nicht verfügbar",
   "conv.imageClose": "Schließen",

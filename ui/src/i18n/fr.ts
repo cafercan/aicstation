@@ -347,6 +347,7 @@ export const fr: Dict = {
   "conv.loading": "Chargement…",
   "conv.empty": "Aucun message pour l'instant.",
   "conv.compacted": "Conversation compactée",
+  "conv.taskFinished": "Tâche en arrière-plan terminée",
   "conv.truncated": "(raccourci)",
   "conv.imageFailed": "Image indisponible",
   "conv.imageClose": "Fermer",

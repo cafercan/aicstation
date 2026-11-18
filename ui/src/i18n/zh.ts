@@ -344,6 +344,7 @@ export const zh: Dict = {
   "conv.loading": "加载中…",
   "conv.empty": "还没有消息。",
   "conv.compacted": "对话已压缩",
+  "conv.taskFinished": "后台任务已完成",
   "conv.truncated": "（已缩短）",
   "conv.imageFailed": "图片不可用",
   "conv.imageClose": "关闭",

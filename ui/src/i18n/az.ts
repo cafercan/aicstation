@@ -344,6 +344,7 @@ export const az: Dict = {
   "conv.loading": "Yüklənir…",
   "conv.empty": "Hələ mesaj yoxdur.",
   "conv.compacted": "Söhbət xülasə edildi",
+  "conv.taskFinished": "Arxa fon tapşırığı bitdi",
   "conv.truncated": "(qısaldıldı)",
   "conv.imageFailed": "Şəkil açılmadı",
   "conv.imageClose": "Bağla",

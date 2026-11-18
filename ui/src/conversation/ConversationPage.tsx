@@ -47,7 +47,7 @@ export default function ConversationPage({ sessionId, card, onShowTerminal, onTe
   /** Scroll height before an older page was prepended, to keep the view in place. */
   const prepended = useRef<number | null>(null);
   const loadingOlder = useRef(false);
-  /** A since call in flight; `again`: activity arrived meanwhile (or before the first page). */
+  /** A load (first page or since) in flight; `again`: activity arrived meanwhile. */
   const since = useRef({ busy: false, again: false });
 
   const merge = (p: ConvPage) => {
@@ -64,26 +64,31 @@ export default function ConversationPage({ sessionId, card, onShowTerminal, onTe
     return () => { alive.current = false; };
   }, []);
 
+  /**
+   * Loads what is new: the newest page while nothing is shown yet (first
+   * load, or after it failed: a new or cleared session has no transcript
+   * yet), else the items since the last one.
+   */
   const refresh = useCallback(() => {
-    const s = convRef.current;
-    if (!s || since.current.busy) { since.current.again = true; return; }
+    if (since.current.busy) { since.current.again = true; return; }
     since.current.busy = true;
-    getConversationSince(sessionId, s.epoch, lastIndex(s)).then((p) => {
-      if (alive.current) merge(p);
-    }, () => { /* the next activity tries again */ }).finally(() => {
+    const s = convRef.current;
+    const load = s ? getConversationSince(sessionId, s.epoch, lastIndex(s)) : getConversationPage(sessionId);
+    load.then((p) => {
+      if (!alive.current) return;
+      if (!s) pinned.current = true;
+      setErr(null);
+      merge(p);
+    }, (e: unknown) => {
+      // Nothing shown yet: say why. Either way the next activity tries again.
+      if (alive.current && !s) setErr(errorText(e));
+    }).finally(() => {
       since.current.busy = false;
       if (since.current.again && alive.current) { since.current.again = false; refresh(); }
     });
   }, [sessionId]);
 
-  useEffect(() => {
-    getConversationPage(sessionId).then((p) => {
-      if (!alive.current) return;
-      pinned.current = true;
-      merge(p);
-      if (since.current.again) { since.current.again = false; refresh(); }
-    }, (e: unknown) => { if (alive.current) setErr(errorText(e)); });
-  }, [sessionId, refresh]);
+  useEffect(() => { refresh(); }, [refresh]);
 
   const live = card !== undefined && card.pid !== 0;
   const activity = live ? card.lastActivityMs : null;

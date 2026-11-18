@@ -181,7 +181,9 @@ export type ConvItem =
   | { kind: "user"; text: string; truncated: boolean; images: ConvImageRef[]; atMs: number }
   | { kind: "assistant"; text: string; truncated: boolean; atMs: number }
   | { kind: "steps"; steps: ConvStep[]; atMs: number }
-  | { kind: "compacted"; atMs: number };
+  | { kind: "compacted"; atMs: number }
+  /** A background task finished; an empty text: it carried no summary. */
+  | { kind: "notice"; text: string; atMs: number };
 
 export interface ConvPage {
   epoch: number;

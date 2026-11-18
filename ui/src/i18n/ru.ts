@@ -362,6 +362,7 @@ export const ru: Dict = {
   "conv.loading": "Загрузка…",
   "conv.empty": "Сообщений пока нет.",
   "conv.compacted": "Диалог сжат",
+  "conv.taskFinished": "Фоновая задача завершена",
   "conv.truncated": "(сокращено)",
   "conv.imageFailed": "Изображение недоступно",
   "conv.imageClose": "Закрыть",

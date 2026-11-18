@@ -354,6 +354,7 @@ export const tr = {
   "conv.loading": "Yükleniyor…",
   "conv.empty": "Henüz mesaj yok.",
   "conv.compacted": "Sohbet özetlendi",
+  "conv.taskFinished": "Arka plan görevi bitti",
   "conv.truncated": "(kısaltıldı)",
   "conv.imageFailed": "Resim açılamadı",
   "conv.imageClose": "Kapat",

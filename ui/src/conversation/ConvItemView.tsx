@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import type { ConvImageRef, ConvItem, ConvStep } from "../api";
 import { useT } from "../i18n";
 import ImageThumb from "./ImageThumb";
@@ -45,8 +45,11 @@ function Steps({ sessionId, steps, onOpen }: { sessionId: string; steps: ConvSte
   );
 }
 
-/** One conversation item; images open through `onOpen`. */
-export default function ConvItemView({ sessionId, item, onOpen }: { sessionId: string; item: ConvItem; onOpen: Open }) {
+/**
+ * One conversation item; images open through `onOpen`. Memoised: a merge
+ * keeps the unchanged items' objects, so their Markdown is not parsed again.
+ */
+function ConvItemView({ sessionId, item, onOpen }: { sessionId: string; item: ConvItem; onOpen: Open }) {
   const t = useT();
   switch (item.kind) {
     case "user":
@@ -70,5 +73,11 @@ export default function ConvItemView({ sessionId, item, onOpen }: { sessionId: s
       return <Steps sessionId={sessionId} steps={item.steps} onOpen={onOpen} />;
     case "compacted":
       return <div className="conv-divider" role="separator"><span>{t("conv.compacted")}</span></div>;
+    case "notice": {
+      const text = item.text || t("conv.taskFinished");
+      return <div className="conv-notice" title={text}>{text}</div>;
+    }
   }
 }
+
+export default memo(ConvItemView);
