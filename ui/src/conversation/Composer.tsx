@@ -26,8 +26,9 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent }: 
     const sent = text;
     sendToSession(sessionId, sent)
       .then(() => {
-        // Keep only what was typed while the send was on its way.
-        setText((cur) => (cur.startsWith(sent) ? cur.slice(sent.length) : cur));
+        // Cleared only when unchanged: text edited while the send was on its
+        // way is the user's and stays as it is.
+        setText((cur) => (cur === sent ? "" : cur));
         onSent?.();
       }, (e: unknown) => {
         // Pasted but not submitted: the message says the text sits in the terminal.
@@ -41,7 +42,7 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent }: 
     <div className="conv-composer">
       <div className="conv-composer-row">
         <textarea value={text} rows={2} disabled={waiting} placeholder={t("conv.placeholder")}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => { setText(e.target.value); setErr(null); }}
           onKeyDown={(e) => {
             // keyCode 229: WebKitGTK can send the Enter that commits an IME word with isComposing false.
             if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;

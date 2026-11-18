@@ -1,7 +1,7 @@
 import { act, render, screen, fireEvent } from "@testing-library/react";
 import { resetUiState } from "./testing/reset";
 import { expect, test, vi } from "vitest";
-import SessionCardView from "./components/SessionCard";
+import SessionCardView, { GOTO_NOTE_MS } from "./components/SessionCard";
 import KpiRow from "./components/KpiRow";
 import StatusBar from "./components/StatusBar";
 import Sidebar from "./components/Sidebar";
@@ -456,4 +456,21 @@ test("kart: Remote Control açılamazsa hata kartta gösterilir", async () => {
   render(<SessionCardView card={card({ remoteControl: true })} now={0} onOpen={() => {}} />);
   fireEvent.click(screen.getByRole("button", { name: /Remote Control açık/ }));
   expect((await screen.findByRole("alert")).textContent).toContain("claude.ai açılamadı");
+});
+
+test("kart: Remote Control hatası Sekmeye git notu kadar kalır", async () => {
+  vi.useFakeTimers();
+  try {
+    openRemote.mockReset();
+    openRemote.mockRejectedValue("no_browser");
+    render(<SessionCardView card={card({ remoteControl: true })} now={0} onOpen={() => {}} />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /Remote Control açık/ })); });
+    expect(screen.getByRole("alert").textContent).toContain("claude.ai açılamadı");
+    await act(async () => { await vi.advanceTimersByTimeAsync(GOTO_NOTE_MS - 100); });
+    expect(screen.queryByRole("alert")).not.toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    expect(screen.queryByRole("alert")).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
 });

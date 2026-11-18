@@ -129,3 +129,58 @@ test("a big table stays fast", () => {
   // Pipe lines without a separator row: one paragraph, each line checked once.
   expect(c.querySelectorAll("p")).toHaveLength(1);
 });
+
+test("link URL may hold balanced parentheses", () => {
+  const c = html("see [Foo](https://en.wikipedia.org/wiki/Foo_(bar)) now and [b](u(1)(2)x).");
+  expect(c.querySelector("span[title='https://en.wikipedia.org/wiki/Foo_(bar)']")?.textContent).toBe("Foo");
+  expect(c.querySelector("span[title='u(1)(2)x']")?.textContent).toBe("b");
+  expect(c.querySelector("p")?.textContent).toBe("see Foo now and b.");
+  // Unbalanced: no link.
+  expect(html("[a](x(y").querySelector("span")).toBeNull();
+});
+
+test("unbalanced link openers stay fast", () => {
+  const src = "[a](x(".repeat(30000);
+  const t = Date.now();
+  const c = html(src);
+  expect(Date.now() - t).toBeLessThan(3000);
+  expect(c.querySelector("span")).toBeNull();
+});
+
+test("bold and italic never pair across inline code", () => {
+  const c = html("**x `y** z` and *a `b* c`");
+  expect(c.querySelector("strong")).toBeNull();
+  expect(c.querySelector("em")).toBeNull();
+  expect([...c.querySelectorAll("code")].map((e) => e.textContent)).toEqual(["y** z", "b* c"]);
+  expect(c.textContent).toBe("**x y** z and *a b* c");
+  // Code wholly inside still works.
+  expect(html("**see `x` here**").querySelector("strong code")?.textContent).toBe("x");
+});
+
+test("a fence opens only at the start of a line and closes only on a fence line", () => {
+  const c = html("a ``` b\n    ```\nstill text");
+  expect(c.querySelector("pre")).toBeNull();
+  const d = html("   ```js\nx\n```js not a close\n``` \nafter");
+  expect(d.querySelector("pre code")?.textContent).toBe("x\n```js not a close");
+  expect(d.querySelector("p")?.textContent).toBe("after");
+  // A longer fence holds a shorter one.
+  const e = html("````\n```\ninner\n```\n````");
+  expect(e.querySelector("pre code")?.textContent).toBe("```\ninner\n```");
+});
+
+test("a heading without text is plain text", () => {
+  const c = html("#\n\n## \n\n# real");
+  expect(c.querySelectorAll("h1, h2, h3")).toHaveLength(1);
+  expect(c.querySelector("h1")?.textContent).toBe("real");
+  expect([...c.querySelectorAll("p")].map((p) => p.textContent)).toEqual(["#", "## "]);
+});
+
+test("CRLF input, empty input and an unclosed bold", () => {
+  const c = html("one\r\n\r\n```\r\ncode\r\n```\r\ntwo");
+  expect([...c.querySelectorAll("p")].map((p) => p.textContent)).toEqual(["one", "two"]);
+  expect(c.querySelector("pre code")?.textContent).toBe("code");
+  expect(html("").querySelector(".md")?.childNodes).toHaveLength(0);
+  const u = html("**x");
+  expect(u.querySelector("strong")).toBeNull();
+  expect(u.textContent).toBe("**x");
+});

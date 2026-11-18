@@ -24,6 +24,16 @@ function parseInline(src: string, opts: InlineOpts, keyPrefix: string): ReactNod
     if (at < 0) missing.add(token);
     return at;
   };
+  // Backticks before each index (built on first use): a bold or italic span
+  // holds an even number, so it never ends inside an inline code span.
+  let ticks: number[] | null = null;
+  const evenTicks = (from: number, to: number): boolean => {
+    if (!ticks) {
+      ticks = [0];
+      for (let k = 0; k < src.length; k++) ticks.push(ticks[k] + (src[k] === "`" ? 1 : 0));
+    }
+    return (ticks[to] - ticks[from]) % 2 === 0;
+  };
   let text = "";
   let n = 0;
   const flush = () => {
@@ -46,7 +56,7 @@ function parseInline(src: string, opts: InlineOpts, keyPrefix: string): ReactNod
       }
     } else if (ch === "*" && src[i + 1] === "*" && opts.bold && !isSpace(src[i + 2])) {
       const end = find("**", i + 2);
-      if (end > i + 2 && !isSpace(src[end - 1])) {
+      if (end > i + 2 && !isSpace(src[end - 1]) && evenTicks(i + 2, end)) {
         const key = `${keyPrefix}${n++}`;
         push(<strong key={key}>{parseInline(src.slice(i + 2, end), { ...opts, bold: false }, `${key}.`)}</strong>);
         i = end + 2;
@@ -54,7 +64,7 @@ function parseInline(src: string, opts: InlineOpts, keyPrefix: string): ReactNod
       }
     } else if (ch === "*" && src[i + 1] !== "*" && opts.italic && !isSpace(src[i + 1])) {
       const end = find("*", i + 1);
-      if (end > i + 1 && !isSpace(src[end - 1]) && src[end + 1] !== "*") {
+      if (end > i + 1 && !isSpace(src[end - 1]) && src[end + 1] !== "*" && evenTicks(i + 1, end)) {
         const key = `${keyPrefix}${n++}`;
         push(<em key={key}>{parseInline(src.slice(i + 1, end), { bold: false, italic: false }, `${key}.`)}</em>);
         i = end + 1;
@@ -66,7 +76,18 @@ function parseInline(src: string, opts: InlineOpts, keyPrefix: string): ReactNod
       let j = i + 1;
       while (j < src.length && src[j] !== "[" && src[j] !== "]") j++;
       if (j > i + 1 && src[j] === "]" && src[j + 1] === "(") {
-        const close = find(")", j + 2);
+        // The URL may hold balanced parentheses. It ends at whitespace or a
+        // bracket, so no character is looked at by two URL scans either.
+        let close = -1;
+        let depth = 0;
+        for (let k = j + 2; k < src.length; k++) {
+          const c = src[k];
+          if (c === "(") depth++;
+          else if (c === ")") {
+            if (depth === 0) { close = k; break; }
+            depth--;
+          } else if (isSpace(c) || c === "[" || c === "]") break;
+        }
         if (close >= 0) {
           push(
             <span key={`${keyPrefix}${n++}`} title={src.slice(j + 2, close)}>
@@ -85,7 +106,15 @@ function parseInline(src: string, opts: InlineOpts, keyPrefix: string): ReactNod
   return out;
 }
 
-const HEADING = /^(#{1,3}) +(.*)$/;
+/** A heading has text: a bare `#` stays plain text. */
+const HEADING = /^(#{1,3}) +(\S.*)$/;
+/** A fence opens at the start of a line (indented at most 3 spaces) with 3 or more backticks. */
+const FENCE = /^ {0,3}(`{3,})/;
+/** A fence line closes the block when it holds only backticks, at least as many as opened it. */
+const closesFence = (line: string, n: number): boolean => {
+  const m = /^ {0,3}(`+)[ \t]*$/.exec(line);
+  return m !== null && m[1].length >= n;
+};
 const ITEM = /^\s*([-*]|\d+\.) +(.*)$/;
 const SEP_CELL = /^\s*(:?)-+(:?)\s*$/;
 
@@ -137,10 +166,11 @@ export default function Markdown({ text }: { text: string }) {
     const line = lines[i];
     if (line.trim() === "") {
       i++;
-    } else if (line.trimStart().startsWith("```")) {
+    } else if (FENCE.test(line)) {
+      const n = FENCE.exec(line)![1].length;
       const code: string[] = [];
       i++;
-      while (i < lines.length && !lines[i].trimStart().startsWith("```")) code.push(lines[i++]);
+      while (i < lines.length && !closesFence(lines[i], n)) code.push(lines[i++]);
       i++; // closing fence (or past the end when unclosed)
       blocks.push(
         <pre key={b++}>
@@ -163,7 +193,7 @@ export default function Markdown({ text }: { text: string }) {
       const head = row(lines[i], 0, "th");
       i += 2;
       const body: ReactNode[] = [];
-      while (i < lines.length && lines[i].trim() !== "" && lines[i].includes("|") && !lines[i].trimStart().startsWith("```")) {
+      while (i < lines.length && lines[i].trim() !== "" && lines[i].includes("|") && !FENCE.test(lines[i])) {
         body.push(row(lines[i++], body.length + 1, "td"));
       }
       blocks.push(
@@ -196,7 +226,7 @@ export default function Markdown({ text }: { text: string }) {
       while (
         i < lines.length &&
         lines[i].trim() !== "" &&
-        !lines[i].trimStart().startsWith("```") &&
+        !FENCE.test(lines[i]) &&
         !HEADING.test(lines[i]) &&
         !ITEM.test(lines[i]) &&
         !tableAt(lines, i)

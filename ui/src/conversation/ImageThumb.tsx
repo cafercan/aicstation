@@ -9,10 +9,12 @@ const cache = createImageCache(30);
 const MEDIA = /^image\/(png|jpeg|gif|webp)$/;
 
 /**
- * Small fixed-height thumbnail of an image in the transcript. Loads once it
- * scrolls near the viewport (at once where IntersectionObserver is missing);
- * a click hands the `data:` URL to `onOpen`. A failed load shows a
- * broken-image mark.
+ * Small fixed-height thumbnail of an image in the transcript. Holds its
+ * `data:` URL only while it is near the viewport: out of view it drops the
+ * URL (keeping its width, so the row does not reflow) and gets it back from
+ * the LRU cache, or loads it again, when it returns. Where
+ * IntersectionObserver is missing it counts as always in view. A click hands
+ * the URL to `onOpen`; a failed load shows a broken-image mark.
  */
 export default function ImageThumb({ sessionId, image, onOpen }: {
   sessionId: string; image: ConvImageRef; onOpen: (src: string) => void;
@@ -21,22 +23,32 @@ export default function ImageThumb({ sessionId, image, onOpen }: {
   const key = `${sessionId}:${image.offset}:${image.ordinal}`;
   const [url, setUrl] = useState<string | undefined>(() => cache.get(key));
   const [failed, setFailed] = useState(false);
-  const [visible, setVisible] = useState(false);
+  /** Near the viewport; null until the observer first reports. */
+  const [visible, setVisible] = useState<boolean | null>(null);
+  /** Width of the loaded thumbnail, kept while its URL is dropped. */
+  const [width, setWidth] = useState<number | undefined>(undefined);
   const ref = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    if (url !== undefined) return;
     const el = ref.current;
     if (typeof IntersectionObserver === "undefined" || !el) { setVisible(true); return; }
     const io = new IntersectionObserver((entries) => {
-      if (entries.some((e) => e.isIntersecting)) { setVisible(true); io.disconnect(); }
+      const last = entries[entries.length - 1];
+      if (last) setVisible(last.isIntersecting);
     }, { root: el.closest(".conv-list"), rootMargin: "300px" });
     io.observe(el);
     return () => io.disconnect();
-  }, [url]);
+  }, []);
 
   useEffect(() => {
-    if (!visible || url !== undefined) return;
+    if (visible === false && url !== undefined) {
+      setWidth(ref.current?.offsetWidth || undefined);
+      setUrl(undefined);
+      return;
+    }
+    if (visible !== true || url !== undefined) return;
+    const hit = cache.get(key);
+    if (hit !== undefined) { setUrl(hit); return; }
     let alive = true;
     getConversationImage(sessionId, image.offset, image.ordinal).then((img) => {
       if (!MEDIA.test(img.mediaType)) throw new Error("media type");
@@ -62,7 +74,7 @@ export default function ImageThumb({ sessionId, image, onOpen }: {
   const label = t("conv.imageOpen");
   return (
     <button ref={ref} type="button" className={url ? "conv-thumb" : "conv-thumb loading"} aria-label={label} title={label}
-      disabled={!url} onClick={() => { if (url) onOpen(url); }}>
+      style={!url && width ? { width } : undefined} disabled={!url} onClick={() => { if (url) onOpen(url); }}>
       {url && <img src={url} alt="" draggable={false} />}
     </button>
   );

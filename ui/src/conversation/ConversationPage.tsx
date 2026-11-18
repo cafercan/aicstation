@@ -81,7 +81,9 @@ export default function ConversationPage({ sessionId, card, onShowTerminal, onTe
       setErr(null);
       merge(p);
     }, (e: unknown) => {
-      // Nothing shown yet: say why. Either way the next activity tries again.
+      // Nothing shown yet: say why. A failed refresh of a shown list is left
+      // unsaid by design: what is shown stays valid and the next activity
+      // (or send) tries again.
       if (alive.current && !s) setErr({ code: typeof e === "string" ? e.split(":")[0] : "", text: errorText(e) });
     }).finally(() => {
       since.current.busy = false;
@@ -154,8 +156,10 @@ export default function ConversationPage({ sessionId, card, onShowTerminal, onTe
   else if (conv === null) body = <div className="conv-status">{t("conv.loading")}</div>;
   else if (conv.items.length === 0) body = <div className="conv-status">{t("conv.empty")}</div>;
   else {
+    // Keyed by epoch too: after a branch change an index names another item,
+    // which must not inherit the old one's state (an open step list).
     body = conv.items.map((item, i) => (
-      <ConvItemView key={conv.start + i} sessionId={sessionId} item={item} onOpen={setViewing} />
+      <ConvItemView key={`${conv.epoch}:${conv.start + i}`} sessionId={sessionId} item={item} onOpen={setViewing} />
     ));
   }
 
