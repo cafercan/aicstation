@@ -10,7 +10,7 @@ function card(over: Partial<SessionCard>): SessionCard {
     model: null, contextPct: null, costUsd: 0,
     tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 },
     agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 0,
-    gitBranch: null, hostKind: "other", movable: true, agentsRunning: 0, ...over,
+    gitBranch: null, hostKind: "other", movable: true, agentsRunning: 0, remoteControl: false, ...over,
   };
 }
 
@@ -129,4 +129,33 @@ test("move_state", () => {
   // Order when several apply: notMovable, then waiting/busy, then agents.
   expect(moveState(card({ movable: false, status: "busy", agentsRunning: 1 })).reason).toBe("notMovable");
   expect(moveState(card({ status: "waiting", agentsRunning: 1 })).reason).toBe("waiting");
+});
+
+test("conversation_tab_keeps_session_and_terminal_when_hosted", () => {
+  const sessions = [card({ sessionId: "a", parentPid: 20 })];
+  const v: View = { session: "a", tab: "conversation" };
+  expect(resolveView(v, [term(1, 10), term(2, 20)], sessions, NONE))
+    .toEqual({ session: "a", tab: "conversation", terminal: 2 });
+  const held: View = { session: "a", tab: "conversation", terminal: 2 };
+  expect(resolveView(held, [term(2, 20)], sessions, NONE)).toBe(held);
+  expect(tabBarFor(held, [term(2, 20)], sessions)).toEqual({ sessionId: "a", terminal: 2, active: "conversation" });
+});
+
+test("conversation_tab_follows_clear_to_new_session", () => {
+  const v: View = { session: "a", tab: "conversation", terminal: 1 };
+  const sessions = [card({ sessionId: "b", parentPid: 10 })];
+  expect(resolveView(v, [term(1, 10)], sessions, NONE)).toEqual({ session: "b", tab: "conversation", terminal: 1 });
+});
+
+test("conversation_tab_without_host_stays", () => {
+  const v: View = { session: "a", tab: "conversation" };
+  const closed = [card({ sessionId: "a", pid: 0, parentPid: null })];
+  expect(resolveView(v, [term(2, 20)], closed, new Map([[2, "a"]]))).toBe(v);
+});
+
+test("conversation_tab_stays_when_its_terminal_is_gone", () => {
+  const v: View = { session: "a", tab: "conversation", terminal: 1 };
+  expect(resolveView(v, [], [], NONE)).toEqual({ session: "a", tab: "conversation" });
+  const info: View = { session: "a", tab: "info", terminal: 1 };
+  expect(resolveView(info, [], [], NONE)).toEqual({ session: "a", tab: "info" });
 });

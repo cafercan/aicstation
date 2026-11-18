@@ -13,6 +13,8 @@ const invoke = vi.hoisted(() => vi.fn(async (cmd: string, _args?: unknown): Prom
   if (cmd === "pty_kill") return undefined;
   if (cmd === "get_session_detail") return null;
   if (cmd === "set_focus_context") return null;
+  if (cmd === "open_remote_control") throw "no_browser";
+  if (cmd === "get_conversation_page") return { epoch: 1, total: 1, start: 0, items: [{ kind: "user", text: "sohbet metni", truncated: false, images: [], atMs: 1 }] };
   return { rows: [], todayCost: 0, todayTokens: 0, todayComplete: true, indexing: false };
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke, Channel: class {} }));
@@ -67,7 +69,7 @@ function card(over: Partial<SessionCard>): SessionCard {
     sessionId: "s1", pid: 7, parentPid: null, name: "demo", cwd: "C:/x/demo", status: "idle", waitingFor: null,
     model: null, contextPct: null, costUsd: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 },
     agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 0,
-    gitBranch: null, hostKind: "other", movable: false, agentsRunning: 0, ...over,
+    gitBranch: null, hostKind: "other", movable: false, agentsRunning: 0, remoteControl: false, ...over,
   };
 }
 /** Sends a snapshot event with these sessions. */
@@ -135,6 +137,22 @@ test("sekmeye tıklamak Terminal ile Bilgi arasında geçer; Bilgi'de terminal s
   expect(tab("Terminal").getAttribute("aria-selected")).toBe("true");
   expect(termVisible(1)).toBe("true");
   expect(screen.queryByText("Oturum bulunamadı.")).toBeNull();
+});
+
+test("Sohbet sekmesi konuşmayı gösterir, terminal satırı seçili kalır; Onay notu Terminal sekmesine döner", async () => {
+  fake.add(1, 50);
+  snap.sessions = [card({ sessionId: "s-app", name: "uygulama", parentPid: 50, status: "waiting" })];
+  const { container } = render(<App />);
+  await waitFor(() => expect(container.querySelector(".grid .card")).toBeTruthy());
+  fireEvent.click(container.querySelector(".grid .card")!);
+  fireEvent.click(tab("Sohbet"));
+  expect(tab("Sohbet").getAttribute("aria-selected")).toBe("true");
+  expect(termVisible(1)).toBe("false");
+  expect(await screen.findByText("sohbet metni")).toBeTruthy();
+  expect(container.querySelector(".side .item.sub.on")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Terminal sekmesi" }));
+  expect(tab("Terminal").getAttribute("aria-selected")).toBe("true");
+  expect(termVisible(1)).toBe("true");
 });
 
 test("Böl düğmesi oturumun sekme satırında durur; ayrı bir satır kalmaz", async () => {
@@ -215,4 +233,31 @@ test("kapalı oturumun Terminal sekmesi Devam et sunar; kayıt gelmeden dönül�
   expect(screen.queryByRole("button", { name: "▶ Devam et" })).toBeNull();
   await push([card({ sessionId: "s-gone", parentPid: 60 })]);
   expect(tab("Terminal").getAttribute("aria-selected")).toBe("true");
+});
+
+test("Remote Control açık oturumda sekme satırı simgeyi gösterir ve tıklama oturum kimliğini iletir", async () => {
+  fake.add(1, 50);
+  snap.sessions = [card({ sessionId: "s-rc", name: "uzak", parentPid: 50, remoteControl: true }),
+    card({ sessionId: "s-no", name: "yerel", pid: 8, parentPid: 51 })];
+  const { container } = render(<App />);
+  await waitFor(() => expect(container.querySelector(".grid .card")).toBeTruthy());
+  fireEvent.click(Array.from(container.querySelectorAll(".grid .card")).find((c) => c.textContent!.includes("uzak"))!);
+  const btn = screen.getByRole("tablist").querySelector("button.remote")!;
+  expect(btn).toBeTruthy();
+  fireEvent.click(btn);
+  expect(invoke).toHaveBeenCalledWith("open_remote_control", { sessionId: "s-rc" });
+});
+
+test("Remote Control açma hatası başka oturumun simgesinde görünmez", async () => {
+  snap.sessions = [card({ sessionId: "s-a", name: "a", remoteControl: true }),
+    card({ sessionId: "s-b", name: "b", pid: 8, remoteControl: true })];
+  const { container } = render(<App />);
+  await waitFor(() => expect(container.querySelector(".grid .card")).toBeTruthy());
+  await waitFor(() => expect(events.has("navigate")).toBe(true));
+  await navigate("s-a");
+  const mark = () => screen.getByRole("tablist").querySelector("button.remote")!;
+  fireEvent.click(mark());
+  await waitFor(() => expect(mark().getAttribute("title")).toContain("claude.ai açılamadı"));
+  await navigate("s-b");
+  expect(mark().getAttribute("title")).not.toContain("claude.ai açılamadı");
 });

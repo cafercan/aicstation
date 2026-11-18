@@ -52,7 +52,7 @@ mod linux;
 #[cfg(unix)]
 mod unix;
 #[cfg(unix)]
-pub use unix::{open_external_terminal, open_folder};
+pub use unix::{open_external_terminal, open_folder, open_url};
 #[cfg(unix)]
 pub(crate) use unix::find_program;
 
@@ -60,6 +60,13 @@ pub(crate) use unix::find_program;
 #[cfg(windows)]
 pub fn open_folder(dir: &Path) -> std::io::Result<()> {
     std::process::Command::new(explorer_exe()).arg(dir).spawn().map(|_| ())
+}
+
+/// Opens an app-built `https://` URL in the default browser through
+/// explorer.exe (absolute path, never resolved through PATH).
+#[cfg(windows)]
+pub fn open_url(url: &str) -> std::io::Result<()> {
+    std::process::Command::new(explorer_exe()).arg(url).spawn().map(|_| ())
 }
 
 /// Brings the Windows Terminal window hosting `pid` forward and selects the

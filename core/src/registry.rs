@@ -35,6 +35,16 @@ pub struct LiveSession {
     pub proc_start: u64,
     /// Interactive terminal CLI session (registry kind + entrypoint); only these can be adopted.
     pub movable: bool,
+    /// Remote Control id (`bridgeSessionId`), present only while Remote
+    /// Control is on and only when it passes [`is_bridge_id`]. Never sent to the UI.
+    #[serde(skip)]
+    pub bridge_session_id: Option<String>,
+}
+
+/// A Remote Control id: `session_` followed by 1..=64 ASCII letters or digits.
+pub fn is_bridge_id(s: &str) -> bool {
+    s.strip_prefix("session_")
+        .is_some_and(|rest| (1..=64).contains(&rest.len()) && rest.bytes().all(|b| b.is_ascii_alphanumeric()))
 }
 
 pub trait ProcessProbe {
@@ -67,6 +77,8 @@ struct RawSession {
     proc_start: Option<String>,
     kind: Option<String>,
     entrypoint: Option<String>,
+    /// Any JSON type: an unexpected one must not drop the whole session.
+    bridge_session_id: Option<serde_json::Value>,
 }
 
 fn parse_status(s: Option<String>) -> SessionStatus {
@@ -121,6 +133,12 @@ pub fn read_live_sessions(sessions_dir: &Path, probe: &dyn ProcessProbe) -> Vec<
             status_updated_at_ms: raw.status_updated_at.or(raw.updated_at).unwrap_or(started),
             proc_start,
             movable: raw.kind.as_deref() == Some("interactive") && raw.entrypoint.as_deref() == Some("cli"),
+            bridge_session_id: raw
+                .bridge_session_id
+                .as_ref()
+                .and_then(serde_json::Value::as_str)
+                .filter(|b| is_bridge_id(b))
+                .map(str::to_string),
         });
     }
     out
@@ -293,5 +311,38 @@ mod tests {
         assert_eq!(v[0].pid, 10);
         // missing directory: no panic
         assert!(read_live_sessions(&d.path().join("yok"), &p).is_empty());
+    }
+
+    #[test]
+    fn reads_bridge_session_id() {
+        let d = tempfile::tempdir().unwrap();
+        fs::write(d.path().join("10.json"), json(10, "idle", r#","bridgeSessionId":"session_01Va8WwprzgHk7fZBzuoLdPo""#)).unwrap();
+        fs::write(d.path().join("11.json"), json(11, "idle", "")).unwrap();
+        let p = FakeProbe(HashMap::from([(10, 777), (11, 777)]));
+        let mut v = read_live_sessions(d.path(), &p);
+        v.sort_by_key(|s| s.pid);
+        assert_eq!(v[0].bridge_session_id.as_deref(), Some("session_01Va8WwprzgHk7fZBzuoLdPo"));
+        assert_eq!(v[1].bridge_session_id, None, "no Remote Control");
+        assert!(!serde_json::to_string(&v[0]).unwrap().contains("session_01"), "never serialized");
+    }
+
+    #[test]
+    fn rejects_bad_bridge_id() {
+        let long = format!("session_{}", "a".repeat(70));
+        let max = format!("session_{}", "a".repeat(64));
+        for (pid, bad) in [(10, "\"session_../x\""), (11, "\"cse_01A\""), (12, "\"session_\""), (13, "42"), (14, "null")] {
+            let d = tempfile::tempdir().unwrap();
+            fs::write(d.path().join(format!("{pid}.json")), json(pid, "idle", &format!(r#","bridgeSessionId":{bad}"#))).unwrap();
+            let v = read_live_sessions(d.path(), &probe(pid, 777));
+            assert_eq!(v.len(), 1, "a bad id never drops the session: {bad}");
+            assert_eq!(v[0].bridge_session_id, None, "{bad}");
+        }
+        let d = tempfile::tempdir().unwrap();
+        fs::write(d.path().join("15.json"), json(15, "idle", &format!(r#","bridgeSessionId":"{long}""#))).unwrap();
+        assert_eq!(read_live_sessions(d.path(), &probe(15, 777))[0].bridge_session_id, None, "70-char suffix");
+        assert!(is_bridge_id(&max));
+        assert!(!is_bridge_id(&long));
+        assert!(!is_bridge_id("session_ab/c") && !is_bridge_id("session_ab c") && !is_bridge_id("session_ğ"));
+        assert!(!is_bridge_id("Session_abc") && !is_bridge_id("xsession_abc"));
     }
 }

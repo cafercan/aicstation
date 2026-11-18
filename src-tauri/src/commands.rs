@@ -4,9 +4,10 @@
 use crate::errors;
 use station_core::history::{cost_on_rows, HistoryIndex, HistoryRow};
 use station_core::host::HostKind;
+use station_core::conversation::{read_image, ConvPage, Conversation, ImageError};
 use station_core::locate::{cwd_matches_project_dir, is_session_id, Locator};
 use station_core::monitor::{AdoptRefusal, AdoptSource, ClosedKey, Monitor, SessionDetail, Snapshot};
-use station_core::registry::ProcessProbe;
+use station_core::registry::{is_bridge_id, LiveSession, ProcessProbe, SessionStatus};
 use station_core::search::{search_transcripts_limited, validate_query, Limits, SearchOutcome};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -16,6 +17,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime};
 
 const MAX_ID_LEN: usize = 64;
+const CONV_CACHE: usize = 2;
 /// A cached snapshot older than this is recomputed by `get_snapshot` (guards
 /// against a stalled background thread).
 const SNAPSHOT_MAX_AGE: Duration = Duration::from_secs(3);
@@ -66,6 +68,14 @@ struct ResumeSource {
     project_dir: String,
 }
 
+/// One image of the conversation, base64 as stored in the transcript.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConvImage {
+    pub media_type: String,
+    pub data: String,
+}
+
 pub struct AppState {
     monitor: Mutex<Monitor>,
     history: Mutex<HistoryIndex>,
@@ -87,6 +97,8 @@ pub struct AppState {
     search_gen: AtomicU32,
     /// Session ids with a move into the app under way (`adopt_session`).
     adopting: Mutex<HashSet<String>>,
+    /// Open conversations, most recent first (at most [`CONV_CACHE`]).
+    conversations: Mutex<Vec<(String, Conversation)>>,
 }
 
 /// Holds a session id in `AppState::adopting`; dropping it releases the id.
@@ -150,6 +162,7 @@ impl AppState {
             closed_cache: Mutex::new(None),
             search_gen: AtomicU32::new(0),
             adopting: Mutex::new(HashSet::new()),
+            conversations: Mutex::new(Vec::new()),
         };
         state.publish_history();
         state
@@ -188,6 +201,54 @@ impl AppState {
 
     fn live_ids(&self) -> HashSet<String> {
         self.fresh_cache(|c| c.snap.sessions.iter().map(|s| s.session_id.clone()).collect())
+    }
+
+    /// Runs `f` on the session's conversation after bringing it up to date.
+    fn with_conversation<R>(&self, id: &str, f: impl FnOnce(&Conversation) -> R) -> Result<R, String> {
+        if !is_session_id(id) {
+            return Err(errors::SESSION_INVALID.into());
+        }
+        let mut cache = lock(&self.conversations);
+        let at = match cache.iter().position(|(i, _)| i == id) {
+            Some(at) => at,
+            None => {
+                let path = Locator::new(self.projects_dir.clone())
+                    .transcript(id)
+                    .ok_or_else(|| errors::CONV_UNAVAILABLE.to_string())?;
+                cache.insert(0, (id.to_string(), Conversation::new(path)));
+                cache.truncate(CONV_CACHE);
+                0
+            }
+        };
+        let entry = cache.remove(at);
+        cache.insert(0, entry);
+        let conv = &mut cache[0].1;
+        if conv.update().is_err() {
+            cache.remove(0);
+            return Err(errors::CONV_UNAVAILABLE.into());
+        }
+        Ok(f(&cache[0].1))
+    }
+
+    pub fn conversation_page(&self, id: &str, before: Option<u32>) -> Result<ConvPage, String> {
+        self.with_conversation(id, |c| c.page(before))
+    }
+
+    pub fn conversation_since(&self, id: &str, epoch: u32, from: u32) -> Result<ConvPage, String> {
+        self.with_conversation(id, |c| c.since(epoch, from))
+    }
+
+    pub fn conversation_image(&self, id: &str, offset: u64, ordinal: u32) -> Result<ConvImage, String> {
+        let (path, known) =
+            self.with_conversation(id, |c| (c.path().to_path_buf(), c.has_image(offset, ordinal)))?;
+        if !known {
+            return Err(errors::CONV_IMAGE_GONE.into());
+        }
+        match read_image(&path, offset, ordinal) {
+            Ok((media_type, data)) => Ok(ConvImage { media_type, data }),
+            Err(ImageError::Gone) => Err(errors::CONV_IMAGE_GONE.into()),
+            Err(ImageError::Io) => Err(errors::CONV_UNAVAILABLE.into()),
+        }
     }
 
     pub fn get_session_detail(&self, session_id: &str) -> Option<SessionDetail> {
@@ -445,6 +506,37 @@ impl AppState {
         .ok_or_else(|| errors::SESSION_NOT_LIVE.into())
     }
 
+    /// The shell pid of the app terminal a live session runs in, for sending
+    /// it text. Read fresh from the registry (never the cached snapshot). Only
+    /// an idle or busy session with nothing in `waitingFor` takes text; any
+    /// other status (waiting, unknown, missing) is `send_waiting`, since the
+    /// text could land in a prompt. One outside an app terminal is
+    /// `send_not_embedded`.
+    pub fn send_target(&self, id: &str) -> Result<u32, String> {
+        let l = self.fresh_live(id)?;
+        let ready = matches!(l.status, SessionStatus::Idle | SessionStatus::Busy) && l.waiting_for.is_none();
+        if !ready {
+            return Err(errors::SEND_WAITING.into());
+        }
+        self.probe.terminal_pid(l.pid).ok_or_else(|| errors::SEND_NOT_EMBEDDED.into())
+    }
+
+    /// `https://claude.ai/code/<bridge id>` of a live session with Remote
+    /// Control on, read fresh from the registry; `remote_off` otherwise.
+    pub fn remote_url(&self, id: &str) -> Result<String, String> {
+        let bridge = self.fresh_live(id)?.bridge_session_id.filter(|b| is_bridge_id(b)).ok_or(errors::REMOTE_OFF)?;
+        Ok(format!("https://claude.ai/code/{bridge}"))
+    }
+
+    /// The registry entry of a live session, read fresh; `session_invalid`
+    /// for a malformed id, `session_not_live` when it is not live.
+    fn fresh_live(&self, id: &str) -> Result<LiveSession, String> {
+        if !is_session_id(id) {
+            return Err(errors::SESSION_INVALID.into());
+        }
+        lock(&self.monitor).live_session(id, self.probe.as_ref()).ok_or_else(|| errors::SESSION_NOT_LIVE.into())
+    }
+
     /// First cwd and transcript folder of a closed session. Only an indexed
     /// row carries the transcript's cwd (an unindexed one only has the project
     /// folder name); the cached closed detail is the fallback.
@@ -611,6 +703,47 @@ pub async fn get_session_detail(
     tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().get_session_detail(&session_id))
         .await
         .map_err(|e| errors::with(errors::TASK_FAILED, e))
+}
+
+/// Conversation commands run on the blocking pool (they read the transcript).
+#[tauri::command]
+pub async fn get_conversation_page(
+    app: tauri::AppHandle,
+    session_id: String,
+    before: Option<u32>,
+) -> Result<ConvPage, String> {
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().conversation_page(&session_id, before))
+        .await
+        .map_err(|e| errors::with(errors::TASK_FAILED, e))?
+}
+
+#[tauri::command]
+pub async fn get_conversation_since(
+    app: tauri::AppHandle,
+    session_id: String,
+    epoch: u32,
+    from: u32,
+) -> Result<ConvPage, String> {
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().conversation_since(&session_id, epoch, from))
+        .await
+        .map_err(|e| errors::with(errors::TASK_FAILED, e))?
+}
+
+#[tauri::command]
+pub async fn get_conversation_image(
+    app: tauri::AppHandle,
+    session_id: String,
+    offset: u64,
+    ordinal: u32,
+) -> Result<ConvImage, String> {
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().conversation_image(&session_id, offset, ordinal)
+    })
+    .await
+    .map_err(|e| errors::with(errors::TASK_FAILED, e))?
 }
 
 /// Content search on the blocking pool (it streams every transcript).
@@ -1239,7 +1372,13 @@ mod tests {
         fn host_kind(&self, _pid: u32) -> station_core::host::HostKind {
             station_core::host::HostKind::Embedded
         }
+        fn terminal_pid(&self, _pid: u32) -> Option<u32> {
+            Some(EMBED_SHELL)
+        }
     }
+
+    /// Shell pid of the app terminal `EmbeddedProbe` reports.
+    const EMBED_SHELL: u32 = 4242;
 
     /// Live ADOPT_ID (pid 5151, interactive CLI, `status`) whose first cwd is
     /// the existing `work` folder. `in_project`: the transcript sits in
@@ -1260,11 +1399,16 @@ mod tests {
     }
 
     fn write_registry(reg: &Path, cwd: &str, status: &str) {
+        write_registry_with(reg, cwd, status, "");
+    }
+
+    /// `write_registry` plus raw JSON members (`extra` starts with a comma).
+    fn write_registry_with(reg: &Path, cwd: &str, status: &str, extra: &str) {
         let cwd = serde_json::to_string(cwd).unwrap();
         fs::write(
             reg,
             format!(
-                r#"{{"pid":5151,"sessionId":"{ADOPT_ID}","cwd":{cwd},"procStart":"888","status":"{status}","kind":"interactive","entrypoint":"cli"}}"#
+                r#"{{"pid":5151,"sessionId":"{ADOPT_ID}","cwd":{cwd},"procStart":"888","status":"{status}","kind":"interactive","entrypoint":"cli"{extra}}}"#
             ),
         )
         .unwrap();
@@ -1371,6 +1515,266 @@ mod tests {
         // Claude Code removes its registry file on exit.
         fs::remove_file(&reg).unwrap();
         assert!(state.wait_not_live(ADOPT_ID, Duration::from_secs(10)).is_ok());
+    }
+
+    const CONV_A: &str = "cccccccc-2222-4333-8444-555555555555";
+    const CONV_B: &str = "cccccccd-2222-4333-8444-555555555555";
+    const CONV_C: &str = "ccccccce-2222-4333-8444-555555555555";
+
+    fn conv_state(tmp: &Path, ids: &[&str]) -> AppState {
+        let claude = tmp.join("claude");
+        let proj = claude.join("projects").join("C--demo");
+        fs::create_dir_all(claude.join("sessions")).unwrap();
+        fs::create_dir_all(&proj).unwrap();
+        for id in ids {
+            fs::write(
+                proj.join(format!("{id}.jsonl")),
+                r#"{"type":"user","uuid":"u1","parentUuid":null,"timestamp":"2026-01-01T00:00:00Z","message":{"content":"hello"}}"#.to_string() + "\n",
+            )
+            .unwrap();
+        }
+        AppState::new(claude, tmp.join("c.json"), Box::new(FakeProbe(HashMap::new())))
+    }
+
+    #[test]
+    fn conversation_page_reads_transcript() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = conv_state(tmp.path(), &[CONV_A]);
+        let page = state.conversation_page(CONV_A, None).unwrap();
+        assert_eq!((page.total, page.start, page.items.len()), (1, 0, 1));
+        let since = state.conversation_since(CONV_A, page.epoch, 0).unwrap();
+        assert_eq!(since.items.len(), 1);
+    }
+
+    #[test]
+    fn conversation_rejects_bad_id() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = conv_state(tmp.path(), &[]);
+        assert_eq!(state.conversation_page("../x", None).unwrap_err(), errors::SESSION_INVALID);
+        assert_eq!(state.conversation_since("../x", 0, 0).unwrap_err(), errors::SESSION_INVALID);
+        assert_eq!(state.conversation_image("../x", 0, 0).unwrap_err(), errors::SESSION_INVALID);
+    }
+
+    #[test]
+    fn conversation_unavailable_without_transcript() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = conv_state(tmp.path(), &[]);
+        assert_eq!(state.conversation_page(CONV_A, None).unwrap_err(), errors::CONV_UNAVAILABLE);
+        assert_eq!(state.conversation_image(CONV_A, 0, 0).unwrap_err(), errors::CONV_UNAVAILABLE);
+    }
+
+    #[test]
+    fn conversation_image_refuses_unknown_ref() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = conv_state(tmp.path(), &[CONV_A]);
+        assert_eq!(state.conversation_image(CONV_A, 0, 0).unwrap_err(), errors::CONV_IMAGE_GONE);
+        assert_eq!(state.conversation_image(CONV_A, 999_999, 3).unwrap_err(), errors::CONV_IMAGE_GONE);
+    }
+
+    #[test]
+    fn conversation_cache_keeps_two() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = conv_state(tmp.path(), &[CONV_A, CONV_B, CONV_C]);
+        for id in [CONV_A, CONV_B, CONV_C] {
+            state.conversation_page(id, None).unwrap();
+        }
+        let ids: Vec<String> = lock(&state.conversations).iter().map(|(i, _)| i.clone()).collect();
+        assert_eq!(ids, [CONV_C, CONV_B]);
+        state.conversation_page(CONV_B, None).unwrap();
+        let ids: Vec<String> = lock(&state.conversations).iter().map(|(i, _)| i.clone()).collect();
+        assert_eq!(ids, [CONV_B, CONV_C]);
+    }
+
+    #[test]
+    fn send_target_refuses_waiting() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, work, reg) = adopt_files(tmp.path(), "idle", true);
+        let w = work.to_string_lossy().into_owned();
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(EmbeddedProbe(adopt_probe())));
+        assert_eq!(state.get_snapshot().sessions[0].status, station_core::registry::SessionStatus::Idle);
+        // The cached snapshot still says idle; the registry no longer does.
+        write_registry(&reg, &w, "waiting");
+        assert_eq!(state.send_target(ADOPT_ID).unwrap_err(), errors::SEND_WAITING);
+        write_registry_with(&reg, &w, "idle", r#","waitingFor":"permission""#);
+        assert_eq!(state.send_target(ADOPT_ID).unwrap_err(), errors::SEND_WAITING);
+        write_registry_with(&reg, &w, "busy", r#","waitingFor":"permission""#);
+        assert_eq!(state.send_target(ADOPT_ID).unwrap_err(), errors::SEND_WAITING);
+    }
+
+    #[test]
+    fn send_target_allows_busy_and_idle() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, work, reg) = adopt_files(tmp.path(), "idle", true);
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(EmbeddedProbe(adopt_probe())));
+        assert_eq!(state.send_target(ADOPT_ID), Ok(EMBED_SHELL));
+        write_registry(&reg, &work.to_string_lossy(), "busy");
+        assert_eq!(state.send_target(ADOPT_ID), Ok(EMBED_SHELL));
+        assert_eq!(state.send_target("../x").unwrap_err(), errors::SESSION_INVALID);
+        assert_eq!(state.send_target(CLOSED_ID).unwrap_err(), errors::SESSION_NOT_LIVE);
+    }
+
+    #[test]
+    fn send_target_refuses_when_not_in_app_terminal() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, _, _) = adopt_files(tmp.path(), "idle", true);
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(adopt_probe()));
+        assert_eq!(state.send_target(ADOPT_ID).unwrap_err(), errors::SEND_NOT_EMBEDDED);
+    }
+
+    #[test]
+    fn remote_url_built_from_registry() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, work, reg) = adopt_files(tmp.path(), "busy", true);
+        write_registry_with(&reg, &work.to_string_lossy(), "busy", r#","bridgeSessionId":"session_01Va8WwprzgHk7fZBzuoLdPo""#);
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(adopt_probe()));
+        assert!(state.get_snapshot().sessions[0].remote_control);
+        assert_eq!(state.remote_url(ADOPT_ID).unwrap(), "https://claude.ai/code/session_01Va8WwprzgHk7fZBzuoLdPo");
+        assert_eq!(state.remote_url("../x").unwrap_err(), errors::SESSION_INVALID);
+        assert_eq!(state.remote_url(CLOSED_ID).unwrap_err(), errors::SESSION_NOT_LIVE);
+    }
+
+    #[test]
+    fn remote_url_off() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, work, reg) = adopt_files(tmp.path(), "idle", true);
+        let w = work.to_string_lossy().into_owned();
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(adopt_probe()));
+        assert!(!state.get_snapshot().sessions[0].remote_control);
+        assert_eq!(state.remote_url(ADOPT_ID).unwrap_err(), errors::REMOTE_OFF);
+        for bad in [r#""session_../x""#, r#""https://evil.example/session_a""#, r#""cse_01A""#, "7"] {
+            write_registry_with(&reg, &w, "idle", &format!(r#","bridgeSessionId":{bad}"#));
+            assert_eq!(state.remote_url(ADOPT_ID).unwrap_err(), errors::REMOTE_OFF, "{bad}");
+        }
+    }
+
+    /// Records writes; `on_write` runs after each one (n = writes so far),
+    /// standing in for what happens in the terminal between the two writes.
+    struct FakeTerms {
+        shell: u32,
+        writes: Mutex<Vec<(u32, String)>>,
+        on_write: Box<dyn Fn(usize)>,
+    }
+    impl FakeTerms {
+        fn new(on_write: impl Fn(usize) + 'static) -> Self {
+            FakeTerms { shell: EMBED_SHELL, writes: Mutex::new(Vec::new()), on_write: Box::new(on_write) }
+        }
+        fn writes(&self) -> Vec<(u32, String)> {
+            lock(&self.writes).clone()
+        }
+    }
+    impl Terminals for FakeTerms {
+        fn id_for_pid(&self, pid: u32) -> Option<u32> {
+            (pid == self.shell).then_some(7)
+        }
+        fn write(&self, id: u32, data: &str) -> Result<(), String> {
+            let n = {
+                let mut w = lock(&self.writes);
+                w.push((id, data.to_string()));
+                w.len()
+            };
+            (self.on_write)(n);
+            Ok(())
+        }
+    }
+
+    fn send_env(tmp: &Path, status: &str) -> (AppState, PathBuf, String) {
+        let (claude, work, reg) = adopt_files(tmp, status, true);
+        let state = AppState::new(claude, tmp.join("c.json"), Box::new(EmbeddedProbe(adopt_probe())));
+        (state, reg, work.to_string_lossy().into_owned())
+    }
+
+    #[test]
+    fn send_text_writes_paste_then_enter() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, _, _) = send_env(tmp.path(), "busy");
+        let terms = FakeTerms::new(|_| {});
+        send_text(&state, &terms, ADOPT_ID, "merhaba\x1b[201~", Duration::ZERO).unwrap();
+        assert_eq!(terms.writes(), [(7, "\x1b[200~merhaba[201~\x1b[201~".to_string()), (7, "\r".to_string())]);
+        assert_eq!(send_text(&state, &terms, ADOPT_ID, " \x1b ", Duration::ZERO).unwrap_err(), errors::SEND_EMPTY);
+        assert_eq!(terms.writes().len(), 2, "nothing written for empty text");
+    }
+
+    #[test]
+    fn send_text_refusal_before_the_paste_keeps_its_own_code() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, _, _) = send_env(tmp.path(), "waiting");
+        let terms = FakeTerms::new(|_| {});
+        assert_eq!(send_text(&state, &terms, ADOPT_ID, "evet", Duration::ZERO).unwrap_err(), errors::SEND_WAITING);
+        assert!(terms.writes().is_empty());
+    }
+
+    #[test]
+    fn send_text_skips_enter_when_the_session_turns_waiting_after_the_paste() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, reg, w) = send_env(tmp.path(), "busy");
+        let (reg2, w2) = (reg.clone(), w.clone());
+        let terms = FakeTerms::new(move |n| {
+            if n == 1 {
+                write_registry(&reg2, &w2, "waiting");
+            }
+        });
+        assert_eq!(
+            send_text(&state, &terms, ADOPT_ID, "evet", Duration::ZERO).unwrap_err(),
+            "send_not_submitted:send_waiting"
+        );
+        assert_eq!(terms.writes().len(), 1, "no Enter after the paste");
+    }
+
+    #[test]
+    fn send_text_skips_enter_when_the_session_left_its_terminal() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, reg, _) = send_env(tmp.path(), "idle");
+        // /exit typed meanwhile: the session is gone, the shell stays.
+        let terms = FakeTerms::new(move |n| {
+            if n == 1 {
+                fs::remove_file(&reg).unwrap();
+            }
+        });
+        assert_eq!(
+            send_text(&state, &terms, ADOPT_ID, "ls -la", Duration::ZERO).unwrap_err(),
+            "send_not_submitted:session_not_live"
+        );
+        assert_eq!(terms.writes().len(), 1, "the text is never run in the shell");
+    }
+
+    /// Reports a different app terminal from the second lookup on (count shared with the test).
+    struct MovingProbe(FakeProbe, std::sync::Arc<AtomicU32>);
+    impl ProcessProbe for MovingProbe {
+        fn start_filetime(&self, pid: u32) -> Option<u64> {
+            self.0.start_filetime(pid)
+        }
+        fn parent_pid(&self, pid: u32) -> Option<u32> {
+            self.0.parent_pid(pid)
+        }
+        fn terminal_pid(&self, _pid: u32) -> Option<u32> {
+            Some(EMBED_SHELL + self.1.fetch_add(1, Ordering::SeqCst).min(1))
+        }
+    }
+
+    #[test]
+    fn send_text_skips_enter_when_the_terminal_changed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, _, _) = adopt_files(tmp.path(), "idle", true);
+        let lookups = std::sync::Arc::new(AtomicU32::new(0));
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(MovingProbe(adopt_probe(), lookups.clone())));
+        lookups.store(0, Ordering::SeqCst);
+        let terms = FakeTerms::new(|_| {});
+        assert_eq!(
+            send_text(&state, &terms, ADOPT_ID, "x", Duration::ZERO).unwrap_err(),
+            "send_not_submitted:send_not_embedded"
+        );
+        assert_eq!(terms.writes().len(), 1, "no Enter once the session runs in another terminal");
+    }
+
+    #[test]
+    fn send_target_refuses_other_statuses() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, reg, w) = send_env(tmp.path(), "compacting");
+        assert_eq!(state.send_target(ADOPT_ID).unwrap_err(), errors::SEND_WAITING);
+        fs::write(&reg, fs::read_to_string(&reg).unwrap().replace(r#""status":"compacting","#, "")).unwrap();
+        assert_eq!(state.send_target(ADOPT_ID).unwrap_err(), errors::SEND_WAITING, "no status at all");
+        write_registry(&reg, &w, "idle");
+        assert_eq!(state.send_target(ADOPT_ID), Ok(EMBED_SHELL));
     }
 }
 
@@ -1506,6 +1910,77 @@ pub fn adopt_session(
 #[tauri::command(async)]
 pub fn pty_write(state: tauri::State<'_, PtyManager>, id: u32, data: String) -> Result<(), String> {
     state.write(id, &data)
+}
+
+/// Gap between the paste and the Enter that submits it, so Claude Code has
+/// taken the paste in before the `\r` arrives.
+const SUBMIT_DELAY: Duration = Duration::from_millis(60);
+
+/// The app terminals as `send_text` sees them (a test stands in for them).
+pub trait Terminals {
+    /// The terminal whose shell is `pid`.
+    fn id_for_pid(&self, pid: u32) -> Option<u32>;
+    fn write(&self, id: u32, data: &str) -> Result<(), String>;
+}
+
+impl Terminals for PtyManager {
+    fn id_for_pid(&self, pid: u32) -> Option<u32> {
+        PtyManager::id_for_pid(self, pid)
+    }
+    fn write(&self, id: u32, data: &str) -> Result<(), String> {
+        PtyManager::write(self, id, data)
+    }
+}
+
+/// Message box: sends `text` to the session as a bracketed paste, then Enter.
+/// The text is cleaned by `paste_payload`; the terminal is the app terminal
+/// the session's process runs in, found from a fresh registry read
+/// (`send_target`), never one the UI names. After the paste and `gap`, the
+/// target is checked again: the Enter is written only when the session is
+/// still idle or busy (not waiting: Enter would answer its prompt) and still
+/// runs in the same terminal (else Enter would run the text in the shell).
+/// A failure after the paste is `send_not_submitted:<inner code>`: the text
+/// then sits unsent in the terminal's input.
+pub fn send_text(
+    app: &AppState,
+    terms: &dyn Terminals,
+    session_id: &str,
+    text: &str,
+    gap: Duration,
+) -> Result<(), String> {
+    let payload = crate::pty::paste_payload(text).map_err(String::from)?;
+    let shell = app.send_target(session_id)?;
+    let id = terms.id_for_pid(shell).ok_or(errors::SEND_NOT_EMBEDDED)?;
+    terms.write(id, &payload)?;
+    std::thread::sleep(gap);
+    let submit = || {
+        if app.send_target(session_id)? != shell || terms.id_for_pid(shell) != Some(id) {
+            return Err(errors::SEND_NOT_EMBEDDED.to_string());
+        }
+        terms.write(id, "\r")
+    };
+    submit().map_err(|e| errors::with(errors::SEND_NOT_SUBMITTED, e))
+}
+
+/// `send_text` on the blocking pool (it sleeps between the two writes).
+/// Only the id and the text come from the UI.
+#[tauri::command]
+pub async fn send_to_session(app: tauri::AppHandle, session_id: String, text: String) -> Result<(), String> {
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || {
+        send_text(&app.state::<AppState>(), app.state::<PtyManager>().inner(), &session_id, &text, SUBMIT_DELAY)
+    })
+    .await
+    .map_err(|e| errors::with(errors::TASK_FAILED, e))?
+}
+
+/// Remote Control mark: opens `https://claude.ai/code/<bridge id>` in the
+/// system browser. Only the session id comes from the UI; the bridge id is
+/// read from the registry and checked by `is_bridge_id`.
+#[tauri::command(async)]
+pub fn open_remote_control(app: tauri::State<'_, AppState>, session_id: String) -> Result<(), String> {
+    let url = app.remote_url(&session_id)?;
+    crate::platform::open_url(&url).map_err(|e| errors::with(errors::URL_OPEN_FAILED, e))
 }
 
 #[tauri::command(async)]

@@ -51,7 +51,7 @@ fn file_name(p: &str) -> String {
     p.rsplit(['\\', '/']).next().unwrap_or(p).to_string()
 }
 
-fn tool_target(name: &str, input: &Value) -> String {
+pub(crate) fn tool_target(name: &str, input: &Value) -> String {
     let get = |k: &str| input.get(k).and_then(Value::as_str);
     match name {
         "Read" | "Edit" | "Write" | "MultiEdit" | "NotebookEdit" => {
@@ -272,7 +272,20 @@ impl TranscriptReader {
         on_chunk: impl FnMut(u64) -> ControlFlow<()>,
         f: impl FnMut(&str) -> ControlFlow<()>,
     ) -> io::Result<bool> {
-        self.scan_with(u64::MAX, || {}, on_chunk, f).map(|(_, stopped)| stopped)
+        let mut f = f;
+        self.scan_with(u64::MAX, || {}, on_chunk, |_, l| f(l)).map(|(_, stopped)| stopped)
+    }
+
+    /// Streams every complete line appended since the last call together with
+    /// the byte offset of its first byte in the file. `on_reset` runs once
+    /// before any line when the file shrank (offsets then restart at 0).
+    /// Over-long lines are skipped; later offsets stay exact.
+    pub fn read_lines_at(&mut self, on_reset: impl FnMut(), mut f: impl FnMut(u64, &str)) -> io::Result<()> {
+        self.scan_with(u64::MAX, on_reset, |_| ControlFlow::Continue(()), |at, l| {
+            f(at, l);
+            ControlFlow::Continue(())
+        })
+        .map(|_| ())
     }
 
     /// Shared line splitter of [`read_each_limited`](Self::read_each_limited)
@@ -281,9 +294,9 @@ impl TranscriptReader {
         &mut self,
         max_bytes: u64,
         on_reset: impl FnMut(),
-        on_line: impl FnMut(&str) -> ControlFlow<()>,
+        mut on_line: impl FnMut(&str) -> ControlFlow<()>,
     ) -> io::Result<(bool, bool)> {
-        self.scan_with(max_bytes, on_reset, |_| ControlFlow::Continue(()), on_line)
+        self.scan_with(max_bytes, on_reset, |_| ControlFlow::Continue(()), |_, l| on_line(l))
     }
 
     fn scan_with(
@@ -291,7 +304,7 @@ impl TranscriptReader {
         max_bytes: u64,
         mut on_reset: impl FnMut(),
         mut on_chunk: impl FnMut(u64) -> ControlFlow<()>,
-        mut on_line: impl FnMut(&str) -> ControlFlow<()>,
+        mut on_line: impl FnMut(u64, &str) -> ControlFlow<()>,
     ) -> io::Result<(bool, bool)> {
         let mut file = File::open(&self.path)?;
         let len = file.metadata()?.len();
@@ -334,14 +347,18 @@ impl TranscriptReader {
                 }
                 continue;
             };
+            // `carry` always holds the last `carry.len()` bytes read, so its first byte is here.
+            let mut at = self.offset - self.carry.len() as u64;
             let rest = self.carry.split_off(start + pos + 1);
             // `carry` ends with the newline found above; the empty piece after it is not a line.
             for line in self.carry[..self.carry.len() - 1].split(|&b| b == b'\n') {
+                let line_at = at;
+                at += line.len() as u64 + 1;
                 if line.len() > self.max_line {
                     continue;
                 }
                 if let Ok(s) = std::str::from_utf8(line) {
-                    if on_line(s).is_break() {
+                    if on_line(line_at, s).is_break() {
                         return Ok((self.offset < len, true));
                     }
                 }
@@ -434,6 +451,63 @@ kısa
         })
         .unwrap();
         assert_eq!(seen, ["kısa"]);
+    }
+
+    fn reader_over(content: &str) -> (tempfile::TempDir, TranscriptReader) {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("t.jsonl");
+        std::fs::write(&p, content).unwrap();
+        (d, TranscriptReader::new(p))
+    }
+
+    fn collect_at(r: &mut TranscriptReader) -> (Vec<(u64, String)>, usize) {
+        let (mut got, mut resets) = (Vec::new(), 0);
+        r.read_lines_at(|| resets += 1, |at, l| got.push((at, l.to_string()))).unwrap();
+        (got, resets)
+    }
+
+    #[test]
+    fn read_lines_at_gives_byte_offsets() {
+        // ü and ç are 2 bytes each.
+        let (_d, mut r) = reader_over("ab\nüç\n\nx\n");
+        let (got, resets) = collect_at(&mut r);
+        assert_eq!(resets, 0);
+        assert_eq!(got, [(0, "ab".into()), (3, "üç".into()), (8, "".into()), (9, "x".into())]);
+    }
+
+    #[test]
+    fn offsets_cross_chunk_boundaries() {
+        let (_d, mut r) = reader_over(&format!("{}\nz\n", "y".repeat(READ_BUF + 10)));
+        let (got, _) = collect_at(&mut r);
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].0, 0);
+        assert_eq!(got[1], ((READ_BUF + 11) as u64, "z".into()));
+    }
+
+    #[test]
+    fn offsets_survive_partial_tail() {
+        let (_d, mut r) = reader_over("a\nbc");
+        assert_eq!(collect_at(&mut r).0, [(0, "a".into())]);
+        let mut f = std::fs::OpenOptions::new().append(true).open(&r.path).unwrap();
+        writeln!(f, "d").unwrap();
+        assert_eq!(collect_at(&mut r).0, [(2, "bcd".into())]);
+    }
+
+    #[test]
+    fn offsets_restart_after_shrink() {
+        let (_d, mut r) = reader_over("aaaa\nb\n");
+        assert_eq!(collect_at(&mut r).0.len(), 2);
+        std::fs::write(&r.path, "c\n").unwrap();
+        let (got, resets) = collect_at(&mut r);
+        assert_eq!(resets, 1);
+        assert_eq!(got, [(0, "c".into())]);
+    }
+
+    #[test]
+    fn offsets_exact_after_overlong_line() {
+        let (_d, mut r) = reader_over(&format!("{}\nok\n", "x".repeat(5000)));
+        r.max_line = 1000;
+        assert_eq!(collect_at(&mut r).0, [(5001, "ok".into())]);
     }
 
     const ASSISTANT: &str = r#"{"type":"assistant","timestamp":"2026-11-02T07:12:52.197Z","requestedModel":"claude-opus-5-5[1m]","message":{"id":"msg_1","model":"claude-opus-5-5","content":[{"type":"tool_use","id":"toolu_A","name":"Read","input":{"file_path":"C:\\demo\\adc.c"}}],"usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":100,"cache_creation_input_tokens":20}}}"#;

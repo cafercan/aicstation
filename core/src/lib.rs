@@ -11,3 +11,4 @@ pub mod history;
 pub mod host;
 pub mod small_file;
 pub mod search;
+pub mod conversation;

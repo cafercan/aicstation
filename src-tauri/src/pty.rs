@@ -12,6 +12,10 @@ use std::time::{Duration, Instant};
 
 pub const MAX_PTYS: usize = 32;
 pub const MAX_WRITE: usize = 64 * 1024;
+/// Largest text `paste_payload` accepts, in bytes after cleaning.
+pub const MAX_PASTE: usize = 32 * 1024;
+// A payload (text plus the two 6-byte paste markers) fits one `write`.
+const _: () = assert!(MAX_PASTE + 12 <= MAX_WRITE);
 const MIN_DIM: u16 = 1;
 const MAX_DIM: u16 = 1000;
 
@@ -495,6 +499,15 @@ impl PtyManager {
         }
     }
 
+    /// The terminal whose shell is `pid`.
+    pub fn id_for_pid(&self, pid: u32) -> Option<u32> {
+        if pid == 0 {
+            return None;
+        }
+        let g = self.inner.lock().ok()?;
+        g.ptys.iter().find(|(_, e)| e.pid == pid).map(|(&id, _)| id)
+    }
+
     pub fn list(&self) -> Vec<PtyInfo> {
         let Ok(g) = self.inner.lock() else {
             return Vec::new();
@@ -503,6 +516,24 @@ impl PtyManager {
         v.sort_by_key(|p| p.id);
         v
     }
+}
+
+/// Text from the message box as one bracketed paste (`ESC[200~` .. `ESC[201~`)
+/// for Claude Code. Line ends become `\n`; every other control character,
+/// ESC included, is dropped, so the text can never end the paste early or
+/// carry a terminal escape. Trimmed; `send_empty` when nothing is left,
+/// `send_too_large` above [`MAX_PASTE`] bytes.
+pub fn paste_payload(text: &str) -> Result<String, &'static str> {
+    let text = text.replace("\r\n", "\n").replace('\r', "\n");
+    let clean: String = text.chars().filter(|&c| c == '\n' || c == '\t' || !c.is_control()).collect();
+    let clean = clean.trim();
+    if clean.is_empty() {
+        return Err(crate::errors::SEND_EMPTY);
+    }
+    if clean.len() > MAX_PASTE {
+        return Err(crate::errors::SEND_TOO_LARGE);
+    }
+    Ok(format!("\x1b[200~{clean}\x1b[201~"))
 }
 
 /// Platform stand-ins for the tests: a program that sits idle reading the
@@ -999,5 +1030,42 @@ mod tests {
         for id in ids {
             m.kill(id).unwrap();
         }
+    }
+
+    #[test]
+    fn paste_payload_strips_escapes() {
+        assert_eq!(paste_payload("a\x1b[201~b").unwrap(), "\x1b[200~a[201~b\x1b[201~");
+        assert_eq!(paste_payload("  bir\r\niki\rüç\n\tdört \n").unwrap(), "\x1b[200~bir\niki\nüç\n\tdört\x1b[201~");
+        assert_eq!(paste_payload("x\u{7f}\u{9b}31m\u{0}\u{7}y").unwrap(), "\x1b[200~x31my\x1b[201~", "DEL, C1 CSI, NUL, BEL dropped");
+        assert_eq!(paste_payload("\x1b[201~\r").unwrap(), "\x1b[200~[201~\x1b[201~");
+    }
+
+    #[test]
+    fn paste_payload_rejects_empty_and_large() {
+        assert_eq!(paste_payload("").unwrap_err(), crate::errors::SEND_EMPTY);
+        assert_eq!(paste_payload(" \r\n\t\x1b\u{7}").unwrap_err(), crate::errors::SEND_EMPTY);
+        let max = "a".repeat(MAX_PASTE);
+        assert_eq!(paste_payload(&max).unwrap(), format!("\x1b[200~{max}\x1b[201~"));
+        assert_eq!(paste_payload(&format!("{max}b")).unwrap_err(), crate::errors::SEND_TOO_LARGE);
+        // Counted after cleaning: dropped escapes do not count.
+        assert!(paste_payload(&format!("{max}\x1b\x1b")).is_ok());
+        assert_eq!(paste_payload(&"ğ".repeat(MAX_PASTE / 2 + 1)).unwrap_err(), crate::errors::SEND_TOO_LARGE, "bytes, not chars");
+    }
+
+    #[test]
+    fn id_for_pid_finds_the_terminal_of_a_shell() {
+        let m = PtyManager::new();
+        let (tx, rx) = mpsc::channel();
+        let info = m
+            .spawn_cmd(IDLE, IDLE_ARGS, 80, 24, |_| true, move |c| {
+                let _ = tx.send(c);
+            })
+            .unwrap();
+        assert_eq!(m.id_for_pid(info.pid), Some(info.id));
+        assert_eq!(m.id_for_pid(info.pid.wrapping_add(1)), None);
+        assert_eq!(m.id_for_pid(0), None);
+        m.kill(info.id).unwrap();
+        rx.recv_timeout(T).unwrap();
+        assert_eq!(m.id_for_pid(info.pid), None, "gone with its terminal");
     }
 }

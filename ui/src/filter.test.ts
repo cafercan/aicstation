@@ -23,7 +23,7 @@ test("matchesQuery: her kelime alanlardan birinde geçmeli; boş sorgu her şeyi
 const card = (over: Partial<SessionCard>): SessionCard => ({
   sessionId: "s", pid: 1, parentPid: null, name: "demo", cwd: "C:\\x\\demo", status: "busy", waitingFor: null,
   model: "Opus 5.5", contextPct: null, costUsd: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 }, agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0,
-  lastTool: null, startedAtMs: 0, lastActivityMs: 0, gitBranch: null, hostKind: "other", movable: false, agentsRunning: 0, ...over,
+  lastTool: null, startedAtMs: 0, lastActivityMs: 0, gitBranch: null, hostKind: "other", movable: false, agentsRunning: 0, remoteControl: false, ...over,
 });
 
 test("filterSessions: metin + bağımsız durum çipleri (hiçbiri seçili değilse hepsi)", () => {

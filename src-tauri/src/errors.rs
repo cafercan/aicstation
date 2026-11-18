@@ -95,6 +95,28 @@ pub fn with(code: &str, detail: impl std::fmt::Display) -> String {
     format!("{code}:{detail}")
 }
 
+/// The session has no transcript file (or it could not be read).
+pub const CONV_UNAVAILABLE: &str = "conv_unavailable";
+/// The image is no longer in the transcript.
+pub const CONV_IMAGE_GONE: &str = "conv_image_gone";
+
+/// Text for a session: nothing left after removing control characters.
+pub const SEND_EMPTY: &str = "send_empty";
+/// Text for a session is longer than 32 768 bytes.
+pub const SEND_TOO_LARGE: &str = "send_too_large";
+/// The session waits for an answer (permission prompt, question) in its terminal.
+pub const SEND_WAITING: &str = "send_waiting";
+/// The session does not run in an app terminal, so text cannot be sent to it.
+pub const SEND_NOT_EMBEDDED: &str = "send_not_embedded";
+/// `send_not_submitted:<inner code>`: the text was pasted into the session's
+/// terminal, but the check before the Enter failed (inner code), so it sits
+/// there unsent.
+pub const SEND_NOT_SUBMITTED: &str = "send_not_submitted";
+/// Remote Control is not on for the session.
+pub const REMOTE_OFF: &str = "remote_off";
+/// `url_open_failed:<OS message>`: the browser could not be started.
+pub const URL_OPEN_FAILED: &str = "url_open_failed";
+
 #[cfg(test)]
 pub const ALL: &[&str] = &[
     SESSION_INVALID, SESSION_LIVE, SESSION_RESUME_TERMINAL_OPEN, SESSION_UNKNOWN, SESSION_NOT_LIVE, RESUME_FOLDER_MISMATCH,
@@ -106,6 +128,8 @@ pub const ALL: &[&str] = &[
     SETTINGS_INVALID, SETTINGS_SAVE_FAILED, SEARCH_QUERY_INVALID,
     ADOPT_NOT_MOVABLE, ADOPT_BUSY, ADOPT_WAITING, ADOPT_AGENTS_RUNNING, ADOPT_EMBEDDED, ADOPT_IN_PROGRESS, ADOPT_TIMEOUT,
     ADOPT_KILL_FAILED, ADOPT_RESUME_FAILED,
+    CONV_UNAVAILABLE, CONV_IMAGE_GONE,
+    SEND_EMPTY, SEND_TOO_LARGE, SEND_WAITING, SEND_NOT_EMBEDDED, SEND_NOT_SUBMITTED, REMOTE_OFF, URL_OPEN_FAILED,
 ];
 
 #[cfg(test)]

@@ -6,7 +6,7 @@ import { isWindows } from "../platform";
 import SessionMark from "./SessionMark";
 
 /** Tabs of the session view. */
-export type SessionTab = "terminal" | "info";
+export type SessionTab = "terminal" | "conversation" | "info";
 
 /**
  * `{ session }` is the session view; `terminal` is the app terminal it is
