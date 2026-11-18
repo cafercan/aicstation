@@ -179,12 +179,16 @@ const SESSION_MARKER_PREFIXES: &[&str] = &["CLAUDE_CODE_MESSAGING_"];
 /// - Other `CLAUDE_CODE_*` and `CLAUDE_EFFORT` are the user's own settings
 ///   when persistent (kept), otherwise they were set by a parent Claude Code
 ///   session (removed).
+/// - Inside an AppImage (Unix), what its runtime injected is removed (see
+///   [`appimage_cleanup`]).
 /// - Everything else is kept, including NO_COLOR / FORCE_COLOR.
 /// - On Windows `NoDefaultCurrentDirectoryInExePath=1` is added (see `NO_CWD_EXE`).
 pub fn child_env(
     vars: impl IntoIterator<Item = (OsString, OsString)>,
     persistent: &HashSet<String>,
 ) -> Vec<(OsString, OsString)> {
+    #[cfg(unix)]
+    let vars = appimage_cleanup(vars.into_iter().collect());
     let keep = |key: &OsString| {
         let k = key.to_string_lossy().to_ascii_uppercase();
         if SESSION_MARKERS.contains(&k.as_str()) || SESSION_MARKER_PREFIXES.iter().any(|p| k.starts_with(p)) {
@@ -203,6 +207,44 @@ pub fn child_env(
     #[cfg(windows)]
     out.push((NO_CWD_EXE.into(), "1".into()));
     out
+}
+
+/// Variables the AppImage runtime sets about itself.
+#[cfg(unix)]
+const APPIMAGE_RUNTIME: &[&str] = &["APPDIR", "APPIMAGE", "ARGV0", "OWD"];
+
+/// `vars` without what an AppImage's runtime and AppRun hooks injected, so
+/// the programs started from the app (shells, `xdg-open`, the terminal
+/// emulator) do not load the app's bundled libraries and modules. Only when
+/// both `APPIMAGE` and `APPDIR` are set: the runtime's own variables go, and
+/// in every other variable each `:`-separated entry (also space-separated for
+/// `LD_PRELOAD`) that is a path inside `APPDIR` is removed; a variable left
+/// with no entry goes too. That covers `LD_LIBRARY_PATH`, `LD_PRELOAD`,
+/// `GDK_PIXBUF_*`, `GIO_*`, `GST_PLUGIN_*`, `GTK_*` module paths,
+/// `PYTHONHOME`/`PYTHONPATH`, `PERLLIB`, `QT_PLUGIN_PATH` and the entries
+/// prepended to `PATH`/`XDG_DATA_DIRS`, while the user's own entries stay.
+/// An `APPDIR` that is not absolute, or is `/`, removes no entries.
+#[cfg(unix)]
+fn appimage_cleanup(vars: Vec<(OsString, OsString)>) -> Vec<(OsString, OsString)> {
+    let get = |name: &str| vars.iter().find(|(k, _)| k == name).map(|(_, v)| v.to_string_lossy().into_owned());
+    let (Some(_), Some(appdir)) = (get("APPIMAGE"), get("APPDIR")) else {
+        return vars;
+    };
+    let root = appdir.trim_end_matches('/').to_string();
+    let usable = root.starts_with('/');
+    let inside = |entry: &str| usable && (entry == root || entry.starts_with(&format!("{root}/")));
+    vars.into_iter()
+        .filter(|(k, _)| !APPIMAGE_RUNTIME.iter().any(|r| k == r))
+        .filter_map(|(k, v)| {
+            let text = v.to_string_lossy();
+            let seps: &[char] = if k == "LD_PRELOAD" { &[':', ' ', '\t'] } else { &[':'] };
+            if !text.split(seps).any(&inside) {
+                return Some((k, v));
+            }
+            let kept: Vec<&str> = text.split(seps).filter(|e| !e.is_empty() && !inside(e)).collect();
+            (!kept.is_empty()).then(|| (k, OsString::from(kept.join(":"))))
+        })
+        .collect()
 }
 
 impl PtyManager {
@@ -822,6 +864,80 @@ mod tests {
         );
         let with_effort = set(&["CLAUDE_EFFORT"]);
         assert_eq!(names(child_env(input, &with_effort)), tail(vec!["CLAUDE_EFFORT"]));
+    }
+
+    fn pairs(v: Vec<(OsString, OsString)>) -> Vec<(String, String)> {
+        v.into_iter().map(|(k, v)| (k.to_string_lossy().into_owned(), v.to_string_lossy().into_owned())).collect()
+    }
+
+    /// The variables an AppImage runtime and its AppRun hooks set, plus the
+    /// user's own ones they extend.
+    #[cfg(unix)]
+    const APPIMAGE_ENV: &[(&str, &str)] = &[
+        ("APPDIR", "/tmp/.mount_aicstXyZ"),
+        ("APPIMAGE", "/home/u/AI C-Station.AppImage"),
+        ("ARGV0", "./AI C-Station.AppImage"),
+        ("OWD", "/home/u"),
+        ("HOME", "/home/u"),
+        ("PATH", "/tmp/.mount_aicstXyZ/usr/bin:/usr/local/bin:/usr/bin"),
+        ("LD_LIBRARY_PATH", "/tmp/.mount_aicstXyZ/usr/lib:/opt/mine/lib"),
+        ("LD_PRELOAD", "/tmp/.mount_aicstXyZ/usr/lib/libhook.so"),
+        ("XDG_DATA_DIRS", "/tmp/.mount_aicstXyZ/usr/share:/usr/share:/usr/local/share"),
+        ("GDK_PIXBUF_MODULE_FILE", "/tmp/.mount_aicstXyZ/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"),
+        ("GDK_PIXBUF_MODULEDIR", "/tmp/.mount_aicstXyZ/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders"),
+        ("GIO_EXTRA_MODULES", "/tmp/.mount_aicstXyZ/usr/lib/gio/modules"),
+        ("GIO_MODULE_DIR", "/tmp/.mount_aicstXyZ/usr/lib/gio/modules"),
+        ("GSETTINGS_SCHEMA_DIR", "/tmp/.mount_aicstXyZ//usr/share/glib-2.0/schemas"),
+        ("GST_PLUGIN_PATH", "/tmp/.mount_aicstXyZ/usr/lib/gstreamer-1.0"),
+        ("GST_PLUGIN_SYSTEM_PATH_1_0", "/tmp/.mount_aicstXyZ/usr/lib/gstreamer-1.0"),
+        ("GST_PLUGIN_SCANNER", "/tmp/.mount_aicstXyZ/usr/lib/gstreamer1.0/gst-plugin-scanner"),
+        ("GTK_PATH", "/tmp/.mount_aicstXyZ//usr/lib/gtk-3.0"),
+        ("GTK_EXE_PREFIX", "/tmp/.mount_aicstXyZ//usr"),
+        ("GTK_DATA_PREFIX", "/tmp/.mount_aicstXyZ"),
+        ("GTK_IM_MODULE_FILE", "/tmp/.mount_aicstXyZ/usr/lib/gtk-3.0/3.0.0/immodules.cache"),
+        ("PYTHONHOME", "/tmp/.mount_aicstXyZ/usr"),
+        ("PYTHONPATH", "/tmp/.mount_aicstXyZ/usr/lib/python3:/home/u/py"),
+        ("PERLLIB", "/tmp/.mount_aicstXyZ/usr/share/perl5"),
+        ("QT_PLUGIN_PATH", "/tmp/.mount_aicstXyZ/usr/plugins"),
+        ("GTK_THEME", "Adwaita:dark"),
+        ("DISPLAY", ":0"),
+        ("EDITOR", "/tmp/.mount_aicstXyZ-not-inside/vim"),
+    ];
+
+    #[cfg(unix)]
+    #[test]
+    fn child_env_drops_what_the_appimage_runtime_injected() {
+        let out = pairs(child_env(kv(APPIMAGE_ENV), &HashSet::new()));
+        assert_eq!(
+            out,
+            [
+                ("HOME", "/home/u"),
+                ("PATH", "/usr/local/bin:/usr/bin"),
+                ("LD_LIBRARY_PATH", "/opt/mine/lib"),
+                ("XDG_DATA_DIRS", "/usr/share:/usr/local/share"),
+                ("PYTHONPATH", "/home/u/py"),
+                ("GTK_THEME", "Adwaita:dark"),
+                ("DISPLAY", ":0"),
+                ("EDITOR", "/tmp/.mount_aicstXyZ-not-inside/vim"),
+            ]
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn child_env_keeps_everything_outside_an_appimage() {
+        // Without APPIMAGE nothing is an AppImage leftover; with an unusable
+        // APPDIR only the runtime's own variables go.
+        let no_appimage: Vec<_> = APPIMAGE_ENV.iter().copied().filter(|(k, _)| *k != "APPIMAGE").collect();
+        assert_eq!(pairs(child_env(kv(&no_appimage), &HashSet::new())), pairs(kv(&no_appimage)));
+        let root = [("APPDIR", "/"), ("APPIMAGE", "/x.AppImage"), ("LD_LIBRARY_PATH", "/usr/lib")];
+        assert_eq!(names(child_env(kv(&root), &HashSet::new())), ["LD_LIBRARY_PATH"]);
+        let relative = [("APPDIR", "rel"), ("APPIMAGE", "/x.AppImage"), ("LD_LIBRARY_PATH", "rel/lib")];
+        assert_eq!(names(child_env(kv(&relative), &HashSet::new())), ["LD_LIBRARY_PATH"]);
+        // The user's own LD_LIBRARY_PATH stays as it was.
+        let mine = [("APPDIR", "/tmp/.mount_a"), ("APPIMAGE", "/x.AppImage"), ("LD_LIBRARY_PATH", "/opt/lib::/usr/lib")];
+        assert_eq!(pairs(child_env(kv(&mine), &HashSet::new())), [("LD_LIBRARY_PATH".to_string(), "/opt/lib::/usr/lib".to_string())]);
     }
 
     #[cfg(windows)]

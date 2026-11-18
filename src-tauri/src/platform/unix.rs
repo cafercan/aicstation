@@ -45,10 +45,21 @@ pub(crate) fn find_program(name: &OsStr, path: Option<&OsStr>) -> Option<PathBuf
 }
 
 /// Runs `program` detached in `cwd` with the cleaned child environment (no
-/// Claude Code session markers), reaping it on a thread.
-fn spawn_detached(program: &Path, args: &[&str], cwd: Option<&Path>) -> std::io::Result<()> {
+/// Claude Code session markers, nothing an AppImage injected; see
+/// `crate::pty::child_env`), reaping it on a thread.
+fn spawn_detached(program: &Path, args: &[&OsStr], cwd: Option<&Path>) -> std::io::Result<()> {
+    spawn_detached_env(program, args, cwd, std::env::vars_os())
+}
+
+/// [`spawn_detached`] with the parent environment passed in (tests).
+fn spawn_detached_env(
+    program: &Path,
+    args: &[&OsStr],
+    cwd: Option<&Path>,
+    vars: impl IntoIterator<Item = (OsString, OsString)>,
+) -> std::io::Result<()> {
     let mut cmd = Command::new(program);
-    cmd.args(args).env_clear().envs(crate::pty::child_env(std::env::vars_os(), &Default::default()));
+    cmd.args(args).env_clear().envs(crate::pty::child_env(vars, &Default::default()));
     if let Some(d) = cwd {
         cmd.current_dir(d);
     }
@@ -57,26 +68,22 @@ fn spawn_detached(program: &Path, args: &[&str], cwd: Option<&Path>) -> std::io:
     Ok(())
 }
 
-/// Opens an already validated directory in the file manager.
-pub fn open_folder(dir: &Path) -> std::io::Result<()> {
+/// Hands `target` to `xdg-open` (see [`spawn_detached`]). The callers pass an
+/// absolute path or an `https:` URL, so it can never be read as an option.
+fn xdg_open(target: &OsStr) -> std::io::Result<()> {
     let opener = find_program(OsStr::new("xdg-open"), std::env::var_os("PATH").as_deref())
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "xdg-open"))?;
-    // `dir` is absolute (starts with `/`), so it can never be read as an option.
-    let mut cmd = Command::new(opener);
-    cmd.arg(dir);
-    let mut child = cmd.spawn()?;
-    std::thread::spawn(move || child.wait());
-    Ok(())
+    spawn_detached(&opener, &[target], None)
 }
 
-/// Opens an app-built `https://` URL in the default browser through
-/// `xdg-open`. The URL starts with `https:`, so it can never be read as an option.
+/// Opens an already validated directory in the file manager.
+pub fn open_folder(dir: &Path) -> std::io::Result<()> {
+    xdg_open(dir.as_os_str())
+}
+
+/// Opens an app-built `https://` URL in the default browser.
 pub fn open_url(url: &str) -> std::io::Result<()> {
-    let opener = find_program(OsStr::new("xdg-open"), std::env::var_os("PATH").as_deref())
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "xdg-open"))?;
-    let mut child = Command::new(opener).arg(url).spawn()?;
-    std::thread::spawn(move || child.wait());
-    Ok(())
+    xdg_open(OsStr::new(url))
 }
 
 /// The terminal emulator to open: `$TERMINAL` when it names a program,
@@ -171,6 +178,41 @@ mod tests {
         let _ = child.wait();
         assert_eq!(r, Err(crate::errors::SESSION_NOT_LIVE.to_string()));
         assert!(alive);
+    }
+
+    #[test]
+    fn detached_program_gets_the_cleaned_environment() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("env.txt");
+        // Run through sh: executing a file this process just wrote can fail
+        // with "text file busy" while another test thread forks.
+        let script = dir.path().join("dump-env");
+        // Written to a temporary name and renamed, so the test never reads a half-written file.
+        std::fs::write(&script, format!("#!/bin/sh\nprintf '%s|' \"$1\" > \"{0}.tmp\"\nenv >> \"{0}.tmp\"\nmv \"{0}.tmp\" \"{0}\"\n", out.display())).unwrap();
+        let vars = [
+            ("PATH", "/tmp/.mount_t/usr/bin:/usr/bin:/bin"),
+            ("APPDIR", "/tmp/.mount_t"),
+            ("APPIMAGE", "/home/u/app.AppImage"),
+            ("LD_LIBRARY_PATH", "/tmp/.mount_t/usr/lib"),
+            ("CLAUDECODE", "1"),
+            ("KEEP_ME", "yes"),
+        ]
+        .map(|(k, v)| (OsString::from(k), OsString::from(v)));
+        spawn_detached_env(Path::new("/bin/sh"), &[script.as_os_str(), OsStr::new("https://claude.ai/x")], None, vars).unwrap();
+        let t = std::time::Instant::now();
+        while !out.exists() {
+            assert!(t.elapsed() < std::time::Duration::from_secs(5), "script did not run");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let text = std::fs::read_to_string(&out).unwrap();
+        let (arg, env) = text.split_once('|').unwrap();
+        assert_eq!(arg, "https://claude.ai/x");
+        let lines: Vec<&str> = env.lines().collect();
+        assert!(lines.contains(&"KEEP_ME=yes"), "{env}");
+        assert!(lines.contains(&"PATH=/usr/bin:/bin"), "{env}");
+        for gone in ["APPDIR=", "APPIMAGE=", "LD_LIBRARY_PATH=", "CLAUDECODE="] {
+            assert!(!lines.iter().any(|l| l.starts_with(gone)), "{gone} leaked: {env}");
+        }
     }
 
     #[test]
