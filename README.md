@@ -71,6 +71,22 @@ closed session in its own folder.
 ### Session detail
 
 - The subagent tree and the most recent tool calls.
+- **Conversation tab** (Terminal | Conversation | Info): the session's
+  conversation read from its transcript, in steps like claude.ai ("Ran a
+  command, read a file"), for live and closed sessions. Images Claude showed
+  appear as thumbnails on their step and open larger in a popup (close with
+  Esc, a click outside or the button). Only the current branch is shown:
+  messages abandoned by a rewind or edit are hidden. History before a
+  `/compact` stays, with a "Conversation compacted" divider.
+- **Message box**: for a session that runs in an app terminal, text typed in
+  the box is sent to the session. Enter sends, Shift+Enter adds a new line;
+  multi-line text arrives as one message. The box is disabled while Claude
+  waits for approval or an answer. Text already typed in the terminal's own
+  input is sent together with it. Outside the app, the Move to app / Go to
+  tab placeholder shows instead; a closed session shows Resume.
+- **Remote Control mark**: a live session that has Remote Control on shows a
+  small mark on its dashboard card and tab row. Clicking it opens the session
+  on claude.ai in your system browser.
 - **Changed files**: every file the session and its subagents changed with a
   successful Edit, Write, MultiEdit or NotebookEdit call, with the number of
   edits, newest first. Paths inside the session folder are shown relative to
@@ -455,6 +471,15 @@ Claude ve Claude Code, Anthropic'in ticari markalarıdır.
 - **Oturum ayrıntısı:** alt ajan ağacı, son tool çağrıları, oturumun ve alt
   ajanlarının değiştirdiği dosyalar, "Sekmeye git"
   (gömülü terminal ya da Windows Terminal sekmesi), kapanmış oturumu sürdürme.
+- **Konuşma sekmesi:** oturumun konuşması transkriptten okunur (Terminal |
+  Konuşma | Bilgi); Claude'un gösterdiği görseller küçük resim olarak görünür
+  ve açılır pencerede büyür. Yalnızca geçerli dal gösterilir (geri sarma ile
+  terk edilenler gizli); `/compact` öncesi geçmiş "Konuşma sıkıştırıldı"
+  ayracıyla kalır. Uygulama terminalinde çalışan oturuma mesaj kutusundan
+  metin gönderilir (Enter gönderir, Shift+Enter yeni satır; Claude onay
+  beklerken kapalı); uygulama dışındaki oturumda "Uygulamaya taşı" / "Sekmeye
+  git", kapanmışta "Devam et" görünür. Remote Control açık canlı oturumlarda
+  kart ve sekme satırında küçük bir işaret, tıklayınca claude.ai'de açar.
 - **Geçmiş:** önbellekli dizin, kullanım grafikleri (token, tahmini $; 7/30/90 gün, projeler,
   modeller; çalışan oturumlar dahil), canlı ve geçmiş oturumlarda içerikte
   arama (50 sonuç, 8 sn, 2 GiB ya da iptalde durur), "Devam et" ile

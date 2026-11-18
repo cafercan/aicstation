@@ -241,6 +241,23 @@ everything below.
   keys are sent (they differ in multi-line and vim mode; Esc can rewind).
   Accepted: the user writes either in the box or in the terminal.
 
+### Checked on this machine (Claude Code 2.1.327)
+
+- An AskUserQuestion prompt shows in the registry as `status: "waiting"`,
+  `waitingFor: "input needed"`.
+- A plan-mode plan approval (ExitPlanMode) shows as `status: "waiting"`,
+  `waitingFor: "permission prompt"`.
+- So both prompts block the message box; the accepted risk in "Sending while
+  Claude works" does not occur for them.
+- `/compact` writes a `system` line with `subtype: "compact_boundary"`,
+  `parentUuid: null` and `logicalParentUuid: <uuid>`, followed by a `user`
+  line with `isCompactSummary: true` and `isVisibleInTranscriptOnly: true`,
+  as the implementation assumes.
+- Parallel tool calls branch off the `parentUuid` chain (tool_use #2 is a
+  child of tool_use #1, with the same `message.id`). Decided during
+  implementation: the view includes assistant lines with the same
+  `message.id` and the results that answer tool uses it shows.
+
 ## Left to the builder
 
 - Module, component, command and error-code names; file split.
