@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
 
 const MAX_TEXT: usize = 64 * 1024;
 const MAX_LINE: usize = crate::transcript::MAX_LINE;
@@ -30,6 +31,9 @@ pub enum NodeBody {
     /// (tool_use_id, is_error, images)
     ToolResults(Vec<(String, bool, Vec<ImageRef>)>),
     CompactBoundary,
+    /// A line the system wrote into the conversation (a background task
+    /// finished): its summary, empty when it has none.
+    Notice { text: String },
     Other,
 }
 
@@ -130,9 +134,74 @@ fn tag<'a>(t: &'a str, name: &str) -> Option<&'a str> {
 
 fn is_hidden_text(t: &str) -> bool {
     let t = t.trim_start();
-    ["<local-command-stdout>", "<local-command-caveat>", "<system-reminder>"]
+    ["<local-command-stdout>", "<local-command-caveat>", "<system-reminder>", "<bash-stdout>", "<bash-stderr>"]
         .iter()
         .any(|p| t.starts_with(p))
+}
+
+/// `t` without `<pasted_content …>` / `</pasted_content>` wrappers (Claude
+/// Code keeps a long paste in them); what they wrap stays.
+fn strip_pasted(t: &str) -> String {
+    const OPEN: &str = "<pasted_content";
+    const CLOSE: &str = "</pasted_content>";
+    let mut out = String::with_capacity(t.len());
+    let mut rest = t;
+    while let Some(at) = rest.find('<') {
+        out.push_str(&rest[..at]);
+        rest = &rest[at..];
+        if let Some(after) = rest.strip_prefix(CLOSE) {
+            rest = after;
+        } else if let Some(after) = rest.strip_prefix(OPEN).filter(|a| a.starts_with([' ', '>'])) {
+            match after.find('>') {
+                Some(end) => rest = &after[end + 1..],
+                None => {
+                    out.push_str(rest);
+                    rest = "";
+                }
+            }
+        } else {
+            out.push('<');
+            rest = &rest[1..];
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// One text block of a user message as shown: a slash command as typed, a
+/// `!` shell command as `! cmd`, a paste without its wrapper.
+fn shown_user_text(t: &str) -> String {
+    if let Some(name) = tag(t, "command-name") {
+        let args = tag(t, "command-args").unwrap_or("").trim();
+        return if args.is_empty() { name.trim().to_string() } else { format!("{} {}", name.trim(), args) };
+    }
+    if t.trim_start().starts_with("<bash-input>") {
+        if let Some(cmd) = tag(t, "bash-input") {
+            return format!("! {}", cmd.trim());
+        }
+    }
+    strip_pasted(t)
+}
+
+/// Body of a system-written prompt: a background task's notice (its summary)
+/// or, for anything else, `Other`.
+fn notice_body(content: &Value) -> NodeBody {
+    let text = match content {
+        Value::String(t) => t.as_str(),
+        Value::Array(a) => a.iter().filter(|b| s(b, "type") == Some("text")).find_map(|b| s(b, "text")).unwrap_or(""),
+        _ => "",
+    };
+    if !text.trim_start().starts_with("<task-notification>") {
+        return NodeBody::Other;
+    }
+    let summary = tag(text, "summary").map_or("", str::trim);
+    NodeBody::Notice { text: prefix(summary, MAX_TEXT).to_string() }
+}
+
+/// Who wrote a prompt: `origin.kind` (absent on older lines) and whether
+/// `promptSource` is `system`.
+fn written_by_system(origin_kind: Option<&str>, prompt_source: Option<&str>) -> bool {
+    origin_kind.is_some_and(|k| k != "human") || prompt_source == Some("system")
 }
 
 fn user_body(offset: u64, content: &Value) -> NodeBody {
@@ -169,22 +238,61 @@ fn user_body(offset: u64, content: &Value) -> NodeBody {
     if images.is_empty() && !texts.is_empty() && texts.iter().all(|t| is_hidden_text(t)) {
         return NodeBody::Other;
     }
-    let joined = texts
-        .iter()
-        .map(|t| match tag(t, "command-name") {
-            Some(name) => {
-                let args = tag(t, "command-args").unwrap_or("").trim();
-                if args.is_empty() { name.trim().to_string() } else { format!("{} {}", name.trim(), args) }
-            }
-            None => t.to_string(),
-        })
-        .collect::<Vec<_>>()
-        .join("\n\n");
+    if images.is_empty() && texts.len() == 1 && texts[0].trim_start().starts_with("<task-notification>") {
+        // Older lines of a background task's notification carry no origin.
+        return notice_body(content);
+    }
+    let joined = texts.iter().map(|t| shown_user_text(t)).collect::<Vec<_>>().join("\n\n");
     if joined.is_empty() && images.is_empty() {
         return NodeBody::Other;
     }
     let (text, truncated) = cap_text(&joined);
     NodeBody::UserText { text, truncated, images }
+}
+
+/// A user line: the user's message, a tool result, or a system-written
+/// prompt (a background task's notice; anything else is hidden).
+fn user_line_body(offset: u64, v: &Value, content: &Value) -> NodeBody {
+    let kind = v.get("origin").and_then(|o| s(o, "kind"));
+    if kind == Some("task-notification") {
+        return notice_body(content);
+    }
+    let body = user_body(offset, content);
+    if written_by_system(kind, s(v, "promptSource")) && !matches!(body, NodeBody::ToolResults(_)) {
+        return NodeBody::Other;
+    }
+    body
+}
+
+/// An attachment line. Only `queued_command` shows: a prompt typed while
+/// Claude was busy (recorded only here) or a background task's notice.
+fn attachment_body(offset: u64, v: &Value) -> NodeBody {
+    let Some(att) = v.get("attachment").filter(|a| s(a, "type") == Some("queued_command")) else {
+        return NodeBody::Other;
+    };
+    let Some(prompt) = att.get("prompt") else { return NodeBody::Other };
+    let kind = att.get("origin").and_then(|o| s(o, "kind"));
+    let mode = s(att, "commandMode");
+    if kind == Some("task-notification") || mode == Some("task-notification") {
+        return notice_body(prompt);
+    }
+    if mode != Some("prompt") || written_by_system(kind, None) {
+        return NodeBody::Other;
+    }
+    match user_body(offset, prompt) {
+        b @ (NodeBody::UserText { .. } | NodeBody::Notice { .. }) => b,
+        _ => NodeBody::Other,
+    }
+}
+
+/// The content array a line's image ordinals count in: `message.content`,
+/// or a queued prompt's `attachment.prompt`.
+fn image_content(v: &Value) -> Option<&Vec<Value>> {
+    let content = match s(v, "type") {
+        Some("attachment") => v.get("attachment").and_then(|a| a.get("prompt")),
+        _ => v.get("message").and_then(|m| m.get("content")),
+    };
+    content.and_then(Value::as_array)
 }
 
 fn assistant_body(content: &Value) -> NodeBody {
@@ -236,7 +344,8 @@ pub fn parse_node(offset: u64, line: &str) -> Option<Node> {
     let content = v.get("message").and_then(|m| m.get("content"));
     let body = match (s(&v, "type"), hidden) {
         (_, true) => NodeBody::Other,
-        (Some("user"), _) => content.map_or(NodeBody::Other, |c| user_body(offset, c)),
+        (Some("user"), _) => content.map_or(NodeBody::Other, |c| user_line_body(offset, &v, c)),
+        (Some("attachment"), _) => attachment_body(offset, &v),
         (Some("assistant"), _) => content.map_or(NodeBody::Other, assistant_body),
         (Some("system"), _) if s(&v, "subtype") == Some("compact_boundary") => NodeBody::CompactBoundary,
         _ => NodeBody::Other,
@@ -275,11 +384,7 @@ pub fn read_image(path: &Path, offset: u64, ordinal: u32) -> Result<(String, Str
     }
     let line = std::str::from_utf8(&buf).map_err(|_| ImageError::Gone)?;
     let v: Value = serde_json::from_str(line.trim_end()).map_err(|_| ImageError::Gone)?;
-    let content = v
-        .get("message")
-        .and_then(|m| m.get("content"))
-        .and_then(Value::as_array)
-        .ok_or(ImageError::Gone)?;
+    let content = image_content(&v).ok_or(ImageError::Gone)?;
     let mut found = None;
     walk_images(content, &mut 0, &mut |n, b| {
         if n == ordinal {
@@ -313,6 +418,9 @@ pub enum ConvItem {
     Assistant { text: String, truncated: bool, at_ms: i64 },
     Steps { steps: Vec<Step>, at_ms: i64 },
     Compacted { at_ms: i64 },
+    /// A one-line note from the system (a background task finished); an
+    /// empty text means it carried no summary.
+    Notice { text: String, at_ms: i64 },
 }
 
 /// Items `start..start + items.len()` of the `total` items of the branch
@@ -328,6 +436,14 @@ pub struct ConvPage {
 
 /// Items per page.
 pub const PAGE: u32 = 100;
+
+/// Source of every epoch in the process: a conversation dropped from a cache
+/// and opened again never repeats an epoch the UI may still hold.
+static EPOCHS: AtomicU32 = AtomicU32::new(0);
+
+fn next_epoch() -> u32 {
+    EPOCHS.fetch_add(1, Ordering::Relaxed)
+}
 
 /// The current branch of one transcript, kept up to date incrementally.
 pub struct Conversation {
@@ -352,7 +468,7 @@ impl Conversation {
             shown: Vec::new(),
             items: Vec::new(),
             images: HashSet::new(),
-            epoch: 0,
+            epoch: next_epoch(),
         }
     }
 
@@ -378,7 +494,7 @@ impl Conversation {
             self.leaf = None;
             self.shown.clear();
             self.items.clear();
-            self.epoch = self.epoch.wrapping_add(1);
+            self.epoch = next_epoch();
         }
         let changed = reset || !fresh.is_empty();
         for n in fresh {
@@ -405,7 +521,7 @@ impl Conversation {
         let old = std::mem::replace(&mut self.items, group(&shown));
         let keep = old.len().saturating_sub(1);
         if !uuids.starts_with(&self.shown) || self.items.get(..keep) != old.get(..keep) {
-            self.epoch = self.epoch.wrapping_add(1);
+            self.epoch = next_epoch();
         }
         self.images.clear();
         for item in &self.items {
@@ -599,6 +715,7 @@ fn group(chain: &[Link]) -> Vec<ConvItem> {
                 }
             }
             NodeBody::CompactBoundary => items.push(ConvItem::Compacted { at_ms: n.at_ms }),
+            NodeBody::Notice { text } => items.push(ConvItem::Notice { text: text.clone(), at_ms: n.at_ms }),
             NodeBody::Other => {}
         }
     }
@@ -849,6 +966,7 @@ mod tests {
                 ConvItem::Assistant { text, .. } => format!("A:{text}"),
                 ConvItem::Steps { steps, .. } => format!("S{}", steps.len()),
                 ConvItem::Compacted { .. } => "C".to_string(),
+                ConvItem::Notice { text, .. } => format!("N:{text}"),
             })
             .collect()
     }
@@ -880,7 +998,8 @@ mod tests {
                 ConvItem::User { at_ms, .. }
                 | ConvItem::Assistant { at_ms, .. }
                 | ConvItem::Steps { at_ms, .. }
-                | ConvItem::Compacted { at_ms } => *at_ms,
+                | ConvItem::Compacted { at_ms }
+                | ConvItem::Notice { at_ms, .. } => *at_ms,
             })
             .collect();
         assert_eq!(ats, [at_u, at_a, at_s, at_end]);
@@ -937,7 +1056,7 @@ mod tests {
         t.push(u("ub", Some("a0"), "B"));
         c.update().unwrap();
         assert_eq!(kinds(&all(&c)), ["U:start", "A:ok", "U:B"]);
-        assert!(c.page(None).epoch > e0);
+        assert_ne!(c.page(None).epoch, e0);
         // Extending the branch keeps the epoch.
         let e1 = c.page(None).epoch;
         t.push(a("ab", "ub", "reply B"));
@@ -1034,7 +1153,7 @@ mod tests {
         std::fs::write(&t.path, "").unwrap();
         c.update().unwrap();
         assert_eq!(c.page(None).total, 0);
-        assert_eq!(c.page(None).epoch, e0 + 1);
+        assert_ne!(c.page(None).epoch, e0);
     }
 
     #[test]
@@ -1164,13 +1283,165 @@ mod tests {
         let e0 = c.page(None).epoch;
         t.push(tr("r1", "a1", "t1", false, 0));
         c.update().unwrap();
-        assert_eq!(c.page(None).epoch, e0 + 1);
+        let e1 = c.page(None).epoch;
+        assert_ne!(e1, e0);
         let ConvItem::Steps { steps, .. } = &all(&c)[1] else { panic!() };
         assert!(steps[0].done);
         // A change to the last item alone keeps the epoch.
         t.push(a("a2", "r1", "more"));
         c.update().unwrap();
-        assert_eq!(c.page(None).epoch, e0 + 1);
+        assert_eq!(c.page(None).epoch, e1);
         assert_eq!(kinds(&all(&c)), ["U:go", "S1", "A:waiting\n\nmore"]);
+    }
+
+    fn text_of(n: Node) -> String {
+        match n.body {
+            NodeBody::UserText { text, .. } => text,
+            other => panic!("not user text: {other:?}"),
+        }
+    }
+
+    const TASK_NOTE: &str = "<task-notification>\n<task-id>b1</task-id>\n<tool-use-id>toolu_1</tool-use-id>\n<output-file>/tmp/x.output</output-file>\n<status>completed</status>\n<summary>  Background command \"ls\" completed (exit code 0)\n</summary>\n</task-notification>";
+
+    #[test]
+    fn task_notification_user_line_becomes_notice() {
+        let origin = r#","origin":{"kind":"task-notification","producer":"session-task"},"promptSource":"system","turnOrigin":"task_notification""#;
+        let n = parse_node(0, &user(&serde_json::to_string(TASK_NOTE).unwrap(), origin)).unwrap();
+        assert_eq!(n.body, NodeBody::Notice { text: "Background command \"ls\" completed (exit code 0)".into() });
+        // No summary: the UI shows its own text.
+        let bare = "<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>";
+        let n = parse_node(0, &user(&serde_json::to_string(bare).unwrap(), origin)).unwrap();
+        assert_eq!(n.body, NodeBody::Notice { text: String::new() });
+        // Older lines carry no origin.
+        let n = parse_node(0, &user(&serde_json::to_string(TASK_NOTE).unwrap(), "")).unwrap();
+        assert!(matches!(n.body, NodeBody::Notice { .. }), "{:?}", n.body);
+    }
+
+    #[test]
+    fn system_written_user_lines_are_hidden() {
+        let peer = r#","origin":{"kind":"peer","from":"a1"},"promptSource":"system","turnOrigin":"peer""#;
+        assert_eq!(parse_node(0, &user(r#""<peer-message>hi</peer-message>""#, peer)).unwrap().body, NodeBody::Other);
+        let sys = r#","promptSource":"system""#;
+        assert_eq!(parse_node(0, &user(r#""note""#, sys)).unwrap().body, NodeBody::Other);
+        let human = r#","origin":{"kind":"human"},"promptSource":"typed","turnOrigin":"human""#;
+        assert_eq!(text_of(parse_node(0, &user(r#""selam""#, human)).unwrap()), "selam");
+        // Tool results never carry an origin and stay results.
+        let r = r#"[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]"#;
+        assert!(matches!(parse_node(0, &user(r, sys)).unwrap().body, NodeBody::ToolResults(_)));
+    }
+
+    #[test]
+    fn bash_mode_lines_and_pasted_content() {
+        assert_eq!(text_of(parse_node(0, &user(r#""<bash-input>git status</bash-input>""#, "")).unwrap()), "! git status");
+        for out in [
+            r#""<bash-stdout>On branch main</bash-stdout><bash-stderr></bash-stderr>""#,
+            r#""<bash-stderr>boom</bash-stderr>""#,
+        ] {
+            assert_eq!(parse_node(0, &user(out, "")).unwrap().body, NodeBody::Other, "{out}");
+        }
+        let pasted = r#""headers:\n\n<pasted_content id=\"d1f4\">\nA | B\n</pasted_content>\nthanks""#;
+        assert_eq!(text_of(parse_node(0, &user(pasted, "")).unwrap()), "headers:\n\n\nA | B\n\nthanks");
+        let two = r#""<pasted_content id=\"a\">x</pasted_content> and <pasted_content>y</pasted_content> <pasted_contentz>""#;
+        assert_eq!(text_of(parse_node(0, &user(two, "")).unwrap()), "x and y <pasted_contentz>");
+    }
+
+    fn queued(prompt: Value, mode: &str, origin: Value) -> String {
+        serde_json::json!({
+            "type": "attachment", "uuid": "q", "parentUuid": "p", "timestamp": "2026-01-01T00:00:00Z",
+            "attachment": {"type": "queued_command", "prompt": prompt, "commandMode": mode, "origin": origin, "humanTurn": true},
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn queued_prompt_becomes_user_text() {
+        let human = serde_json::json!({"kind": "human"});
+        let n = parse_node(0, &queued("typed while busy".into(), "prompt", human.clone())).unwrap();
+        assert_eq!((n.uuid.as_str(), n.parent.as_deref()), ("q", Some("p")));
+        assert_eq!(n.at_ms, 1_767_225_600_000);
+        assert_eq!(text_of(n), "typed while busy");
+        // Origin missing: still the user's.
+        assert_eq!(text_of(parse_node(0, &queued("old".into(), "prompt", Value::Null)).unwrap()), "old");
+        let blocks = serde_json::json!([{"type":"text","text":"see"}, img()]);
+        let n = parse_node(9, &queued(blocks, "prompt", human.clone())).unwrap();
+        assert_eq!(
+            n.body,
+            NodeBody::UserText {
+                text: "see".into(),
+                truncated: false,
+                images: vec![ImageRef { offset: 9, ordinal: 0, media_type: "image/png".into() }],
+            }
+        );
+        let note = queued(TASK_NOTE.into(), "task-notification", serde_json::json!({"kind":"task-notification"}));
+        assert_eq!(
+            parse_node(0, &note).unwrap().body,
+            NodeBody::Notice { text: "Background command \"ls\" completed (exit code 0)".into() }
+        );
+        let peer = queued("hi".into(), "prompt", serde_json::json!({"kind":"peer"}));
+        assert_eq!(parse_node(0, &peer).unwrap().body, NodeBody::Other);
+        let bash = queued("ls".into(), "bash", human);
+        assert_eq!(parse_node(0, &bash).unwrap().body, NodeBody::Other);
+    }
+
+    #[test]
+    fn read_image_finds_queued_prompt_image() {
+        let mut t = Tx::new();
+        t.push(u("u1", None, "go"));
+        let prompt = serde_json::json!([{"type":"text","text":"a"}, {"type":"image","source":{"type":"base64","media_type":"image/jpeg","data":"/9j/"}}, img()]);
+        let (off, _) = t.push(serde_json::from_str(&queued(prompt, "prompt", serde_json::json!({"kind":"human"}))).unwrap());
+        let mut c = Conversation::new(t.path.clone());
+        c.update().unwrap();
+        assert!(c.has_image(off, 0) && c.has_image(off, 1));
+        assert_eq!(read_image(&t.path, off, 0), Ok(("image/jpeg".into(), "/9j/".into())));
+        assert_eq!(read_image(&t.path, off, 1), Ok(("image/png".into(), "AAAA".into())));
+        assert_eq!(read_image(&t.path, off, 2), Err(ImageError::Gone));
+    }
+
+    #[test]
+    fn notice_and_queued_prompt_take_their_place_in_the_conversation() {
+        let mut t = Tx::new();
+        t.push(u("u1", None, "go"));
+        t.push(a("a1", "u1", "working"));
+        t.push(bash("b1", "a1", "t1"));
+        t.push(tr("r1", "b1", "t1", false, 0));
+        let mut note = u("n1", Some("r1"), TASK_NOTE);
+        note["origin"] = serde_json::json!({"kind":"task-notification"});
+        note["promptSource"] = "system".into();
+        t.push(note);
+        t.push(bash("b2", "n1", "t2"));
+        let mut q: Value = serde_json::from_str(&queued("also this".into(), "prompt", serde_json::json!({"kind":"human"}))).unwrap();
+        q["uuid"] = "q1".into();
+        q["parentUuid"] = "b2".into();
+        t.push(q);
+        t.push(a("a2", "q1", "ok"));
+        let items = all(&t.conv());
+        assert_eq!(
+            kinds(&items),
+            ["U:go", "A:working", "S1", "N:Background command \"ls\" completed (exit code 0)", "S1", "U:also this", "A:ok"]
+        );
+    }
+
+    #[test]
+    fn serializes_notice() {
+        let item = ConvItem::Notice { text: "done".into(), at_ms: 3 };
+        assert_eq!(serde_json::to_value(&item).unwrap(), serde_json::json!({"kind":"notice","text":"done","atMs":3}));
+    }
+
+    #[test]
+    fn epochs_never_repeat_across_instances() {
+        let mut t = Tx::new();
+        t.push(u("u1", None, "go"));
+        t.push(u("u2", Some("u1"), "x"));
+        let mut c = t.conv();
+        let first = c.page(None).epoch;
+        t.push(u("u3", Some("u1"), "y"));
+        c.update().unwrap();
+        let bumped = c.page(None).epoch;
+        assert_ne!(bumped, first);
+        // A cache entry dropped and created again must not reuse an epoch the
+        // UI may still hold.
+        drop(c);
+        let again = t.conv().page(None).epoch;
+        assert!(again != first && again != bumped, "{first} {bumped} {again}");
     }
 }
