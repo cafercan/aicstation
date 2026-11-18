@@ -170,6 +170,7 @@ export const az: Dict = {
   "err.send_too_large": "Mətn çox uzundur (ən çox 32 KB).",
   "err.send_waiting": "Sessiya öz terminalında cavab gözləyir; əvvəlcə orada cavab verilməlidir.",
   "err.send_not_embedded": "Bu sessiya tətbiq terminalında işləmir; ona mətn göndərilə bilməz.",
+  "err.send_not_submitted": "Mətn sessiyanın terminalına yapışdırıldı, lakin göndərilmədi ({detail}). Onu orada silin və ya Terminal tabından göndərin.",
   "err.remote_off": "Bu sessiyada Remote Control açıq deyil.",
   "err.url_open_failed": "Brauzer açılmadı",
   "err.resume_folder_mismatch": "Sessiyanın layihə qovluğunda davam etmək olmur",

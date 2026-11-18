@@ -173,6 +173,7 @@ export const de: Dict = {
   "err.send_too_large": "Der Text ist zu lang (höchstens 32 KB).",
   "err.send_waiting": "Die Sitzung wartet in ihrem Terminal auf eine Antwort; diese muss zuerst dort gegeben werden.",
   "err.send_not_embedded": "Diese Sitzung läuft nicht in einem Terminal der App; ihr kann kein Text gesendet werden.",
+  "err.send_not_submitted": "Der Text wurde in das Terminal der Sitzung eingefügt, aber nicht gesendet ({detail}). Löschen Sie ihn dort oder senden Sie ihn über den Tab „Terminal“.",
   "err.remote_off": "Remote Control ist für diese Sitzung nicht aktiv.",
   "err.url_open_failed": "Der Browser konnte nicht geöffnet werden",
   "err.resume_folder_mismatch": "Fortsetzen im Projektordner der Sitzung nicht möglich",

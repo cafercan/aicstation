@@ -1695,6 +1695,15 @@ mod tests {
     }
 
     #[test]
+    fn send_text_refusal_before_the_paste_keeps_its_own_code() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, _, _) = send_env(tmp.path(), "waiting");
+        let terms = FakeTerms::new(|_| {});
+        assert_eq!(send_text(&state, &terms, ADOPT_ID, "evet", Duration::ZERO).unwrap_err(), errors::SEND_WAITING);
+        assert!(terms.writes().is_empty());
+    }
+
+    #[test]
     fn send_text_skips_enter_when_the_session_turns_waiting_after_the_paste() {
         let tmp = tempfile::tempdir().unwrap();
         let (state, reg, w) = send_env(tmp.path(), "busy");
@@ -1704,7 +1713,10 @@ mod tests {
                 write_registry(&reg2, &w2, "waiting");
             }
         });
-        assert_eq!(send_text(&state, &terms, ADOPT_ID, "evet", Duration::ZERO).unwrap_err(), errors::SEND_WAITING);
+        assert_eq!(
+            send_text(&state, &terms, ADOPT_ID, "evet", Duration::ZERO).unwrap_err(),
+            "send_not_submitted:send_waiting"
+        );
         assert_eq!(terms.writes().len(), 1, "no Enter after the paste");
     }
 
@@ -1718,7 +1730,10 @@ mod tests {
                 fs::remove_file(&reg).unwrap();
             }
         });
-        assert_eq!(send_text(&state, &terms, ADOPT_ID, "ls -la", Duration::ZERO).unwrap_err(), errors::SESSION_NOT_LIVE);
+        assert_eq!(
+            send_text(&state, &terms, ADOPT_ID, "ls -la", Duration::ZERO).unwrap_err(),
+            "send_not_submitted:session_not_live"
+        );
         assert_eq!(terms.writes().len(), 1, "the text is never run in the shell");
     }
 
@@ -1744,7 +1759,10 @@ mod tests {
         let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(MovingProbe(adopt_probe(), lookups.clone())));
         lookups.store(0, Ordering::SeqCst);
         let terms = FakeTerms::new(|_| {});
-        assert_eq!(send_text(&state, &terms, ADOPT_ID, "x", Duration::ZERO).unwrap_err(), errors::SEND_NOT_EMBEDDED);
+        assert_eq!(
+            send_text(&state, &terms, ADOPT_ID, "x", Duration::ZERO).unwrap_err(),
+            "send_not_submitted:send_not_embedded"
+        );
         assert_eq!(terms.writes().len(), 1, "no Enter once the session runs in another terminal");
     }
 
@@ -1921,6 +1939,8 @@ impl Terminals for PtyManager {
 /// target is checked again: the Enter is written only when the session is
 /// still idle or busy (not waiting: Enter would answer its prompt) and still
 /// runs in the same terminal (else Enter would run the text in the shell).
+/// A failure after the paste is `send_not_submitted:<inner code>`: the text
+/// then sits unsent in the terminal's input.
 pub fn send_text(
     app: &AppState,
     terms: &dyn Terminals,
@@ -1933,10 +1953,13 @@ pub fn send_text(
     let id = terms.id_for_pid(shell).ok_or(errors::SEND_NOT_EMBEDDED)?;
     terms.write(id, &payload)?;
     std::thread::sleep(gap);
-    if app.send_target(session_id)? != shell || terms.id_for_pid(shell) != Some(id) {
-        return Err(errors::SEND_NOT_EMBEDDED.into());
-    }
-    terms.write(id, "\r")
+    let submit = || {
+        if app.send_target(session_id)? != shell || terms.id_for_pid(shell) != Some(id) {
+            return Err(errors::SEND_NOT_EMBEDDED.to_string());
+        }
+        terms.write(id, "\r")
+    };
+    submit().map_err(|e| errors::with(errors::SEND_NOT_SUBMITTED, e))
 }
 
 /// `send_text` on the blocking pool (it sleeps between the two writes).
@@ -2091,5 +2114,4 @@ pub async fn set_usage_bridge(app: tauri::AppHandle, on: bool) -> Result<bool, S
 #[tauri::command]
 pub async fn git_dirty(cwd: String) -> Option<bool> {
     tauri::async_runtime::spawn_blocking(move || crate::gitstat::dirty(&cwd)).await.ok().flatten()
-
 }

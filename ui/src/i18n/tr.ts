@@ -180,6 +180,7 @@ export const tr = {
   "err.send_too_large": "Metin çok uzun (en fazla 32 KB).",
   "err.send_waiting": "Oturum terminalinde bir yanıt bekliyor; önce orada yanıtlanmalı.",
   "err.send_not_embedded": "Bu oturum bir uygulama terminalinde çalışmıyor; ona metin gönderilemez.",
+  "err.send_not_submitted": "Metin oturumun terminaline yapıştırıldı ama gönderilmedi ({detail}). Orada silin ya da Terminal sekmesinden gönderin.",
   "err.remote_off": "Bu oturumda Remote Control açık değil.",
   "err.url_open_failed": "Tarayıcı açılamadı",
   "err.resume_folder_mismatch": "Oturumun proje klasöründe devam edilemiyor",

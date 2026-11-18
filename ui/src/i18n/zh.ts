@@ -170,6 +170,7 @@ export const zh: Dict = {
   "err.send_too_large": "文本过长（最多 32 KB）。",
   "err.send_waiting": "会话正在其终端中等待回复；请先在那里回复。",
   "err.send_not_embedded": "此会话未在应用的终端中运行，无法向其发送文本。",
+  "err.send_not_submitted": "文本已粘贴到会话的终端中，但未发送（{detail}）。请在那里清除它，或从“终端”选项卡发送。",
   "err.remote_off": "此会话未开启 Remote Control。",
   "err.url_open_failed": "无法打开浏览器",
   "err.resume_folder_mismatch": "无法在该会话的项目文件夹中恢复",

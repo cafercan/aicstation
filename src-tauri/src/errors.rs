@@ -108,6 +108,10 @@ pub const SEND_TOO_LARGE: &str = "send_too_large";
 pub const SEND_WAITING: &str = "send_waiting";
 /// The session does not run in an app terminal, so text cannot be sent to it.
 pub const SEND_NOT_EMBEDDED: &str = "send_not_embedded";
+/// `send_not_submitted:<inner code>`: the text was pasted into the session's
+/// terminal, but the check before the Enter failed (inner code), so it sits
+/// there unsent.
+pub const SEND_NOT_SUBMITTED: &str = "send_not_submitted";
 /// Remote Control is not on for the session.
 pub const REMOTE_OFF: &str = "remote_off";
 /// `url_open_failed:<OS message>`: the browser could not be started.
@@ -125,7 +129,7 @@ pub const ALL: &[&str] = &[
     ADOPT_NOT_MOVABLE, ADOPT_BUSY, ADOPT_WAITING, ADOPT_AGENTS_RUNNING, ADOPT_EMBEDDED, ADOPT_IN_PROGRESS, ADOPT_TIMEOUT,
     ADOPT_KILL_FAILED, ADOPT_RESUME_FAILED,
     CONV_UNAVAILABLE, CONV_IMAGE_GONE,
-    SEND_EMPTY, SEND_TOO_LARGE, SEND_WAITING, SEND_NOT_EMBEDDED, REMOTE_OFF, URL_OPEN_FAILED,
+    SEND_EMPTY, SEND_TOO_LARGE, SEND_WAITING, SEND_NOT_EMBEDDED, SEND_NOT_SUBMITTED, REMOTE_OFF, URL_OPEN_FAILED,
 ];
 
 #[cfg(test)]

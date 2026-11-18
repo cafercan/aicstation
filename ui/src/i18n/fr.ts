@@ -173,6 +173,7 @@ export const fr: Dict = {
   "err.send_too_large": "Le texte est trop long (32 Ko au maximum).",
   "err.send_waiting": "La session attend une réponse dans son terminal ; il faut d'abord y répondre.",
   "err.send_not_embedded": "Cette session ne s'exécute pas dans un terminal de l'application ; impossible de lui envoyer du texte.",
+  "err.send_not_submitted": "Le texte a été collé dans le terminal de la session, mais pas envoyé ({detail}). Effacez-le là-bas ou envoyez-le depuis l'onglet Terminal.",
   "err.remote_off": "Remote Control n'est pas activé pour cette session.",
   "err.url_open_failed": "Impossible d'ouvrir le navigateur",
   "err.resume_folder_mismatch": "Impossible de reprendre dans le dossier de projet de la session",
