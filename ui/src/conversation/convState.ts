@@ -11,10 +11,11 @@ export type ConvState = { epoch: number; start: number; total: number; items: Co
 export function applyPage(s: ConvState | null, p: ConvPage): ConvState {
   const fresh = { epoch: p.epoch, start: p.start, total: p.total, items: p.items };
   if (!s || s.epoch !== p.epoch) return fresh;
+  // Assumption: an older page always ends exactly at `s.start`; p.start == s.start is a since page.
   if (p.start < s.start) {
-    const head = p.items.slice(0, s.start - p.start);
-    if (p.start + head.length < s.start) return fresh;
-    return { epoch: s.epoch, start: p.start, total: p.total, items: [...head, ...s.items] };
+    // Anything else (a gap, or reaching into the window after the total shrank) replaces the window.
+    if (p.start + p.items.length !== s.start) return fresh;
+    return { epoch: s.epoch, start: p.start, total: p.total, items: [...p.items, ...s.items] };
   }
   const at = p.start - s.start;
   if (at > s.items.length) return fresh;

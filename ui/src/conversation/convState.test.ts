@@ -20,11 +20,24 @@ test("older page is prepended", () => {
   expect(texts(s)).toEqual(["a", "b", "c", "d", "e"]);
 });
 
-test("older page overlapping s.start only contributes the part before it", () => {
-  const s0 = applyPage(null, page(1, 3, 5, "d", "e"));
-  const s = applyPage(s0, page(1, 1, 5, "b", "c", "D"));
-  expect(s.start).toBe(1);
-  expect(texts(s)).toEqual(["b", "c", "d", "e"]);
+test("a page that would leave a gap replaces the window", () => {
+  const s0 = applyPage(null, page(1, 5, 7, "f", "g"));
+  const s = applyPage(s0, page(1, 0, 7, "a", "b"));
+  expect(s.start).toBe(0);
+  expect(texts(s)).toEqual(["a", "b"]);
+  const s2 = applyPage(s0, page(1, 8, 10, "i"));
+  expect(s2.start).toBe(8);
+  expect(texts(s2)).toEqual(["i"]);
+});
+
+test("since page after the total shrank", () => {
+  const s0 = applyPage(null, page(1, 3, 8, "d", "e", "f", "g", "h"));
+  const below = applyPage(s0, page(1, 1, 3, "b", "c", "D"));
+  expect(below.start).toBe(1);
+  expect(texts(below)).toEqual(["b", "c", "D"]);
+  const inside = applyPage(s0, page(1, 5, 6, "F", "G"));
+  expect(inside.start).toBe(3);
+  expect(texts(inside)).toEqual(["d", "e", "F", "G"]);
 });
 
 test("since page replaces the last item and appends", () => {

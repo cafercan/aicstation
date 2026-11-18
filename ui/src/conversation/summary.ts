@@ -1,5 +1,5 @@
 import type { ConvStep } from "../api";
-import type { useT } from "../i18n";
+import { locale, type useT } from "../i18n";
 
 export type TFn = ReturnType<typeof useT>;
 
@@ -7,7 +7,7 @@ const EDIT = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 const SEARCH = new Set(["Grep", "Glob"]);
 
 /** One line for a run of tool steps: counts per kind, first-seen order. */
-export function stepSummary(steps: ConvStep[], t: TFn): string {
+export function stepSummary(steps: ConvStep[], t: TFn, loc: string = locale()): string {
   const order: string[] = [];
   const groups = new Map<string, ConvStep[]>();
   for (const s of steps) {
@@ -27,5 +27,8 @@ export function stepSummary(steps: ConvStep[], t: TFn): string {
     }
   });
   const text = parts.join(", ");
-  return text.charAt(0).toUpperCase() + text.slice(1);
+  // A leading file name keeps its case ("grid.jpg okundu").
+  const first = groups.get(order[0]);
+  if (first && first.length === 1 && first[0].target && text.startsWith(first[0].target)) return text;
+  return text.charAt(0).toLocaleUpperCase(loc) + text.slice(1);
 }

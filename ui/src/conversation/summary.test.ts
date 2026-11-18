@@ -28,6 +28,13 @@ test("Turkish", () => {
   expect(stepSummary([st("Bash"), st("Bash"), st("Read", "grid.jpg")], tr)).toBe("2 komut çalıştırdı, grid.jpg okundu");
 });
 
+test("a leading file name is not capitalised; other text is", () => {
+  expect(stepSummary([st("Read", "grid.jpg")], tr, "tr-TR")).toBe("grid.jpg okundu");
+  expect(stepSummary([st("Edit", "a.ts")], en, "en-US")).toBe("Edited a.ts");
+  expect(stepSummary([st("Bash"), st("Bash"), st("Read", "grid.jpg")], en, "en-US")).toBe("Ran 2 commands, read grid.jpg");
+  expect(stepSummary([st("Grep")], tr, "tr-TR")).toBe("Arama yaptı");
+});
+
 test("empty", () => {
   expect(stepSummary([], en)).toBe("");
 });
