@@ -507,12 +507,15 @@ impl AppState {
     }
 
     /// The shell pid of the app terminal a live session runs in, for sending
-    /// it text. Read fresh from the registry (never the cached snapshot): a
-    /// session waiting for an answer is `send_waiting` (the text would land in
-    /// its prompt), one outside an app terminal is `send_not_embedded`.
+    /// it text. Read fresh from the registry (never the cached snapshot). Only
+    /// an idle or busy session with nothing in `waitingFor` takes text; any
+    /// other status (waiting, unknown, missing) is `send_waiting`, since the
+    /// text could land in a prompt. One outside an app terminal is
+    /// `send_not_embedded`.
     pub fn send_target(&self, id: &str) -> Result<u32, String> {
         let l = self.fresh_live(id)?;
-        if l.status == SessionStatus::Waiting || l.waiting_for.is_some() {
+        let ready = matches!(l.status, SessionStatus::Idle | SessionStatus::Busy) && l.waiting_for.is_none();
+        if !ready {
             return Err(errors::SEND_WAITING.into());
         }
         self.probe.terminal_pid(l.pid).ok_or_else(|| errors::SEND_NOT_EMBEDDED.into())
@@ -1643,6 +1646,118 @@ mod tests {
             assert_eq!(state.remote_url(ADOPT_ID).unwrap_err(), errors::REMOTE_OFF, "{bad}");
         }
     }
+
+    /// Records writes; `on_write` runs after each one (n = writes so far),
+    /// standing in for what happens in the terminal between the two writes.
+    struct FakeTerms {
+        shell: u32,
+        writes: Mutex<Vec<(u32, String)>>,
+        on_write: Box<dyn Fn(usize)>,
+    }
+    impl FakeTerms {
+        fn new(on_write: impl Fn(usize) + 'static) -> Self {
+            FakeTerms { shell: EMBED_SHELL, writes: Mutex::new(Vec::new()), on_write: Box::new(on_write) }
+        }
+        fn writes(&self) -> Vec<(u32, String)> {
+            lock(&self.writes).clone()
+        }
+    }
+    impl Terminals for FakeTerms {
+        fn id_for_pid(&self, pid: u32) -> Option<u32> {
+            (pid == self.shell).then_some(7)
+        }
+        fn write(&self, id: u32, data: &str) -> Result<(), String> {
+            let n = {
+                let mut w = lock(&self.writes);
+                w.push((id, data.to_string()));
+                w.len()
+            };
+            (self.on_write)(n);
+            Ok(())
+        }
+    }
+
+    fn send_env(tmp: &Path, status: &str) -> (AppState, PathBuf, String) {
+        let (claude, work, reg) = adopt_files(tmp, status, true);
+        let state = AppState::new(claude, tmp.join("c.json"), Box::new(EmbeddedProbe(adopt_probe())));
+        (state, reg, work.to_string_lossy().into_owned())
+    }
+
+    #[test]
+    fn send_text_writes_paste_then_enter() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, _, _) = send_env(tmp.path(), "busy");
+        let terms = FakeTerms::new(|_| {});
+        send_text(&state, &terms, ADOPT_ID, "merhaba\x1b[201~", Duration::ZERO).unwrap();
+        assert_eq!(terms.writes(), [(7, "\x1b[200~merhaba[201~\x1b[201~".to_string()), (7, "\r".to_string())]);
+        assert_eq!(send_text(&state, &terms, ADOPT_ID, " \x1b ", Duration::ZERO).unwrap_err(), errors::SEND_EMPTY);
+        assert_eq!(terms.writes().len(), 2, "nothing written for empty text");
+    }
+
+    #[test]
+    fn send_text_skips_enter_when_the_session_turns_waiting_after_the_paste() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, reg, w) = send_env(tmp.path(), "busy");
+        let (reg2, w2) = (reg.clone(), w.clone());
+        let terms = FakeTerms::new(move |n| {
+            if n == 1 {
+                write_registry(&reg2, &w2, "waiting");
+            }
+        });
+        assert_eq!(send_text(&state, &terms, ADOPT_ID, "evet", Duration::ZERO).unwrap_err(), errors::SEND_WAITING);
+        assert_eq!(terms.writes().len(), 1, "no Enter after the paste");
+    }
+
+    #[test]
+    fn send_text_skips_enter_when_the_session_left_its_terminal() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, reg, _) = send_env(tmp.path(), "idle");
+        // /exit typed meanwhile: the session is gone, the shell stays.
+        let terms = FakeTerms::new(move |n| {
+            if n == 1 {
+                fs::remove_file(&reg).unwrap();
+            }
+        });
+        assert_eq!(send_text(&state, &terms, ADOPT_ID, "ls -la", Duration::ZERO).unwrap_err(), errors::SESSION_NOT_LIVE);
+        assert_eq!(terms.writes().len(), 1, "the text is never run in the shell");
+    }
+
+    /// Reports a different app terminal from the second lookup on (count shared with the test).
+    struct MovingProbe(FakeProbe, std::sync::Arc<AtomicU32>);
+    impl ProcessProbe for MovingProbe {
+        fn start_filetime(&self, pid: u32) -> Option<u64> {
+            self.0.start_filetime(pid)
+        }
+        fn parent_pid(&self, pid: u32) -> Option<u32> {
+            self.0.parent_pid(pid)
+        }
+        fn terminal_pid(&self, _pid: u32) -> Option<u32> {
+            Some(EMBED_SHELL + self.1.fetch_add(1, Ordering::SeqCst).min(1))
+        }
+    }
+
+    #[test]
+    fn send_text_skips_enter_when_the_terminal_changed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, _, _) = adopt_files(tmp.path(), "idle", true);
+        let lookups = std::sync::Arc::new(AtomicU32::new(0));
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(MovingProbe(adopt_probe(), lookups.clone())));
+        lookups.store(0, Ordering::SeqCst);
+        let terms = FakeTerms::new(|_| {});
+        assert_eq!(send_text(&state, &terms, ADOPT_ID, "x", Duration::ZERO).unwrap_err(), errors::SEND_NOT_EMBEDDED);
+        assert_eq!(terms.writes().len(), 1, "no Enter once the session runs in another terminal");
+    }
+
+    #[test]
+    fn send_target_refuses_other_statuses() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, reg, w) = send_env(tmp.path(), "compacting");
+        assert_eq!(state.send_target(ADOPT_ID).unwrap_err(), errors::SEND_WAITING);
+        fs::write(&reg, fs::read_to_string(&reg).unwrap().replace(r#""status":"compacting","#, "")).unwrap();
+        assert_eq!(state.send_target(ADOPT_ID).unwrap_err(), errors::SEND_WAITING, "no status at all");
+        write_registry(&reg, &w, "idle");
+        assert_eq!(state.send_target(ADOPT_ID), Ok(EMBED_SHELL));
+    }
 }
 
 // ---- terminals (ConPTY) ----------------------------------------------------
@@ -1783,22 +1898,54 @@ pub fn pty_write(state: tauri::State<'_, PtyManager>, id: u32, data: String) -> 
 /// taken the paste in before the `\r` arrives.
 const SUBMIT_DELAY: Duration = Duration::from_millis(60);
 
+/// The app terminals as `send_text` sees them (a test stands in for them).
+pub trait Terminals {
+    /// The terminal whose shell is `pid`.
+    fn id_for_pid(&self, pid: u32) -> Option<u32>;
+    fn write(&self, id: u32, data: &str) -> Result<(), String>;
+}
+
+impl Terminals for PtyManager {
+    fn id_for_pid(&self, pid: u32) -> Option<u32> {
+        PtyManager::id_for_pid(self, pid)
+    }
+    fn write(&self, id: u32, data: &str) -> Result<(), String> {
+        PtyManager::write(self, id, data)
+    }
+}
+
 /// Message box: sends `text` to the session as a bracketed paste, then Enter.
-/// Only the id and the text come from the UI. The text is cleaned by
-/// `paste_payload`; the terminal is the app terminal the session's process
-/// runs in, found from a fresh registry read (`send_target`), never one the
-/// UI names. Runs on the blocking pool (it sleeps between the two writes).
+/// The text is cleaned by `paste_payload`; the terminal is the app terminal
+/// the session's process runs in, found from a fresh registry read
+/// (`send_target`), never one the UI names. After the paste and `gap`, the
+/// target is checked again: the Enter is written only when the session is
+/// still idle or busy (not waiting: Enter would answer its prompt) and still
+/// runs in the same terminal (else Enter would run the text in the shell).
+pub fn send_text(
+    app: &AppState,
+    terms: &dyn Terminals,
+    session_id: &str,
+    text: &str,
+    gap: Duration,
+) -> Result<(), String> {
+    let payload = crate::pty::paste_payload(text).map_err(String::from)?;
+    let shell = app.send_target(session_id)?;
+    let id = terms.id_for_pid(shell).ok_or(errors::SEND_NOT_EMBEDDED)?;
+    terms.write(id, &payload)?;
+    std::thread::sleep(gap);
+    if app.send_target(session_id)? != shell || terms.id_for_pid(shell) != Some(id) {
+        return Err(errors::SEND_NOT_EMBEDDED.into());
+    }
+    terms.write(id, "\r")
+}
+
+/// `send_text` on the blocking pool (it sleeps between the two writes).
+/// Only the id and the text come from the UI.
 #[tauri::command]
 pub async fn send_to_session(app: tauri::AppHandle, session_id: String, text: String) -> Result<(), String> {
     use tauri::Manager;
     tauri::async_runtime::spawn_blocking(move || {
-        let payload = crate::pty::paste_payload(&text).map_err(String::from)?;
-        let shell = app.state::<AppState>().send_target(&session_id)?;
-        let ptys = app.state::<PtyManager>();
-        let id = ptys.id_for_pid(shell).ok_or(errors::SEND_NOT_EMBEDDED)?;
-        ptys.write(id, &payload)?;
-        std::thread::sleep(SUBMIT_DELAY);
-        ptys.write(id, "\r")
+        send_text(&app.state::<AppState>(), app.state::<PtyManager>().inner(), &session_id, &text, SUBMIT_DELAY)
     })
     .await
     .map_err(|e| errors::with(errors::TASK_FAILED, e))?
