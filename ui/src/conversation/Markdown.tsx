@@ -15,7 +15,8 @@ function isSpace(ch: string | undefined): boolean {
 function parseInline(src: string, opts: InlineOpts, keyPrefix: string): ReactNode[] {
   const out: ReactNode[] = [];
   // Tokens whose search failed once can never match later (indexOf from a
-  // later start), so remember that to keep scanning linear.
+  // later start), so remember that. Combined with the bounded link-label scan
+  // below this keeps parsing roughly linear in the input size.
   const missing = new Set<string>();
   const find = (token: string, from: number): number => {
     if (missing.has(token)) return -1;
@@ -60,14 +61,16 @@ function parseInline(src: string, opts: InlineOpts, keyPrefix: string): ReactNod
         continue;
       }
     } else if (ch === "[") {
-      const mid = find("](", i + 1);
-      if (mid > i) {
-        const close = find(")", mid + 2);
-        const label = src.slice(i + 1, mid);
-        if (close >= 0 && label && !label.includes("[")) {
+      // A label never contains brackets: the scan stops at the next one, so
+      // every character is looked at by at most one "[" scan.
+      let j = i + 1;
+      while (j < src.length && src[j] !== "[" && src[j] !== "]") j++;
+      if (j > i + 1 && src[j] === "]" && src[j + 1] === "(") {
+        const close = find(")", j + 2);
+        if (close >= 0) {
           push(
-            <span key={`${keyPrefix}${n++}`} title={src.slice(mid + 2, close)}>
-              {label}
+            <span key={`${keyPrefix}${n++}`} title={src.slice(j + 2, close)}>
+              {src.slice(i + 1, j)}
             </span>,
           );
           i = close + 1;

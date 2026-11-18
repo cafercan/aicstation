@@ -73,3 +73,12 @@ test("unknown constructs and unmatched markers stay plain; long input is fast", 
   html(big);
   expect(Date.now() - t).toBeLessThan(3000);
 });
+
+test("many unmatched link openers stay fast and keep their text", () => {
+  const src = "[a".repeat(30000) + "](x)";
+  const t = Date.now();
+  const c = html(src);
+  expect(Date.now() - t).toBeLessThan(3000);
+  expect(c.textContent).toContain("[a[a[a");
+  expect(c.querySelector("span[title='x']")?.textContent).toBe("a");
+});
