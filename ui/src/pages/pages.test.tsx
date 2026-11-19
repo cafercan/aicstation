@@ -17,9 +17,12 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 const terminalForPid = vi.fn((_p: number | null | undefined): number | undefined => undefined);
 const openAdoptTerminal = vi.fn();
+const NO_TERMINALS = vi.hoisted(() => [] as never[]);
 vi.mock("../terminal/store", () => ({
   terminalForPid: (p: number | null) => terminalForPid(p),
   openAdoptTerminal: (...a: unknown[]) => openAdoptTerminal(...a),
+  getTerminals: () => NO_TERMINALS,
+  subscribe: () => () => {},
 }));
 
 import { setLang } from "../i18n";

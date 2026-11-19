@@ -360,4 +360,11 @@ export const de: Dict = {
   "conv.quote": "Zitieren",
   "conv.copy": "Kopieren",
   "conv.thought": "Nachgedacht",
+  "conv.mode.auto": "⏵⏵ Auto-Modus",
+  "conv.mode.acceptEdits": "⏵⏵ Änderungen annehmen",
+  "conv.mode.plan": "⏸ Plan-Modus",
+  "conv.mode.bypassPermissions": "⏵⏵ Berechtigungen umgehen",
+  "conv.bgShells": { one: "1 Hintergrundbefehl", other: "{n} Hintergrundbefehle" },
+  "conv.queued": { one: "1 Nachricht in der Warteschlange", other: "{n} Nachrichten in der Warteschlange" },
+  "conv.turnTokens": "↓ {n} Tokens",
 };

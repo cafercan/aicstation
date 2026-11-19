@@ -357,4 +357,11 @@ export const zh: Dict = {
   "conv.quote": "引用",
   "conv.copy": "复制",
   "conv.thought": "已思考",
+  "conv.mode.auto": "⏵⏵ 自动模式",
+  "conv.mode.acceptEdits": "⏵⏵ 接受编辑",
+  "conv.mode.plan": "⏸ 计划模式",
+  "conv.mode.bypassPermissions": "⏵⏵ 跳过权限",
+  "conv.bgShells": "{n} 个后台命令",
+  "conv.queued": "{n} 条消息排队中",
+  "conv.turnTokens": "↓ {n} 令牌",
 };

@@ -367,4 +367,11 @@ export const tr = {
   "conv.quote": "Alıntıla",
   "conv.copy": "Kopyala",
   "conv.thought": "Düşündü",
+  "conv.mode.auto": "⏵⏵ otomatik mod",
+  "conv.mode.acceptEdits": "⏵⏵ düzenlemeleri kabul",
+  "conv.mode.plan": "⏸ plan modu",
+  "conv.mode.bypassPermissions": "⏵⏵ izinler atlanıyor",
+  "conv.bgShells": "{n} arka plan komutu",
+  "conv.queued": "{n} mesaj kuyrukta",
+  "conv.turnTokens": "↓ {n} token",
 } as const satisfies Record<string, string>;

@@ -4,6 +4,7 @@ import { errorText, useT } from "../i18n";
 import SessionTerminalPlaceholder from "../pages/SessionTerminalPlaceholder";
 import { terminalForPid } from "../terminal/store";
 import Composer from "./Composer";
+import ConvStatus from "./ConvStatus";
 import ConvItemView from "./ConvItemView";
 import { applyPage, hasOlder, lastIndex, type ConvState } from "./convState";
 import ImageViewer from "./ImageViewer";
@@ -198,6 +199,7 @@ export default function ConversationPage({ sessionId, card, onShowTerminal, onTe
         <div className="conv-items">{body}</div>
       </div>
       <div className="conv-foot">
+        {live && <ConvStatus card={card} />}
         {hosted
           ? <Composer sessionId={sessionId} status={card.status} onShowTerminal={onShowTerminal} onSent={onSent} quote={quote} />
           : <SessionTerminalPlaceholder card={card} sessionId={sessionId} onTerminal={onTerminal}

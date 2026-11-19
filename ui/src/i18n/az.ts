@@ -357,4 +357,11 @@ export const az: Dict = {
   "conv.quote": "Sitat gətir",
   "conv.copy": "Kopyala",
   "conv.thought": "Düşündü",
+  "conv.mode.auto": "⏵⏵ avtomatik rejim",
+  "conv.mode.acceptEdits": "⏵⏵ düzəlişləri qəbul et",
+  "conv.mode.plan": "⏸ plan rejimi",
+  "conv.mode.bypassPermissions": "⏵⏵ icazələr keçilir",
+  "conv.bgShells": "{n} arxa fon əmri",
+  "conv.queued": "{n} mesaj növbədə",
+  "conv.turnTokens": "↓ {n} token",
 };

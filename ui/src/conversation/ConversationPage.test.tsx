@@ -5,9 +5,12 @@ import type { ConvItem, ConvPage, SessionCard } from "../api";
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...a: unknown[]) => invoke(...a) }));
 const terminalForPid = vi.fn((_p: number | null | undefined): number | undefined => undefined);
+const NO_TERMINALS = vi.hoisted(() => [] as never[]);
 vi.mock("../terminal/store", () => ({
   terminalForPid: (p: number | null) => terminalForPid(p),
   openAdoptTerminal: vi.fn(),
+  getTerminals: () => NO_TERMINALS,
+  subscribe: () => () => {},
 }));
 
 import ConversationPage from "./ConversationPage";
@@ -437,6 +440,15 @@ test("Kopyala copies the selection; Esc closes the menu", async () => {
   expect(screen.getByRole("menu")).toBeTruthy();
   fireEvent.keyDown(document.body, { key: "Escape" });
   expect(screen.queryByRole("menu")).toBeNull();
+});
+
+test("a closed session shows no status line; a live one does", async () => {
+  serve({ get_conversation_page: () => page([REPLY]) });
+  const { container, rerender } = render(<ConversationPage sessionId="s1" card={card({ pid: 0 })} {...props} />);
+  await screen.findByText("ilk cevap");
+  expect(container.querySelector(".conv-status-line")).toBeNull();
+  rerender(<ConversationPage sessionId="s1" card={card()} {...props} />);
+  expect(container.querySelector(".conv-status-line")?.textContent).toContain("hazır");
 });
 
 test("a session without a message box offers only Kopyala", async () => {

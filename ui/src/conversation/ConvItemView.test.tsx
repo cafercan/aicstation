@@ -4,7 +4,10 @@ import type { ConvItem, ConvPage, SessionCard } from "../api";
 
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...a: unknown[]) => invoke(...a) }));
-vi.mock("../terminal/store", () => ({ terminalForPid: () => undefined, openAdoptTerminal: vi.fn() }));
+const NO_TERMINALS = vi.hoisted(() => [] as never[]);
+vi.mock("../terminal/store", () => ({
+  terminalForPid: () => undefined, openAdoptTerminal: vi.fn(), getTerminals: () => NO_TERMINALS, subscribe: () => () => {},
+}));
 /** Texts Markdown was rendered with, one entry per render. */
 const rendered: string[] = [];
 vi.mock("./Markdown", () => ({

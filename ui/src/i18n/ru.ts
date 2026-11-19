@@ -375,4 +375,11 @@ export const ru: Dict = {
   "conv.quote": "Цитировать",
   "conv.copy": "Копировать",
   "conv.thought": "Размышлял",
+  "conv.mode.auto": "⏵⏵ авторежим",
+  "conv.mode.acceptEdits": "⏵⏵ принимать правки",
+  "conv.mode.plan": "⏸ режим плана",
+  "conv.mode.bypassPermissions": "⏵⏵ без разрешений",
+  "conv.bgShells": { one: "{n} фоновая команда", few: "{n} фоновые команды", many: "{n} фоновых команд", other: "{n} фоновой команды" },
+  "conv.queued": { one: "{n} сообщение в очереди", few: "{n} сообщения в очереди", many: "{n} сообщений в очереди", other: "{n} сообщения в очереди" },
+  "conv.turnTokens": "↓ {n} токенов",
 };
