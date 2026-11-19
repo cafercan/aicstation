@@ -5,6 +5,7 @@ import { errorText, useT, type Key } from "../i18n";
 import { isWindows } from "../platform";
 import GeneralPrefs from "../components/GeneralPrefs";
 import TerminalAppearance from "../components/TerminalAppearance";
+import ConversationAppearance from "../components/ConversationAppearance";
 import { useTheme } from "../theme";
 import { MATCH } from "../terminal/match";
 import {
@@ -224,6 +225,7 @@ export default function SettingsPage() {
         <UsageLimitsRow onError={(e) => setError(typeof e === "string" || e instanceof Error ? errorText(e) : String(e))} />
       </fieldset>
       <TerminalAppearance />
+      <ConversationAppearance />
       <fieldset>
         <legend>{t("settings.window")}</legend>
         {row("closeToTray", "settings.closeToTray", "settings.closeToTrayHint")}

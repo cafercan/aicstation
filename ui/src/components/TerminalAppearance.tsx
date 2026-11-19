@@ -28,7 +28,7 @@ function SchemeCard({ id, on, onPick }: { id: SchemeId; on: boolean; onPick: (id
 }
 
 /** A labelled range input showing its value. */
-function Slider({ label, value, min, max, step, unit = "", onChange }: {
+export function Slider({ label, value, min, max, step, unit = "", onChange }: {
   label: string; value: number; min: number; max: number; step: number; unit?: string;
   onChange: (v: number) => void;
 }) {

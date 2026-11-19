@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { getConversationPage, getConversationSince, type ConvPage, type SessionCard } from "../api";
 import { errorText, useT } from "../i18n";
 import SessionTerminalPlaceholder from "../pages/SessionTerminalPlaceholder";
 import { terminalForPid } from "../terminal/store";
 import Composer from "./Composer";
 import ConvStatus from "./ConvStatus";
+import { useConvFontSize } from "./convAppearance";
 import ConvItemView from "./ConvItemView";
 import { applyPage, hasOlder, lastIndex, type ConvState } from "./convState";
 import ImageViewer from "./ImageViewer";
@@ -38,6 +39,7 @@ interface Props {
  */
 export default function ConversationPage({ sessionId, card, onShowTerminal, onTerminal, onAdopted, onResume }: Props) {
   const t = useT();
+  const fontSize = useConvFontSize();
   const [conv, setConv] = useState<ConvState | null>(null);
   /** Why the first load failed (`code` is the backend error code, `text` its translation). */
   const [err, setErr] = useState<{ code: string; text: string } | null>(null);
@@ -194,7 +196,7 @@ export default function ConversationPage({ sessionId, card, onShowTerminal, onTe
   }
 
   return (
-    <div className="conv">
+    <div className="conv" style={{ "--conv-font": `${fontSize}px` } as CSSProperties}>
       <div className="conv-list" ref={listRef} onScroll={onScroll} onContextMenu={onContextMenu}>
         <div className="conv-items">{body}</div>
       </div>

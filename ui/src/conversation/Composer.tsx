@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { getSessionCommands, sendToSession, type SessionSkill } from "../api";
 import { errorText, useT } from "../i18n";
 import { appendQuote } from "./quote";
+import { useConvFontSize } from "./convAppearance";
 import { matchCommands, slashQuery, type SlashEntry } from "./slashCommands";
 import SlashMenu from "./SlashMenu";
 
@@ -42,10 +43,18 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
 
   /** Height of the empty box (its 2 rows), measured once: the grow base. */
   const baseH = useRef(0);
+  const fontSize = useConvFontSize();
+  const measuredAt = useRef(fontSize);
   // The box grows with its text up to twice its first height; past that its
   // content scrolls. Runs before the caret effect below, which scrolls it.
+  // A new font size measures the 2 rows again.
   useLayoutEffect(() => {
     const el = box.current;
+    if (el && measuredAt.current !== fontSize) {
+      measuredAt.current = fontSize;
+      baseH.current = 0;
+      el.style.height = "";
+    }
     // Not laid out (hidden): measure when it is, still at its own 2 rows.
     if (!el || (baseH.current === 0 && el.offsetHeight === 0)) return;
     if (baseH.current === 0) baseH.current = el.offsetHeight;
@@ -55,7 +64,7 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
     const max = baseH.current * 2;
     el.style.height = `${Math.max(baseH.current, Math.min(need, max))}px`;
     el.style.overflowY = need > max ? "auto" : "hidden";
-  }, [text]);
+  }, [text, fontSize]);
 
   useLayoutEffect(() => {
     const el = box.current;

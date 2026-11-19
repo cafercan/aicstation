@@ -14,6 +14,7 @@ vi.mock("../terminal/store", () => ({
 }));
 
 import ConversationPage from "./ConversationPage";
+import { setConvFontSize } from "./convAppearance";
 import Composer from "./Composer";
 
 function card(over: Partial<SessionCard> = {}): SessionCard {
@@ -375,6 +376,17 @@ test("thinking shows as a closed Düşündü line that opens to its text", async
   expect(screen.getByText("önce ızgaraya bakayım")).toBeTruthy();
 });
 
+test("the conversation follows the font size set in Settings", async () => {
+  serve({ get_conversation_page: () => page([REPLY]) });
+  const { container } = render(<ConversationPage sessionId="s1" card={card()} {...props} />);
+  await screen.findByText("ilk cevap");
+  const conv = container.querySelector(".conv") as HTMLElement;
+  expect(conv.style.getPropertyValue("--conv-font")).toBe("13px");
+  act(() => { setConvFontSize(18); });
+  expect(conv.style.getPropertyValue("--conv-font")).toBe("18px");
+  act(() => { setConvFontSize(13); });
+});
+
 // Quote menu
 
 /** Selects all text of `el` as a mouse selection would. */
@@ -614,6 +626,25 @@ test("IME Enter does not pick", () => {
   fireEvent.keyDown(box, { key: "Enter", keyCode: 229 });
   expect(sent()).toEqual([]);
   expect(screen.getByRole("listbox")).toBeTruthy();
+});
+
+test("composer: a new font size measures the box's 2 rows again", () => {
+  const proto = HTMLTextAreaElement.prototype;
+  let rowH = 56;
+  Object.defineProperty(proto, "offsetHeight", { configurable: true, get() { return rowH; } });
+  Object.defineProperty(proto, "clientHeight", { configurable: true, get() { return rowH - 2; } });
+  Object.defineProperty(proto, "scrollHeight", { configurable: true, get(this: HTMLTextAreaElement) { return rowH - 2; } });
+  try {
+    render(<Composer sessionId="s1" status="idle" onShowTerminal={noop} />);
+    const box = screen.getByRole("textbox") as HTMLTextAreaElement;
+    expect(box.style.height).toBe("56px");
+    rowH = 70;
+    act(() => { setConvFontSize(18); });
+    expect(box.style.height).toBe("70px");
+  } finally {
+    for (const k of ["offsetHeight", "clientHeight", "scrollHeight"]) delete (proto as unknown as Record<string, unknown>)[k];
+    act(() => { setConvFontSize(13); });
+  }
 });
 
 test("composer: Enter sends the text and clears it", async () => {

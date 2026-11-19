@@ -357,6 +357,8 @@ export const az: Dict = {
   "conv.quote": "Sitat gətir",
   "conv.copy": "Kopyala",
   "conv.thought": "Düşündü",
+  "conv.lookTitle": "Söhbət görünüşü",
+  "conv.fontSize": "Yazı ölçüsü",
   "conv.cmdTerminal": "Terminal sekmesində açılır",
   "conv.mode.auto": "⏵⏵ avtomatik rejim",
   "conv.mode.acceptEdits": "⏵⏵ düzəlişləri qəbul et",
