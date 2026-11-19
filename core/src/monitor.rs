@@ -50,6 +50,16 @@ pub struct SessionCard {
     /// `last_activity_ms` (Claude Code marks a turn idle before it writes the
     /// turn's last lines), so the conversation tab refreshes on it.
     pub transcript_bytes: u64,
+    /// Permission mode last written to the transcript ("auto", "plan", …).
+    pub permission_mode: Option<String>,
+    /// Background tasks running (0 once the session was seen idle).
+    pub background_shells: u32,
+    /// Prompts typed while Claude was busy, still waiting (0 once seen idle).
+    pub queued_messages: u32,
+    /// Output tokens of the current turn.
+    pub turn_output_tokens: u64,
+    /// When the live session's status began; 0 when closed.
+    pub status_since_ms: u64,
     pub git_branch: Option<String>,
     /// Where the Claude process runs (decides "Sekmeye git"); Other when closed.
     pub host_kind: HostKind,
@@ -127,6 +137,18 @@ impl SessionState {
             last_lookup: None,
             #[cfg(test)]
             applied: 0,
+        }
+    }
+
+    /// A live session seen idle has no background task running and no
+    /// prompt queued: what the transcript still holds from up to its status
+    /// time is cleared for good.
+    fn settle(&mut self, l: &LiveSession) {
+        if l.status != SessionStatus::Idle {
+            return;
+        }
+        if let Some(t) = chrono::DateTime::from_timestamp_millis(l.status_updated_at_ms as i64) {
+            self.stats.settle_idle(t);
         }
     }
 
@@ -301,6 +323,11 @@ fn make_card(
             .map_or(0, |l| l.status_updated_at_ms)
             .max(dt_ms(stats.last_at).unwrap_or(0)),
         transcript_bytes,
+        permission_mode: stats.permission_mode.clone(),
+        background_shells: stats.background_shells(),
+        queued_messages: stats.queued_messages(),
+        turn_output_tokens: stats.turn_output_tokens,
+        status_since_ms: live.map_or(0, |l| l.status_updated_at_ms),
         git_branch: stats.git_branch.clone(),
         host_kind,
         movable: live.is_some_and(|l| l.movable),
@@ -441,7 +468,9 @@ impl Monitor {
             if l.status == SessionStatus::Waiting {
                 waiting += 1;
             }
-            let st = &self.states[&l.session_id];
+            let st = self.states.get_mut(&l.session_id).expect("update_live made it");
+            st.settle(l);
+            let st = &*st;
             cards.push(make_card(&l.session_id, Some(l), probe.terminal_pid(l.pid).or_else(|| probe.parent_pid(l.pid)), probe.host_kind(l.pid), &st.stats, st.transcript_bytes(), &tree));
         }
         cards.sort_by(|a, b| {
@@ -518,7 +547,9 @@ impl Monitor {
             .into_iter()
             .find(|l| l.session_id == session_id)?;
         let tree = self.update_live(session_id, now);
-        let st = &self.states[session_id];
+        let st = self.states.get_mut(session_id).expect("update_live made it");
+        st.settle(&l);
+        let st = &*st;
         let stats = &st.stats;
         Some(SessionDetail {
             card: make_card(session_id, Some(&l), probe.terminal_pid(l.pid).or_else(|| probe.parent_pid(l.pid)), probe.host_kind(l.pid), stats, st.transcript_bytes(), &tree),
@@ -881,6 +912,33 @@ mod tests {
         assert!(after.transcript_bytes > before.transcript_bytes);
         let v = serde_json::to_value(&after).unwrap();
         assert!(v.get("transcriptBytes").is_some());
+    }
+
+    #[test]
+    fn card_status_fields_and_idle_clears_shells_and_queue() {
+        let e = Env::new();
+        let sid = id(1);
+        let t = e.transcript(&sid);
+        e.append(&t, r#"{"type":"permission-mode","permissionMode":"auto","sessionId":"s"}"#);
+        e.append(&t, r#"{"type":"user","timestamp":"2026-11-02T07:00:01Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","content":"Command running in background with ID: b1."}]}}"#);
+        e.append(&t, r#"{"type":"queue-operation","operation":"enqueue","timestamp":"2026-11-02T07:00:02Z","content":"hi"}"#);
+        e.reg(1, &sid, "busy", 1_793_602_803_000, None); // 07:00:03Z
+        let mut m = e.mon();
+        let c = m.refresh(&FakeProbe, now()).sessions[0].clone();
+        assert_eq!(
+            (c.permission_mode.as_deref(), c.background_shells, c.queued_messages, c.status_since_ms),
+            (Some("auto"), 1, 1, 1_793_602_803_000)
+        );
+        e.reg(1, &sid, "idle", 1_793_602_810_000, None); // 07:00:10Z
+        let c = m.refresh(&FakeProbe, now()).sessions[0].clone();
+        assert_eq!((c.background_shells, c.queued_messages), (0, 0));
+        e.reg(1, &sid, "busy", 1_793_602_820_000, None);
+        let c = m.refresh(&FakeProbe, now()).sessions[0].clone();
+        assert_eq!((c.background_shells, c.queued_messages), (0, 0), "cleared for good");
+        let v = serde_json::to_value(&c).unwrap();
+        for k in ["permissionMode", "backgroundShells", "queuedMessages", "turnOutputTokens", "statusSinceMs"] {
+            assert!(v.get(k).is_some(), "{k}");
+        }
     }
 
     #[test]

@@ -45,7 +45,7 @@ function detail(over: Partial<SessionDetail> = {}): SessionDetail {
     card: {
       sessionId: "s1", pid: 1, parentPid: 77, name: "demo", cwd: "C:/x/demo", status: "busy",
       waitingFor: null, model: "Opus 5.5", contextPct: 62, costUsd: 1.2, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 }, agentsTotal: 1,
-      agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 0, transcriptBytes: 0, gitBranch: "main",
+      agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 0, transcriptBytes: 0, permissionMode: null, backgroundShells: 0, queuedMessages: 0, turnOutputTokens: 0, statusSinceMs: 0, gitBranch: "main",
       hostKind: "other", movable: false, agentsRunning: 0, remoteControl: false,
     },
     tokens: usage, toolCallCount: 3,

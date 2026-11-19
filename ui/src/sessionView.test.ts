@@ -9,7 +9,7 @@ function card(over: Partial<SessionCard>): SessionCard {
     sessionId: "a", pid: 100, parentPid: 10, name: "a", cwd: "C:/w", status: "idle", waitingFor: null,
     model: null, contextPct: null, costUsd: 0,
     tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 },
-    agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 0, transcriptBytes: 0,
+    agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 0, transcriptBytes: 0, permissionMode: null, backgroundShells: 0, queuedMessages: 0, turnOutputTokens: 0, statusSinceMs: 0,
     gitBranch: null, hostKind: "other", movable: true, agentsRunning: 0, remoteControl: false, ...over,
   };
 }
