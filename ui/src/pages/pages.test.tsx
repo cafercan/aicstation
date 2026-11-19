@@ -104,6 +104,20 @@ test("ağaçta ajan seçilince sağdaki liste o ajanın tool çağrılarını g�
   expect(rows[0].textContent).toContain("ADC_CAL");
 });
 
+test("başlama zamanı: bilinmiyorsa ?, başka günse tarihiyle", async () => {
+  invoke.mockResolvedValue(detail());
+  const r = render(<SessionDetailPage sessionId="s1" onBack={() => {}} />);
+  expect(await screen.findByText(/başladı \?/)).toBeTruthy();
+  r.unmount();
+  const old = new Date(2026, 9, 3, 14, 5).getTime();
+  const d = detail();
+  d.card.startedAtMs = old;
+  invoke.mockResolvedValue(d);
+  render(<SessionDetailPage sessionId="s1" onBack={() => {}} />);
+  const want = new Date(old).toLocaleString("tr-TR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  expect(await screen.findByText(new RegExp(`başladı ${want}`))).toBeTruthy();
+});
+
 test("adsız aşama uygulamanın dilinde adlandırılır", async () => {
   const d = detail();
   const ph = (d.tree.roots as { children: { kind: { kind: string; name?: string } }[] }[])

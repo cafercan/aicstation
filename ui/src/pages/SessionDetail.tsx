@@ -35,6 +35,16 @@ function nodeLabel(n: AgentNode): string {
   }
 }
 
+/** When the session started: the time today, date and time on another day, "?" when unknown. */
+function fmtStarted(ms: number): string {
+  if (!(ms > 0)) return "?";
+  const d = new Date(ms);
+  const today = new Date().toDateString() === d.toDateString();
+  return today
+    ? d.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" })
+    : d.toLocaleString(locale(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
 function nodeAge(n: AgentNode): string {
   const a = n.stats.firstAt ? Date.parse(n.stats.firstAt) : NaN;
   const b = n.stats.lastAt ? Date.parse(n.stats.lastAt) : NaN;
@@ -150,7 +160,7 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal, live 
   const caption = selNode ? nodeLabel(selNode) : tx("detail.mainCaption");
   const kind = statusKind(card.status, card.pid);
   const target = kind === "closed" ? null : gotoTarget(card, terminalForPid(card.parentPid));
-  const started = new Date(card.startedAtMs).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" });
+  const started = fmtStarted(card.startedAtMs);
 
   return (
     <div>
