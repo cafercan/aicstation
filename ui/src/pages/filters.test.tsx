@@ -195,6 +195,9 @@ test("İçerikte ara: temizle ve sayfadan çıkış süren aramayı durdurur (ca
   await screen.findByText("Aranıyor…");
   r.unmount();
   expect(cancels()).toBe(2);
+  // Each cancel names the search it stops, so a late one cannot stop a newer search.
+  const gens = (cmd: string) => invoke.mock.calls.filter(([c]) => c === cmd).map(([, a]) => (a as { generation: number }).generation);
+  expect(gens("cancel_search")).toEqual(gens("search_history"));
 });
 
 test("Geçmiş sayfası açıkken maliyet verisi 30 sn'de bir yenilenir", async () => {

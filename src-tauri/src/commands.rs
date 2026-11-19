@@ -614,12 +614,18 @@ impl AppState {
         Ok(search_transcripts_limited(&files, &query, Limits::DEFAULT, &|| gen.load(Ordering::SeqCst) != generation))
     }
 
-    /// Stops the running content search (History page left or cleared): the
-    /// stored generation moves on, so the search sees a mismatch at its next
-    /// check and returns `cancelled`. A later search stores its own generation
-    /// and runs normally.
-    pub fn cancel_search(&self) {
-        self.search_gen.fetch_add(1, Ordering::SeqCst);
+    /// Stops the content search of `generation` (History page left or
+    /// cleared): the stored generation moves on, so that search sees a
+    /// mismatch at its next check and returns `cancelled`. When a newer search
+    /// already stored its own generation (the cancel arrived late), nothing
+    /// changes: the new search keeps running.
+    pub fn cancel_search(&self, generation: u32) {
+        let _ = self.search_gen.compare_exchange(
+            generation,
+            generation.wrapping_add(1),
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        );
     }
 
     pub fn open_folder(&self, path: &str) -> Result<(), String> {
@@ -802,11 +808,11 @@ pub async fn search_history(app: tauri::AppHandle, query: String, generation: u3
         .map_err(|e| errors::with(errors::TASK_FAILED, e))?
 }
 
-/// Stops a running content search (no arguments; it only bumps the
-/// generation counter).
+/// Stops the running content search of `generation` (only compared, as in
+/// `search_history`).
 #[tauri::command]
-pub fn cancel_search(state: tauri::State<'_, AppState>) {
-    state.cancel_search();
+pub fn cancel_search(state: tauri::State<'_, AppState>, generation: u32) {
+    state.cancel_search(generation);
 }
 
 #[tauri::command(async)]
@@ -1396,11 +1402,30 @@ mod tests {
         while state.search_gen.load(Ordering::SeqCst) != 7 {
             std::thread::yield_now();
         }
-        state.cancel_search();
+        state.cancel_search(7);
         assert!(first.join().unwrap().cancelled, "the search stops after cancel_search");
         // The same UI generation counter keeps working afterwards.
         let next = state.search_history("satır 5", 8).unwrap();
         assert!(!next.cancelled && !next.hits.is_empty());
+    }
+
+    #[test]
+    fn a_late_cancel_of_an_older_search_leaves_the_new_one_running() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, probe) = two_sessions(tmp.path(), 5);
+        let proj = claude.join("projects").join("C--demo");
+        let body: String = (0..200_000).map(|i| user_line(&format!("satır {i}")) + "\n").collect();
+        fs::write(proj.join(format!("{CLOSED_ID}.jsonl")), body).unwrap();
+        let state = std::sync::Arc::new(AppState::new(claude, tmp.path().join("c.json"), Box::new(probe)));
+        // Cleared (cancel of search 3) and searched again (9) at once: the
+        // cancel arrives after the new search started.
+        let s1 = state.clone();
+        let next = std::thread::spawn(move || s1.search_history("bulunmayan metin", 9).unwrap());
+        while state.search_gen.load(Ordering::SeqCst) != 9 {
+            std::thread::yield_now();
+        }
+        state.cancel_search(3);
+        assert!(!next.join().unwrap().cancelled, "a cancel of another search does not stop this one");
     }
 
     const ADOPT_ID: &str = "12121212-2222-4333-8444-555555555555";

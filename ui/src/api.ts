@@ -353,7 +353,8 @@ export const searchHistory = (query: string, generation: number) =>
   invoke<SearchOutcome>("search_history", { query, generation });
 
 /** Stops the running content search (page left or search cleared). */
-export const cancelSearch = () => invoke<void>("cancel_search");
+/** Stops the content search of `generation`; a newer search is left running. */
+export const cancelSearch = (generation: number) => invoke<void>("cancel_search", { generation });
 
 /** One usage window of the status line: percent used and when it resets. */
 export interface UsageWindow { usedPct: number; resetsAtMs: number | null }

@@ -31,14 +31,15 @@ function ContentSearch({ view, onOpen }: { view: HistoryView; onOpen: (id: strin
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<SearchOutcome | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  /** A search is in flight in the backend (it keeps reading until stopped). */
-  const running = useRef(false);
-  /** Stops the backend search and drops its late reply. */
+  /** Generation of the search in flight in the backend (it keeps reading until stopped), or null. */
+  const running = useRef<number | null>(null);
+  /** Stops the backend search and drops its late reply. Only that search:
+   *  a cancel arriving after a new search started leaves the new one alone. */
   const stop = () => {
     searchGen++;
-    if (running.current) {
-      running.current = false;
-      cancelSearch().catch(() => {});
+    if (running.current !== null) {
+      cancelSearch(running.current).catch(() => {});
+      running.current = null;
     }
   };
   // Leaving the page stops a search still running.
@@ -57,11 +58,11 @@ function ContentSearch({ view, onOpen }: { view: HistoryView; onOpen: (id: strin
     // and stop it instead).
     const gen = ++searchGen;
     setBusy(true);
-    running.current = true;
+    running.current = gen;
     searchHistory(query, gen)
       .then((out) => { if (gen === searchGen && !out.cancelled) setResult(out); })
       .catch((x) => { if (gen === searchGen) setErr(errorText(x)); })
-      .finally(() => { if (gen === searchGen) { setBusy(false); running.current = false; } });
+      .finally(() => { if (gen === searchGen) { setBusy(false); running.current = null; } });
   };
   const clear = () => { stop(); setBusy(false); setResult(null); setErr(null); setQ(""); };
   const nameOf = (id: string) => {
