@@ -212,6 +212,8 @@ export default function Markdown({ text }: { text: string }) {
       i++;
     } else if (ITEM.test(line)) {
       const ordered = /^\s*\d/.test(line);
+      // "4. ..." in a reply means item 4, not 1: the list starts at its first number.
+      const first = ordered ? parseInt(ITEM.exec(line)![1], 10) : 1;
       const key = `b${b++}`;
       const items: ReactNode[] = [];
       while (i < lines.length) {
@@ -220,7 +222,9 @@ export default function Markdown({ text }: { text: string }) {
         items.push(<li key={items.length}>{inline(m[2], `${key}${items.length}`)}</li>);
         i++;
       }
-      blocks.push(ordered ? <ol key={key}>{items}</ol> : <ul key={key}>{items}</ul>);
+      blocks.push(ordered
+        ? <ol key={key} start={first !== 1 ? first : undefined}>{items}</ol>
+        : <ul key={key}>{items}</ul>);
     } else {
       const para: string[] = [];
       while (

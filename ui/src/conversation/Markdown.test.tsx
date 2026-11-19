@@ -51,6 +51,12 @@ test("unordered and ordered lists", () => {
   expect([...c.querySelectorAll("ol li")].map((l) => l.textContent)).toEqual(["x", "y"]);
 });
 
+test("an ordered list keeps the number it starts at", () => {
+  const c = html("4. kurulumdaki kart çalışıyor");
+  expect(c.querySelector("ol")?.getAttribute("start")).toBe("4");
+  expect(html("1. x\n2. y").querySelector("ol")?.hasAttribute("start")).toBe(false);
+});
+
 test("link renders as span with title, never anchor", () => {
   const c = html("[label](https://e.com) [x](javascript:alert(1))");
   const s = c.querySelector("span[title='https://e.com']");
