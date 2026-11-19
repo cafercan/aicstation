@@ -138,8 +138,9 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
   const prefix = query !== null && entries.some((e) => e.name.toLowerCase().startsWith(query.toLowerCase()));
   useEffect(() => { setActive(prefix ? 0 : -1); }, [query, prefix]);
 
-  const send = (value = text) => {
-    if (waiting || sendingRef.current || value.trim() === "") return;
+  /** Starts sending `value`; false when nothing was sent (waiting, a send in flight, empty). */
+  const send = (value = text): boolean => {
+    if (waiting || sendingRef.current || value.trim() === "") return false;
     sendingRef.current = true;
     setSending(true);
     setErr(null);
@@ -160,12 +161,12 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
         setErr(pasted ? errorText(e) : t("conv.sendFailed", { err: errorText(e) }));
       })
       .finally(() => { sendingRef.current = false; setSending(false); });
+    return true;
   };
 
-  /** Runs a menu entry; a picker command also shows the Terminal tab. */
+  /** Runs a menu entry; a picker command it sent also shows the Terminal tab. */
   const pick = (e: SlashEntry) => {
-    send(`/${e.name}`);
-    if (e.terminal) onShowTerminal();
+    if (send(`/${e.name}`) && e.terminal) onShowTerminal();
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

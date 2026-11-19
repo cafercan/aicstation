@@ -637,6 +637,19 @@ const options = () => screen.queryAllByRole("option");
 const selected = () => options().find((o) => o.getAttribute("aria-selected") === "true");
 const sent = () => invoke.mock.calls.filter(([c]) => c === "send_to_session").map(([, a]) => (a as { text: string }).text);
 
+test("slash menu: a picker command not sent (a send in flight) does not switch to the terminal", async () => {
+  const show = vi.fn();
+  serve({ send_to_session: () => new Promise(() => {}), get_session_commands: () => [] });
+  render(<Composer sessionId="s1" status="idle" onShowTerminal={show} />);
+  const box = screen.getByRole("textbox") as HTMLTextAreaElement;
+  fireEvent.change(box, { target: { value: "ilk" } });
+  fireEvent.keyDown(box, { key: "Enter" });
+  fireEvent.change(box, { target: { value: "/model" } });
+  fireEvent.keyDown(box, { key: "Enter" });
+  expect(show).not.toHaveBeenCalled();
+  expect(sent()).toEqual(["ilk"]);
+});
+
 test("slash menu: /co lists /compact first; arrows move and wrap", async () => {
   const box = slashBox();
   fireEvent.change(box, { target: { value: "/co" } });

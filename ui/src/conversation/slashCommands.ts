@@ -20,16 +20,16 @@ const b = (name: string, description: string, terminal = false): SlashEntry =>
  * until this list is updated (it still runs when typed in full).
  */
 export const BUILTINS: SlashEntry[] = [
-  b("add-dir", "Add a new working directory"),
+  b("add-dir", "Add a new working directory", true),
   b("agents", "Manage agent configurations", true),
   b("clear", "Clear conversation history and free up context"),
   b("compact", "Clear history but keep a summary in context"),
   b("config", "Open the settings panel", true),
   b("context", "Show current context usage"),
   b("cost", "Show the cost and duration of this session"),
-  b("doctor", "Check the health of your Claude Code installation"),
+  b("doctor", "Check the health of your Claude Code installation", true),
   b("export", "Export the conversation to a file or the clipboard", true),
-  b("help", "Show help and available commands"),
+  b("help", "Show help and available commands", true),
   b("hooks", "Manage hook configurations", true),
   b("init", "Create a CLAUDE.md file with codebase documentation"),
   b("mcp", "Manage MCP servers", true),

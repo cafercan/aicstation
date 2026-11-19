@@ -43,6 +43,8 @@ test("an empty query lists everything, built-ins first", () => {
 test("picker commands are marked for the terminal", () => {
   const by = (n: string) => BUILTINS.find((b) => b.name === n)!;
   expect(by("model").terminal).toBe(true);
+  // Panels and prompts too: help and doctor open a screen, add-dir asks for a folder.
+  for (const n of ["help", "doctor", "add-dir"]) expect(by(n).terminal, n).toBe(true);
   expect(by("compact").terminal).toBe(false);
   expect(by("clear").terminal).toBe(false);
 });
