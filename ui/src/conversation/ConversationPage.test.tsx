@@ -377,6 +377,39 @@ test("scrolled up, a button goes back to the newest message", async () => {
   expect(screen.queryByRole("button", { name: "En yeni mesaja in" })).toBeNull();
 });
 
+test("a message sent just before leaving the tab does not come back as a draft", async () => {
+  let done = () => {};
+  serve({
+    get_conversation_page: () => page([]),
+    get_conversation_since: () => page([]),
+    send_to_session: () => new Promise<void>((r) => { done = r; }),
+  });
+  const first = render(<ConversationPage sessionId="s1" card={card()} {...props} />);
+  await screen.findByText("Henüz mesaj yok.");
+  const box = screen.getByRole("textbox");
+  fireEvent.change(box, { target: { value: "bunu yap" } });
+  fireEvent.keyDown(box, { key: "Enter" });
+  first.unmount();
+  await act(async () => { done(); });
+  render(<ConversationPage sessionId="s1" card={card()} {...props} />);
+  await screen.findByText("Henüz mesaj yok.");
+  expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("");
+});
+
+test("one more ↑ at the oldest message leaves the caret where it is", async () => {
+  serve({
+    get_conversation_page: () => page([{ kind: "user", text: "tek", truncated: false, images: [], atMs: 1 }]),
+  });
+  render(<ConversationPage sessionId="s1" card={card()} {...props} />);
+  await screen.findByText("tek");
+  const box = screen.getByRole("textbox") as HTMLTextAreaElement;
+  fireEvent.keyDown(box, { key: "ArrowUp" });
+  fireEvent.keyDown(box, { key: "ArrowUp" });
+  box.setSelectionRange(3, 3);
+  fireEvent.change(box, { target: { value: "tekx" } });
+  expect(box.selectionStart).toBe(4);
+});
+
 test("up and down in the empty box go through the messages sent before", async () => {
   serve({
     get_conversation_page: () => page([

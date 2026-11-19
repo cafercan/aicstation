@@ -93,6 +93,8 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
     if (up) {
       if (browse === null ? text !== "" : el.value.slice(0, el.selectionStart).includes("\n")) return false;
       const next = Math.min((browse ?? -1) + 1, n - 1);
+      // Already at the oldest: nothing changes (and no caret move is left pending).
+      if (next === browse) return true;
       setBrowse(next);
       caretTo.current = "start";
       show(sent[n - 1 - next]);
@@ -148,6 +150,8 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
         // Cleared only when unchanged: text edited while the send was on its
         // way is the user's and stays as it is.
         setText((cur) => (cur === before ? "" : cur));
+        // The box may be gone already (Terminal tab): its draft must not keep the sent text.
+        if (getDraft(sessionId) === before) setDraft(sessionId, "");
         setBrowse(null);
         onSent?.();
       }, (e: unknown) => {
