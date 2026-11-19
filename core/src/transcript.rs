@@ -125,10 +125,20 @@ fn notified_tasks(t: &str) -> Vec<String> {
     out
 }
 
-/// The id of "Command running in background with ID: <id>. …".
+/// The id of a shell command that runs in the background: "Command running
+/// in background with ID: <id>. …", or one moved there later (a timeout, a
+/// message arriving, Ctrl+B): "… moved to the background (ID: <id>) …",
+/// "Command was manually backgrounded by user with ID: <id>. …".
 fn background_id(t: &str) -> Option<String> {
-    let rest = t.trim_start().strip_prefix("Command running in background with ID: ")?;
-    let id: String = rest.chars().take_while(|c| *c != '.' && !c.is_whitespace()).collect();
+    let t = t.trim_start();
+    if !t.starts_with("Command ") {
+        return None;
+    }
+    // The first sentence names the id; later text may quote anything.
+    let head = &t[..t.char_indices().nth(200).map_or(t.len(), |(i, _)| i)];
+    let bg = head.find("background")?;
+    let at = bg + head[bg..].find("ID: ")? + "ID: ".len();
+    let id: String = head[at..].chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-').collect();
     (!id.is_empty()).then_some(id)
 }
 
@@ -977,6 +987,19 @@ kısa
         assert!(parse_line(s).iter().any(|e| matches!(e, Entry::BackgroundStarted { id, .. } if id == "bwef6ptw2")));
         let b = r#"{"type":"user","timestamp":"2026-11-19T07:28:50.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","content":[{"type":"text","text":"Command running in background with ID: b2 now"}]}]}}"#;
         assert!(parse_line(b).iter().any(|e| matches!(e, Entry::BackgroundStarted { id, .. } if id == "b2")));
+    }
+
+    #[test]
+    fn a_command_moved_to_the_background_later_is_a_background_start() {
+        for (text, want) in [
+            ("Command did not complete within its 300s timeout and was moved to the background (ID: b9r9jl2dr). Output is being written to: C:\\\\x", "b9r9jl2dr"),
+            ("Command was moved to the background (ID: ba7m1jyx4) so that a message that arrived while it was running could be handled.", "ba7m1jyx4"),
+            ("Command was manually backgrounded by user with ID: bq1. Output is being written to: C:\\\\x", "bq1"),
+        ] {
+            assert_eq!(background_id(text).as_deref(), Some(want), "{text}");
+        }
+        assert_eq!(background_id("The background color has ID: 5"), None, "not a command");
+        assert_eq!(background_id("ok"), None);
     }
 
     #[test]
