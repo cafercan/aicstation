@@ -220,6 +220,13 @@ export const getConversationPage = (sessionId: string, before?: number) =>
   invoke<ConvPage>("get_conversation_page", { sessionId, before: before ?? null });
 export const getConversationSince = (sessionId: string, epoch: number, from: number) =>
   invoke<ConvPage>("get_conversation_since", { sessionId, epoch, from });
+
+/** A skill a session can run as `/name`. */
+export interface SessionSkill { name: string; description: string }
+
+/** Skills a live session listed; empty for a closed one. */
+export const getSessionCommands = (sessionId: string) =>
+  invoke<SessionSkill[]>("get_session_commands", { sessionId });
 export const getConversationImage = (sessionId: string, offset: number, ordinal: number) =>
   invoke<ConvImage>("get_conversation_image", { sessionId, offset, ordinal });
 export const openFolder = (path: string) => invoke<void>("open_folder", { path });

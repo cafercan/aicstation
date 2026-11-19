@@ -531,6 +531,12 @@ impl Monitor {
         }
     }
 
+    /// Skills a live session listed, by name; empty for a session the last
+    /// refresh did not see live.
+    pub fn session_skills(&self, id: &str) -> Vec<crate::transcript::Skill> {
+        self.states.get(id).map(|st| st.stats.skills()).unwrap_or_default()
+    }
+
     /// The live registry entry of `id`, read fresh (never the cached snapshot).
     pub fn live_session(&self, id: &str, probe: &dyn ProcessProbe) -> Option<LiveSession> {
         read_live_sessions(&self.claude_dir.join("sessions"), probe).into_iter().find(|l| l.session_id == id)
@@ -939,6 +945,21 @@ mod tests {
         for k in ["permissionMode", "backgroundShells", "queuedMessages", "turnOutputTokens", "statusSinceMs"] {
             assert!(v.get(k).is_some(), "{k}");
         }
+    }
+
+    #[test]
+    fn session_skills_from_the_transcript() {
+        let e = Env::new();
+        let sid = id(1);
+        let t = e.transcript(&sid);
+        e.append(&t, r#"{"type":"attachment","timestamp":"2026-11-02T07:00:00Z","attachment":{"type":"skill_listing","isInitial":true,"content":"- run: Launch the app.\n- caveman:caveman-help: Card."}}"#);
+        e.reg(1, &sid, "idle", 10, None);
+        let mut m = e.mon();
+        assert!(m.session_skills(&sid).is_empty(), "nothing read before a refresh");
+        m.refresh(&FakeProbe, now());
+        let names: Vec<_> = m.session_skills(&sid).into_iter().map(|s| s.name).collect();
+        assert_eq!(names, ["caveman:caveman-help", "run"]);
+        assert!(m.session_skills(&id(9)).is_empty());
     }
 
     #[test]

@@ -342,6 +342,7 @@ fn main() {
             commands::get_session_detail,
             commands::get_conversation_page,
             commands::get_conversation_since,
+            commands::get_session_commands,
             commands::get_conversation_image,
             commands::get_history,
             commands::open_folder,
