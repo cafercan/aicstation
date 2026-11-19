@@ -86,6 +86,9 @@ struct Seen {
     agents_finished: u32,
     /// Context use was at or over the threshold.
     context_over: bool,
+    /// The context use was known. Unknown (transcript not read yet, at
+    /// startup) and then over is not a crossing: it was over already.
+    context_known: bool,
     /// What counts as activity: last activity time and total tokens (the
     /// tokens include the agents, whose work does not touch the main transcript).
     activity: (u64, u64),
@@ -171,7 +174,7 @@ impl Detector {
                 |last: &HashMap<String, Instant>| last.get(&card.session_id).is_some_and(|t| now.duration_since(*t) < DEBOUNCE);
             if let (false, Some(o)) = (first, old) {
                 let subagent = toggles.subagent && card.agents_finished > o.agents_finished;
-                let context = context_over && !o.context_over;
+                let context = context_over && !o.context_over && o.context_known;
                 // The enabled alerts of this tick, the first one wins.
                 let kind = if toggles.waiting && ph == Phase::Waiting && o.phase != Phase::Waiting {
                     Some(AlertKind::Waiting)
@@ -246,6 +249,7 @@ impl Detector {
                     busy_since,
                     agents_finished: seen_agents_finished,
                     context_over: seen_context_over,
+                    context_known: card.context_pct.is_some(),
                     activity,
                     quiet_since,
                     stall_alerted,
@@ -584,6 +588,16 @@ mod tests {
         let mut d = Detector::default();
         d.observe(&[ctx(A, Some(10.0))], t0, off, &[]);
         assert!(d.observe(&[ctx(A, Some(99.0))], secs(t0, 1), off, &[]).is_empty());
+        // Unknown first (the transcript not read yet at startup), then over:
+        // it was over already, nothing crossed.
+        let mut d = Detector::default();
+        d.observe(&[ctx(A, None)], t0, ALL, &[]);
+        assert!(d.observe(&[ctx(A, None)], secs(t0, 1), ALL, &[]).is_empty());
+        assert!(d.observe(&[ctx(A, Some(93.0))], secs(t0, 2), ALL, &[]).is_empty());
+        // From then on a crossing alerts as usual.
+        d.observe(&[ctx(A, Some(20.0))], secs(t0, 3), ALL, &[]);
+        let got = d.observe(&[ctx(A, Some(90.0))], secs(t0, 4), ALL, &[]);
+        assert_eq!(kinds(&got), [(AlertKind::Context, A)]);
     }
 
     #[test]
