@@ -372,4 +372,6 @@ export const ru: Dict = {
   "conv.waiting": "Ответьте на запрос подтверждения во вкладке «Терминал»",
   "conv.toTerminal": "Вкладка «Терминал»",
   "conv.sendFailed": "Не удалось отправить: {err}",
+  "conv.quote": "Цитировать",
+  "conv.copy": "Копировать",
 };

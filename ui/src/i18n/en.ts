@@ -354,4 +354,6 @@ export const en: Dict = {
   "conv.waiting": "Answer the approval in the Terminal tab",
   "conv.toTerminal": "Terminal tab",
   "conv.sendFailed": "Could not send: {err}",
+  "conv.quote": "Quote",
+  "conv.copy": "Copy",
 };

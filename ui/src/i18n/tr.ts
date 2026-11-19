@@ -364,4 +364,6 @@ export const tr = {
   "conv.waiting": "Onayı Terminal sekmesinde verin",
   "conv.toTerminal": "Terminal sekmesi",
   "conv.sendFailed": "Gönderilemedi: {err}",
+  "conv.quote": "Alıntıla",
+  "conv.copy": "Kopyala",
 } as const satisfies Record<string, string>;

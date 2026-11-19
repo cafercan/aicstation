@@ -357,4 +357,6 @@ export const de: Dict = {
   "conv.waiting": "Bestätigen Sie die Anfrage im Tab „Terminal“",
   "conv.toTerminal": "Tab „Terminal“",
   "conv.sendFailed": "Senden fehlgeschlagen: {err}",
+  "conv.quote": "Zitieren",
+  "conv.copy": "Kopieren",
 };

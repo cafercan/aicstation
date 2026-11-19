@@ -355,6 +355,83 @@ test("sent message is picked up by a since call shortly after", async () => {
   expect(await screen.findByText("gönderilen", {}, { timeout: 2000 })).toBeTruthy();
 });
 
+// Quote menu
+
+/** Selects all text of `el` as a mouse selection would. */
+function selectText(el: Node) {
+  const r = document.createRange();
+  r.selectNodeContents(el);
+  const s = window.getSelection()!;
+  s.removeAllRanges();
+  s.addRange(r);
+}
+
+const REPLY: ConvItem = { kind: "assistant", text: "ilk cevap", truncated: false, atMs: 1 };
+
+test("selected text: right click, Alıntıla puts it quoted in the message box", async () => {
+  serve({ get_conversation_page: () => page([REPLY]) });
+  render(<ConversationPage sessionId="s1" card={card()} {...props} />);
+  const reply = await screen.findByText("ilk cevap");
+  selectText(reply);
+  expect(fireEvent.contextMenu(reply, { clientX: 50, clientY: 60 })).toBe(false);
+  fireEvent.click(screen.getByRole("menuitem", { name: "Alıntıla" }));
+  expect(screen.queryByRole("menu")).toBeNull();
+  const box = screen.getByRole("textbox") as HTMLTextAreaElement;
+  expect(box.value).toBe("> ilk cevap\n\n");
+  expect(document.activeElement).toBe(box);
+  expect(box.selectionStart).toBe(box.value.length);
+});
+
+test("a quote goes after text already in the message box", async () => {
+  serve({ get_conversation_page: () => page([REPLY]) });
+  render(<ConversationPage sessionId="s1" card={card()} {...props} />);
+  const reply = await screen.findByText("ilk cevap");
+  const box = screen.getByRole("textbox") as HTMLTextAreaElement;
+  fireEvent.change(box, { target: { value: "önce" } });
+  selectText(reply);
+  fireEvent.contextMenu(reply);
+  fireEvent.click(screen.getByRole("menuitem", { name: "Alıntıla" }));
+  expect(box.value).toBe("önce\n\n> ilk cevap\n\n");
+});
+
+test("without a selection the right click is left alone", async () => {
+  serve({ get_conversation_page: () => page([REPLY]) });
+  render(<ConversationPage sessionId="s1" card={card()} {...props} />);
+  const reply = await screen.findByText("ilk cevap");
+  window.getSelection()!.removeAllRanges();
+  expect(fireEvent.contextMenu(reply)).toBe(true);
+  expect(screen.queryByRole("menu")).toBeNull();
+});
+
+test("Kopyala copies the selection; Esc closes the menu", async () => {
+  const writeText = vi.fn(async (_s: string) => {});
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+  serve({ get_conversation_page: () => page([REPLY]) });
+  render(<ConversationPage sessionId="s1" card={card()} {...props} />);
+  const reply = await screen.findByText("ilk cevap");
+  selectText(reply);
+  fireEvent.contextMenu(reply);
+  fireEvent.click(screen.getByRole("menuitem", { name: "Kopyala" }));
+  expect(writeText).toHaveBeenCalledWith("ilk cevap");
+  expect(screen.queryByRole("menu")).toBeNull();
+  // jsdom clears the selection when the menu focuses its first item.
+  selectText(reply);
+  fireEvent.contextMenu(reply);
+  expect(screen.getByRole("menu")).toBeTruthy();
+  fireEvent.keyDown(document.body, { key: "Escape" });
+  expect(screen.queryByRole("menu")).toBeNull();
+});
+
+test("a session without a message box offers only Kopyala", async () => {
+  serve({ get_conversation_page: () => page([REPLY]) });
+  render(<ConversationPage sessionId="s1" card={card({ pid: 0 })} {...props} />);
+  const reply = await screen.findByText("ilk cevap");
+  selectText(reply);
+  fireEvent.contextMenu(reply);
+  expect(screen.getByRole("menuitem", { name: "Kopyala" })).toBeTruthy();
+  expect(screen.queryByRole("menuitem", { name: "Alıntıla" })).toBeNull();
+});
+
 // Composer
 
 test("composer: Enter sends the text and clears it", async () => {

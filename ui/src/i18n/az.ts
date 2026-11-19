@@ -354,4 +354,6 @@ export const az: Dict = {
   "conv.waiting": "Təsdiqi Terminal vərəqəsində verin",
   "conv.toTerminal": "Terminal vərəqəsi",
   "conv.sendFailed": "Göndərilmədi: {err}",
+  "conv.quote": "Sitat gətir",
+  "conv.copy": "Kopyala",
 };

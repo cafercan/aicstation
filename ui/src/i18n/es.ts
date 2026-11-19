@@ -357,4 +357,6 @@ export const es: Dict = {
   "conv.waiting": "Responde a la aprobación en la pestaña Terminal",
   "conv.toTerminal": "Pestaña Terminal",
   "conv.sendFailed": "No se pudo enviar: {err}",
+  "conv.quote": "Citar",
+  "conv.copy": "Copiar",
 };

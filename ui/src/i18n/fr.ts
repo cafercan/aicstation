@@ -357,4 +357,6 @@ export const fr: Dict = {
   "conv.waiting": "Répondez à la demande d'approbation dans l'onglet Terminal",
   "conv.toTerminal": "Onglet Terminal",
   "conv.sendFailed": "Envoi impossible : {err}",
+  "conv.quote": "Citer",
+  "conv.copy": "Copier",
 };

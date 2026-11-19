@@ -218,6 +218,14 @@ table.hist td .est { display: block; font-size: 11px; }
 .conv-viewer-box img { max-width: 90vw; max-height: 90vh; object-fit: contain; border-radius: 4px; box-shadow: 0 8px 40px rgba(0, 0, 0, .5); user-select: none; }
 .conv-viewer-box img.zoomed { cursor: grab; }
 .conv-viewer-box img.dragging { cursor: grabbing; }
+.conv-menu {
+  position: fixed; z-index: 70; min-width: 140px; padding: 4px; display: flex; flex-direction: column;
+  background: var(--raised); border: 1px solid var(--border-strong); border-radius: 6px; box-shadow: 0 6px 24px rgba(0, 0, 0, .45);
+}
+.conv-menu button {
+  text-align: left; background: none; border: 0; border-radius: 4px; color: var(--text); padding: 6px 10px; font: inherit; font-size: 13px; cursor: pointer;
+}
+.conv-menu button:hover, .conv-menu button:focus-visible { background: var(--selected); color: var(--strong); outline: none; }
 .conv-viewer-zoom {
   position: absolute; top: 20px; right: 64px; padding: 3px 8px; border-radius: 4px;
   background: rgba(0, 0, 0, .55); color: #fff; font-size: 12px; font-variant-numeric: tabular-nums; pointer-events: none;

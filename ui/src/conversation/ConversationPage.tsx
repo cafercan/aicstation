@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import { getConversationPage, getConversationSince, type ConvPage, type SessionCard } from "../api";
 import { errorText, useT } from "../i18n";
 import SessionTerminalPlaceholder from "../pages/SessionTerminalPlaceholder";
@@ -7,6 +7,8 @@ import Composer from "./Composer";
 import ConvItemView from "./ConvItemView";
 import { applyPage, hasOlder, lastIndex, type ConvState } from "./convState";
 import ImageViewer from "./ImageViewer";
+import { quoteText } from "./quote";
+import QuoteMenu from "./QuoteMenu";
 
 /** Within this many pixels of the bottom the list follows new items. */
 const PIN_PX = 40;
@@ -39,6 +41,10 @@ export default function ConversationPage({ sessionId, card, onShowTerminal, onTe
   /** Why the first load failed (`code` is the backend error code, `text` its translation). */
   const [err, setErr] = useState<{ code: string; text: string } | null>(null);
   const [viewing, setViewing] = useState<string | null>(null);
+  /** Right-click menu over selected text: where, and the text it acts on. */
+  const [menu, setMenu] = useState<{ x: number; y: number; text: string } | null>(null);
+  /** Last quote handed to the message box; `seq` makes a repeat a new one. */
+  const [quote, setQuote] = useState<{ text: string; seq: number } | undefined>(undefined);
   /** The latest state, also between a merge and its render (async callbacks read it). */
   const convRef = useRef<ConvState | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -148,6 +154,27 @@ export default function ConversationPage({ sessionId, card, onShowTerminal, onTe
 
   const hosted = live && terminalForPid(card.parentPid) !== undefined;
 
+  // Right click on text selected in the list opens the Quote/Copy menu;
+  // without a selection the system's own menu stays.
+  const onContextMenu = (e: MouseEvent) => {
+    const sel = window.getSelection();
+    const text = sel?.toString() ?? "";
+    if (text.trim() === "" || !sel?.anchorNode || !listRef.current?.contains(sel.anchorNode)) return;
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY, text });
+  };
+  const quoteSelection = () => {
+    if (!menu) return;
+    const text = quoteText(menu.text);
+    setQuote((q) => ({ text, seq: (q?.seq ?? 0) + 1 }));
+    setMenu(null);
+  };
+  const copySelection = () => {
+    if (!menu) return;
+    void navigator.clipboard?.writeText(menu.text).catch(() => {});
+    setMenu(null);
+  };
+
   // A live session has no transcript until its first message (new session,
   // after /clear): that is an empty conversation, not an error.
   const notYet = err !== null && live && err.code === "conv_unavailable";
@@ -167,16 +194,20 @@ export default function ConversationPage({ sessionId, card, onShowTerminal, onTe
 
   return (
     <div className="conv">
-      <div className="conv-list" ref={listRef} onScroll={onScroll}>
+      <div className="conv-list" ref={listRef} onScroll={onScroll} onContextMenu={onContextMenu}>
         <div className="conv-items">{body}</div>
       </div>
       <div className="conv-foot">
         {hosted
-          ? <Composer sessionId={sessionId} status={card.status} onShowTerminal={onShowTerminal} onSent={onSent} />
+          ? <Composer sessionId={sessionId} status={card.status} onShowTerminal={onShowTerminal} onSent={onSent} quote={quote} />
           : <SessionTerminalPlaceholder card={card} sessionId={sessionId} onTerminal={onTerminal}
             onAdopted={onAdopted} onResume={onResume} />}
       </div>
       {viewing !== null && <ImageViewer src={viewing} onClose={() => setViewing(null)} />}
+      {menu && (
+        <QuoteMenu x={menu.x} y={menu.y} onQuote={hosted ? quoteSelection : undefined}
+          onCopy={copySelection} onClose={() => setMenu(null)} />
+      )}
     </div>
   );
 }

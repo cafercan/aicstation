@@ -89,8 +89,13 @@ closed session in its own folder.
   waits for approval or an answer. Text already typed in the terminal's own
   input is sent together with it. If the session starts waiting (or leaves
   the terminal) between the paste and the Enter, the text stays unsent in the
-  terminal's input and the box says so. Outside the app, the Move to app / Go to
-  tab placeholder shows instead; a closed session shows Resume.
+  terminal's input and the box says so. Text sent while Claude works or runs a
+  shell command (also a background one) is queued in the session. Outside the
+  app, the Move to app / Go to tab placeholder shows instead; a closed session
+  shows Resume.
+- **Quote**: select text in the conversation and right-click it: Quote adds it
+  to the message box as a Markdown quote (`> ...`) with the caret below it, to
+  answer under; Copy copies it. Without a selection the usual menu stays.
 - **Remote Control mark**: a live session that has Remote Control on shows a
   small mark on its dashboard card and tab row. Clicking it opens the session
   on claude.ai in your system browser.
@@ -486,8 +491,11 @@ Claude ve Claude Code, Anthropic'in ticari markalarıdır.
   terk edilenler gizli); `/compact` öncesi geçmiş "Konuşma sıkıştırıldı"
   ayracıyla kalır. Uygulama terminalinde çalışan oturuma mesaj kutusundan
   metin gönderilir (Enter gönderir, Shift+Enter yeni satır; Claude onay
-  beklerken kapalı); uygulama dışındaki oturumda "Uygulamaya taşı" / "Sekmeye
-  git", kapanmışta "Devam et" görünür. Remote Control açık canlı oturumlarda
+  beklerken kapalı; Claude çalışırken ya da arka planda komut çalışırken
+  mesaj kuyruğa girer); uygulama dışındaki oturumda "Uygulamaya taşı" / "Sekmeye
+  git", kapanmışta "Devam et" görünür. Konuşmada metin seçip sağ tıklayınca
+  "Alıntıla" onu mesaj kutusuna `> ...` alıntısı olarak ekler, altına cevap
+  yazılır; "Kopyala" panoya kopyalar. Remote Control açık canlı oturumlarda
   kart ve sekme satırında küçük bir işaret, tıklayınca claude.ai'de açar.
 - **Geçmiş:** önbellekli dizin, kullanım grafikleri (token, tahmini $; 7/30/90 gün, projeler,
   modeller; çalışan oturumlar dahil), canlı ve geçmiş oturumlarda içerikte

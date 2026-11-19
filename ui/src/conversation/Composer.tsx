@@ -1,15 +1,18 @@
-import { useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { sendToSession } from "../api";
 import { errorText, useT } from "../i18n";
+import { appendQuote } from "./quote";
 
 /**
  * Message box under the conversation of a session in an app terminal. Enter
  * sends the text to that terminal (the backend re-checks everything), Shift+Enter
  * adds a line. While the session waits for an approval the box is disabled:
- * typing would answer the prompt.
+ * typing would answer the prompt. Each new `quote` (a new `seq`) is added
+ * to the text, with the caret after it, to answer under.
  */
-export default function Composer({ sessionId, status, onShowTerminal, onSent }: {
+export default function Composer({ sessionId, status, onShowTerminal, onSent, quote }: {
   sessionId: string; status: string; onShowTerminal: () => void; onSent?: () => void;
+  quote?: { text: string; seq: number };
 }) {
   const t = useT();
   const [text, setText] = useState("");
@@ -17,6 +20,30 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent }: 
   const sendingRef = useRef(false);
   const [err, setErr] = useState<string | null>(null);
   const waiting = status === "waiting";
+  const box = useRef<HTMLTextAreaElement>(null);
+  /** A quote was just added: focus the box with the caret at the end. */
+  const toEnd = useRef(false);
+
+  // Only a new quote (a new seq) adds text, not a re-render with the same one.
+  const quoteRef = useRef(quote);
+  quoteRef.current = quote;
+  const quoteSeq = quote?.seq;
+  useEffect(() => {
+    const q = quoteRef.current;
+    if (q === undefined) return;
+    toEnd.current = true;
+    setText((cur) => appendQuote(cur, q.text));
+    setErr(null);
+  }, [quoteSeq]);
+
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!toEnd.current || !el) return;
+    toEnd.current = false;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+    el.scrollTop = el.scrollHeight;
+  }, [text]);
 
   const send = () => {
     if (waiting || sendingRef.current || text.trim() === "") return;
@@ -41,7 +68,7 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent }: 
   return (
     <div className="conv-composer">
       <div className="conv-composer-row">
-        <textarea value={text} rows={2} disabled={waiting} placeholder={t("conv.placeholder")}
+        <textarea ref={box} value={text} rows={2} disabled={waiting} placeholder={t("conv.placeholder")}
           onChange={(e) => { setText(e.target.value); setErr(null); }}
           onKeyDown={(e) => {
             // keyCode 229: WebKitGTK can send the Enter that commits an IME word with isComposing false.

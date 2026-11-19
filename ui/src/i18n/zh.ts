@@ -354,4 +354,6 @@ export const zh: Dict = {
   "conv.waiting": "请在终端标签页中回应确认请求",
   "conv.toTerminal": "终端标签页",
   "conv.sendFailed": "发送失败：{err}",
+  "conv.quote": "引用",
+  "conv.copy": "复制",
 };
