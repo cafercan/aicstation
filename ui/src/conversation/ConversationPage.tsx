@@ -201,7 +201,8 @@ export default function ConversationPage({ sessionId, card, onShowTerminal, onTe
       <div className="conv-foot">
         {live && <ConvStatus card={card} />}
         {hosted
-          ? <Composer sessionId={sessionId} status={card.status} onShowTerminal={onShowTerminal} onSent={onSent} quote={quote} />
+          ? <Composer sessionId={sessionId} status={card.status} onShowTerminal={onShowTerminal} onSent={onSent} quote={quote}
+            skillsKey={card.transcriptBytes} />
           : <SessionTerminalPlaceholder card={card} sessionId={sessionId} onTerminal={onTerminal}
             onAdopted={onAdopted} onResume={onResume} />}
       </div>

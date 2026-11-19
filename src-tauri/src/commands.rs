@@ -554,6 +554,15 @@ impl AppState {
         Ok(format!("https://claude.ai/code/{bridge}"))
     }
 
+    /// Skills a live session can run (from its transcript's listings); empty
+    /// for a closed or unknown one, `session_invalid` for a malformed id.
+    pub fn session_commands(&self, id: &str) -> Result<Vec<station_core::transcript::Skill>, String> {
+        if !is_session_id(id) {
+            return Err(errors::SESSION_INVALID.into());
+        }
+        Ok(lock(&self.monitor).session_skills(id))
+    }
+
     /// The registry entry of a live session, read fresh; `session_invalid`
     /// for a malformed id, `session_not_live` when it is not live.
     fn fresh_live(&self, id: &str) -> Result<LiveSession, String> {
@@ -755,6 +764,16 @@ pub async fn get_conversation_since(
     tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().conversation_since(&session_id, epoch, from))
         .await
         .map_err(|e| errors::with(errors::TASK_FAILED, e))?
+}
+
+/// Skills of a live session for the message box's command menu. Off the
+/// main thread: it waits for the monitor lock a refresh may hold.
+#[tauri::command(async)]
+pub fn get_session_commands(
+    state: tauri::State<'_, AppState>,
+    session_id: String,
+) -> Result<Vec<station_core::transcript::Skill>, String> {
+    state.session_commands(&session_id)
 }
 
 #[tauri::command]
@@ -1702,6 +1721,17 @@ mod tests {
         assert_eq!(state.send_target(ADOPT_ID), Ok(EMBED_SHELL));
         assert_eq!(state.send_target("../x").unwrap_err(), errors::SESSION_INVALID);
         assert_eq!(state.send_target(CLOSED_ID).unwrap_err(), errors::SESSION_NOT_LIVE);
+    }
+
+    #[test]
+    fn session_commands_empty_when_not_live() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, _, _) = adopt_files(tmp.path(), "idle", true);
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(adopt_probe()));
+        state.get_snapshot();
+        assert_eq!(state.session_commands(CLOSED_ID), Ok(vec![]));
+        assert_eq!(state.session_commands(ADOPT_ID), Ok(vec![]), "live, no listing yet");
+        assert_eq!(state.session_commands("../x").unwrap_err(), errors::SESSION_INVALID);
     }
 
     #[test]

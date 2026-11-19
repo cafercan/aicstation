@@ -1,7 +1,7 @@
 //! Incremental per-session statistics built from transcript entries.
 use crate::model::{ChangedFile, ToolCall, ToolState, Usage};
 use crate::pricing;
-use crate::transcript::{Entry, QueueOp};
+use crate::transcript::{Entry, QueueOp, Skill};
 use chrono::{DateTime, Local, NaiveDate, Utc};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
@@ -61,6 +61,9 @@ pub struct SessionStats {
     /// to it can still be running or waiting.
     #[serde(skip)]
     settled_before: Option<DateTime<Utc>>,
+    /// Skills listed for the session: name → description.
+    #[serde(skip)]
+    skills: BTreeMap<String, String>,
     #[serde(skip)]
     seen_ids: HashSet<String>,
     /// Insertion order of `seen_ids`; the oldest id is forgotten first.
@@ -86,6 +89,11 @@ impl SessionStats {
     /// Background tasks started and not seen finished.
     pub fn background_shells(&self) -> u32 {
         self.background.len() as u32
+    }
+
+    /// Skills the session can run, by name.
+    pub fn skills(&self) -> Vec<Skill> {
+        self.skills.iter().map(|(n, d)| Skill { name: n.clone(), description: d.clone() }).collect()
     }
 
     /// Queued prompts of the user (queued task notices are not counted).
@@ -241,6 +249,14 @@ impl SessionStats {
             Entry::TaskFinished(id) => self.background.retain(|(i, _)| i != id),
             Entry::UserPrompt { .. } => self.turn_output_tokens = 0,
             Entry::Queue { op, content, at } => self.apply_queue(*op, content, *at),
+            Entry::SkillListing { initial, skills } => {
+                if *initial {
+                    self.skills.clear();
+                }
+                for s in skills {
+                    self.skills.insert(s.name.clone(), s.description.clone());
+                }
+            }
             Entry::Meta { cwd, git_branch, at } => {
                 if let Some(c) = cwd {
                     if self.first_cwd.is_none() {
@@ -582,6 +598,18 @@ mod tests {
         st.apply(&out("m3", 12, ts(5)));
         st.apply(&out("m3", 12, ts(5))); // same id: once
         assert_eq!(st.turn_output_tokens, 42);
+    }
+
+    #[test]
+    fn skill_listings_join_and_initial_starts_over() {
+        let sk = |n: &str| Skill { name: n.into(), description: format!("{n} does it") };
+        let mut st = SessionStats::default();
+        st.apply(&Entry::SkillListing { initial: true, skills: vec![sk("b"), sk("a")] });
+        st.apply(&Entry::SkillListing { initial: false, skills: vec![sk("c")] });
+        let names = |st: &SessionStats| st.skills().into_iter().map(|s| s.name).collect::<Vec<_>>();
+        assert_eq!(names(&st), ["a", "b", "c"]);
+        st.apply(&Entry::SkillListing { initial: true, skills: vec![sk("z")] });
+        assert_eq!(names(&st), ["z"]);
     }
 
     #[test]

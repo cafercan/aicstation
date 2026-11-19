@@ -101,6 +101,12 @@ closed session in its own folder.
   1 shell`) as on its screen; otherwise its state, for how long, the turn's
   tokens, the permission mode and running background commands. Messages
   queued while Claude works and running agents are counted too.
+- **Commands**: typing `/` at the start of the message box lists Claude Code's
+  built-in commands and the session's skills (this machine's own, plugins
+  included; a skill added during the session shows up too); typing narrows
+  the list. ↑/↓ choose, Enter runs, Tab puts the name in the box to add
+  arguments, Esc closes. Commands that open a picker in the terminal
+  (`/model`, `/config`, `/usage`…) switch to the Terminal tab.
 - **Quote**: select text in the conversation and right-click it: Quote adds it
   to the message box as a Markdown quote (`> ...`) with the caret below it, to
   answer under; Copy copies it. Without a selection the usual menu stays.
@@ -509,7 +515,11 @@ Claude ve Claude Code, Anthropic'in ticari markalarıdır.
   oturumun ne yaptığını gösterir: uygulama terminalinde Claude'un kendi
   spinner'ı ve mod satırı ekrandaki gibi, değilse durum, süre, turun
   tokenları, mod ve arka plan komutları; kuyruktaki mesajlar ve çalışan
-  ajanlar da sayılır. Remote Control açık canlı oturumlarda
+  ajanlar da sayılır. Mesaj kutusuna `/` yazınca Claude Code'un yerleşik
+  komutları ve oturumun skill'leri (bu bilgisayardakiler, eklentiler dahil)
+  listelenir; ↑/↓ seçer, Enter çalıştırır, Tab argüman için ada yazar, Esc
+  kapatır; terminalde seçici açan komutlar Terminal sekmesine geçer. Remote
+  Control açık canlı oturumlarda
   kart ve sekme satırında küçük bir işaret, tıklayınca claude.ai'de açar.
 - **Geçmiş:** önbellekli dizin, kullanım grafikleri (token, tahmini $; 7/30/90 gün, projeler,
   modeller; çalışan oturumlar dahil), canlı ve geçmiş oturumlarda içerikte

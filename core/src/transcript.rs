@@ -41,6 +41,45 @@ pub enum Entry {
     UserPrompt { at: DateTime<Utc> },
     /// A change to the queue of prompts typed while Claude was busy.
     Queue { op: QueueOp, content: Option<String>, at: DateTime<Utc> },
+    /// Skills Claude Code listed for the session: all of them when
+    /// `initial`, else only those that appeared since.
+    SkillListing { initial: bool, skills: Vec<Skill> },
+}
+
+/// A skill a session can run as `/name`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Skill {
+    pub name: String,
+    /// First sentence of its description, at most [`SKILL_DESC_MAX`] chars.
+    pub description: String,
+}
+
+/// Longest skill description kept, in chars (a cut one ends in `…`).
+pub const SKILL_DESC_MAX: usize = 120;
+
+/// `- name: description` lines of a `skill_listing`; malformed lines are skipped.
+fn listed_skills(content: &str) -> Vec<Skill> {
+    content
+        .lines()
+        .filter_map(|l| {
+            let item = l.trim().strip_prefix("- ")?;
+            // Some skills are listed by name alone; a name has no spaces, so
+            // a wrapped description line cannot pass for one.
+            let (name, text) = item.split_once(": ").unwrap_or((item, ""));
+            let name = name.trim();
+            if name.is_empty() || name.chars().count() > 200 || name.contains(char::is_whitespace) {
+                return None;
+            }
+            let text = text.trim();
+            let first = text.find(". ").map_or(text, |i| &text[..=i]);
+            let description = if first.chars().count() > SKILL_DESC_MAX {
+                format!("{}…", first.chars().take(SKILL_DESC_MAX - 1).collect::<String>())
+            } else {
+                first.to_string()
+            };
+            Some(Skill { name: name.to_string(), description })
+        })
+        .collect()
 }
 
 /// `queue-operation` kinds.
@@ -233,6 +272,12 @@ pub fn parse_line(line: &str) -> Vec<Entry> {
             }
         }
         Some("attachment") => {
+            if let Some(att) = v.get("attachment").filter(|a| str_of(a, "type") == Some("skill_listing")) {
+                out.push(Entry::SkillListing {
+                    initial: att.get("isInitial").and_then(Value::as_bool).unwrap_or(false),
+                    skills: str_of(att, "content").map(listed_skills).unwrap_or_default(),
+                });
+            }
             let att = v.get("attachment").filter(|a| str_of(a, "type") == Some("queued_command"));
             if let Some(att) = att {
                 let notice = str_of(att, "commandMode") == Some("task-notification")
@@ -951,5 +996,38 @@ kısa
         assert!(matches!(&parse_line(&q("remove", r#","content":"hi","reason":"absorbed_mid_turn""#))[..], [Entry::Queue { op: QueueOp::Remove, .. }]));
         assert!(matches!(&parse_line(&q("popAll", r#","content":"a""#))[..], [Entry::Queue { op: QueueOp::PopAll, .. }]));
         assert!(parse_line(&q("shuffle", "")).is_empty());
+    }
+
+    fn listing(initial: bool, content: &str) -> String {
+        let att = serde_json::json!({"type": "skill_listing", "isInitial": initial, "content": content});
+        serde_json::json!({"type": "attachment", "timestamp": "2026-11-19T07:00:00Z", "attachment": att}).to_string()
+    }
+
+    #[test]
+    fn parses_skill_listing() {
+        let long = "x".repeat(300);
+        let c = format!("- caveman:caveman-init: Drop the rule. More text.\n- run: {long}");
+        let e = parse_line(&listing(true, &c));
+        let [Entry::SkillListing { initial: true, skills }] = &e[..] else { panic!("{e:?}") };
+        assert_eq!(skills[0], Skill { name: "caveman:caveman-init".into(), description: "Drop the rule.".into() });
+        assert_eq!(skills[1].name, "run");
+        assert_eq!(skills[1].description.chars().count(), 120);
+        assert!(skills[1].description.ends_with('…'));
+    }
+
+    #[test]
+    fn skips_malformed_listing_lines() {
+        let e = parse_line(&listing(false, "- two words\n- : x\n- ok: fine"));
+        let [Entry::SkillListing { initial: false, skills }] = &e[..] else { panic!("{e:?}") };
+        assert_eq!(skills.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(), ["ok"]);
+    }
+
+    #[test]
+    fn accepts_skills_listed_by_name_alone() {
+        // Claude Code lists some skills as a bare "- name" line.
+        let e = parse_line(&listing(true, "- anthropic-skills:pdf\n- run: Launch."));
+        let [Entry::SkillListing { skills, .. }] = &e[..] else { panic!("{e:?}") };
+        assert_eq!(skills[0], Skill { name: "anthropic-skills:pdf".into(), description: String::new() });
+        assert_eq!(skills[1].name, "run");
     }
 }
