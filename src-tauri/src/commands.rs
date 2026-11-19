@@ -640,6 +640,14 @@ impl AppState {
         known
     }
 
+    /// Whether a session folder has modified tracked files. Only a known
+    /// session's local folder is looked at, checked like `open_folder`: a UNC
+    /// path or network drive would make an outbound SMB request.
+    pub fn git_dirty(&self, cwd: &str) -> Option<bool> {
+        validate_open_folder(cwd, &self.known_cwds()).ok()?;
+        crate::gitstat::dirty(cwd)
+    }
+
     pub fn open_folder(&self, path: &str) -> Result<(), String> {
         let dir = validate_open_folder(path, &self.known_cwds())?;
         crate::platform::open_folder(&dir).map_err(|e| errors::with(errors::FOLDER_OPEN_FAILED, e))
@@ -1016,6 +1024,22 @@ mod tests {
         fs::write(proj.join(format!("{LIVE_ID}.jsonl")), asst("m1", out, &ts) + "\n").unwrap();
         fs::write(proj.join(format!("{CLOSED_ID}.jsonl")), asst("m2", out, &ts) + "\n").unwrap();
         (claude, FakeProbe(HashMap::from([(4242, 777)])))
+    }
+
+    #[test]
+    fn git_status_only_for_folders_of_known_sessions() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, probe) = two_sessions(tmp.path(), 1);
+        let repo = tmp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let init = std::process::Command::new("git").args(["init", "-q"]).current_dir(&repo).status();
+        assert!(init.is_ok_and(|s| s.success()), "git init");
+        let repo = repo.to_string_lossy().into_owned();
+        assert_eq!(crate::gitstat::dirty(&repo), Some(false), "a clean repository");
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(probe));
+        // Not the folder of any session: the UI has no business asking.
+        assert_eq!(state.git_dirty(&repo), None);
+        assert_eq!(state.git_dirty(r"\\host\share"), None);
     }
 
     #[test]
@@ -2284,6 +2308,7 @@ pub async fn set_usage_bridge(app: tauri::AppHandle, on: bool) -> Result<bool, S
 
 /// Whether the session folder has modified tracked files (`None`: unknown).
 #[tauri::command]
-pub async fn git_dirty(cwd: String) -> Option<bool> {
-    tauri::async_runtime::spawn_blocking(move || crate::gitstat::dirty(&cwd)).await.ok().flatten()
+pub async fn git_dirty(app: tauri::AppHandle, cwd: String) -> Option<bool> {
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().git_dirty(&cwd)).await.ok().flatten()
 }
