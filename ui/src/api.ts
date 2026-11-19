@@ -50,6 +50,16 @@ export interface SessionCard {
   lastActivityMs: number;
   /** Transcript bytes read so far (0 when closed); grows with every new line. */
   transcriptBytes: number;
+  /** Permission mode last written to the transcript ("auto", "plan", …). */
+  permissionMode: string | null;
+  /** Background tasks running (0 once the session was seen idle). */
+  backgroundShells: number;
+  /** Prompts typed while Claude was busy, still waiting. */
+  queuedMessages: number;
+  /** Output tokens of the current turn. */
+  turnOutputTokens: number;
+  /** When the live session's status began (ms); 0 when closed. */
+  statusSinceMs: number;
   gitBranch: string | null;
   /** Where the Claude process runs; "other" for closed sessions. */
   hostKind: HostKind;

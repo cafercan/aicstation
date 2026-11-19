@@ -5,9 +5,12 @@ import type { ConvItem, ConvPage, SessionCard } from "../api";
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...a: unknown[]) => invoke(...a) }));
 const terminalForPid = vi.fn((_p: number | null | undefined): number | undefined => undefined);
+const NO_TERMINALS = vi.hoisted(() => [] as never[]);
 vi.mock("../terminal/store", () => ({
   terminalForPid: (p: number | null) => terminalForPid(p),
   openAdoptTerminal: vi.fn(),
+  getTerminals: () => NO_TERMINALS,
+  subscribe: () => () => {},
 }));
 
 import ConversationPage from "./ConversationPage";
@@ -17,7 +20,7 @@ function card(over: Partial<SessionCard> = {}): SessionCard {
   return {
     sessionId: "s1", pid: 7, parentPid: 70, name: "demo", cwd: "C:/x/demo", status: "idle", waitingFor: null,
     model: null, contextPct: null, costUsd: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 },
-    agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 1, transcriptBytes: 0,
+    agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 1, transcriptBytes: 0, permissionMode: null, backgroundShells: 0, queuedMessages: 0, turnOutputTokens: 0, statusSinceMs: 0,
     gitBranch: null, hostKind: "embedded", movable: true, agentsRunning: 0, remoteControl: false, ...over,
   };
 }
@@ -437,6 +440,15 @@ test("Kopyala copies the selection; Esc closes the menu", async () => {
   expect(screen.getByRole("menu")).toBeTruthy();
   fireEvent.keyDown(document.body, { key: "Escape" });
   expect(screen.queryByRole("menu")).toBeNull();
+});
+
+test("a closed session shows no status line; a live one does", async () => {
+  serve({ get_conversation_page: () => page([REPLY]) });
+  const { container, rerender } = render(<ConversationPage sessionId="s1" card={card({ pid: 0 })} {...props} />);
+  await screen.findByText("ilk cevap");
+  expect(container.querySelector(".conv-status-line")).toBeNull();
+  rerender(<ConversationPage sessionId="s1" card={card()} {...props} />);
+  expect(container.querySelector(".conv-status-line")?.textContent).toContain("hazır");
 });
 
 test("a session without a message box offers only Kopyala", async () => {

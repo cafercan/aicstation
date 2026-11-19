@@ -205,6 +205,13 @@ table.hist td .est { display: block; font-size: 11px; }
 .conv-foot { flex: none; border-top: 1px solid var(--border); background: var(--surface-b); padding: 10px 18px; }
 .conv-foot .placeholder { margin: 0 auto; box-shadow: none; }
 .conv-composer { max-width: 880px; margin: 0 auto; }
+/* What the session is doing, one line above the message box; keeps its height. */
+.conv-status-line {
+  max-width: 880px; margin: 0 auto 6px; display: flex; align-items: center; gap: 7px; min-height: 18px;
+  font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden;
+}
+.conv-status-line .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; }
+.conv-status-line .text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .conv-composer-row { display: flex; align-items: flex-end; gap: 8px; }
 .conv-composer textarea {
   /* border-box: the grown height set from code includes padding and border. */

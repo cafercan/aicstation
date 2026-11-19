@@ -95,6 +95,12 @@ closed session in its own folder.
   shell command (also a background one) is queued in the session. Outside the
   app, the Move to app / Go to tab placeholder shows instead; a closed session
   shows Resume.
+- **Status line**: above the message box, one line says what a live session
+  is doing. For a session in an app terminal it shows Claude's own spinner
+  (`* Fermenting… (33s · ↓ 2.8k tokens)`) and mode line (`⏵⏵ auto mode on ·
+  1 shell`) as on its screen; otherwise its state, for how long, the turn's
+  tokens, the permission mode and running background commands. Messages
+  queued while Claude works and running agents are counted too.
 - **Quote**: select text in the conversation and right-click it: Quote adds it
   to the message box as a Markdown quote (`> ...`) with the caret below it, to
   answer under; Copy copies it. Without a selection the usual menu stays.
@@ -499,7 +505,11 @@ Claude ve Claude Code, Anthropic'in ticari markalarıdır.
   mesaj kuyruğa girer); uygulama dışındaki oturumda "Uygulamaya taşı" / "Sekmeye
   git", kapanmışta "Devam et" görünür. Konuşmada metin seçip sağ tıklayınca
   "Alıntıla" onu mesaj kutusuna `> ...` alıntısı olarak ekler, altına cevap
-  yazılır; "Kopyala" panoya kopyalar. Remote Control açık canlı oturumlarda
+  yazılır; "Kopyala" panoya kopyalar. Mesaj kutusunun üstündeki durum satırı
+  oturumun ne yaptığını gösterir: uygulama terminalinde Claude'un kendi
+  spinner'ı ve mod satırı ekrandaki gibi, değilse durum, süre, turun
+  tokenları, mod ve arka plan komutları; kuyruktaki mesajlar ve çalışan
+  ajanlar da sayılır. Remote Control açık canlı oturumlarda
   kart ve sekme satırında küçük bir işaret, tıklayınca claude.ai'de açar.
 - **Geçmiş:** önbellekli dizin, kullanım grafikleri (token, tahmini $; 7/30/90 gün, projeler,
   modeller; çalışan oturumlar dahil), canlı ve geçmiş oturumlarda içerikte

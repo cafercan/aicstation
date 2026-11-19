@@ -31,6 +31,58 @@ pub enum Entry {
         git_branch: Option<String>,
         at: Option<DateTime<Utc>>,
     },
+    /// `permission-mode` line: the mode set for the session ("auto", "plan", …).
+    PermissionMode(String),
+    /// A Bash call started in the background; `id` is its task id.
+    BackgroundStarted { id: String, at: DateTime<Utc> },
+    /// A background task's notification (finished, failed or killed).
+    TaskFinished(String),
+    /// A prompt the user sent (not a tool result, notice or meta line).
+    UserPrompt { at: DateTime<Utc> },
+    /// A change to the queue of prompts typed while Claude was busy.
+    Queue { op: QueueOp, content: Option<String>, at: DateTime<Utc> },
+}
+
+/// `queue-operation` kinds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueueOp {
+    Enqueue,
+    /// Takes the oldest entry.
+    Dequeue,
+    /// Takes the entry with the given content.
+    Remove,
+    /// Takes all entries (the user pulled them back to edit).
+    PopAll,
+}
+
+/// Text of a message `content`: the string itself, or its text blocks joined.
+fn content_text(c: &Value) -> Option<String> {
+    match c {
+        Value::String(s) => Some(s.clone()),
+        Value::Array(a) => {
+            let t: Vec<&str> = a.iter().filter(|b| str_of(b, "type") == Some("text")).filter_map(|b| str_of(b, "text")).collect();
+            (!t.is_empty()).then(|| t.join("\n"))
+        }
+        _ => None,
+    }
+}
+
+/// The task id of a `<task-notification>` text.
+fn notified_task(t: &str) -> Option<String> {
+    if !t.contains("<task-notification>") {
+        return None;
+    }
+    let start = t.find("<task-id>")? + "<task-id>".len();
+    let end = start + t[start..].find("</task-id>")?;
+    let id = t[start..end].trim();
+    (!id.is_empty()).then(|| id.to_string())
+}
+
+/// The id of "Command running in background with ID: <id>. …".
+fn background_id(t: &str) -> Option<String> {
+    let rest = t.trim_start().strip_prefix("Command running in background with ID: ")?;
+    let id: String = rest.chars().take_while(|c| *c != '.' && !c.is_whitespace()).collect();
+    (!id.is_empty()).then_some(id)
 }
 
 fn str_of<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
@@ -149,11 +201,8 @@ pub fn parse_line(line: &str) -> Vec<Entry> {
         }
         Some("user") => {
             // `content` may be a plain string; then there are no tool results.
-            let blocks = v
-                .get("message")
-                .and_then(|m| m.get("content"))
-                .and_then(Value::as_array);
-            if let (Some(blocks), Some(at)) = (blocks, at) {
+            let content = v.get("message").and_then(|m| m.get("content"));
+            if let (Some(blocks), Some(at)) = (content.and_then(Value::as_array), at) {
                 for b in blocks {
                     if str_of(b, "type") != Some("tool_result") {
                         continue;
@@ -165,7 +214,49 @@ pub fn parse_line(line: &str) -> Vec<Entry> {
                             at,
                         });
                     }
+                    if let Some(id) = b.get("content").and_then(content_text).as_deref().and_then(background_id) {
+                        out.push(Entry::BackgroundStarted { id, at });
+                    }
                 }
+            }
+            let text = content.and_then(content_text);
+            if let Some(id) = text.as_deref().and_then(notified_task) {
+                out.push(Entry::TaskFinished(id));
+            } else if let (Some(t), Some(at)) = (text.as_deref(), at) {
+                let meta = v.get("isMeta").and_then(Value::as_bool).unwrap_or(false);
+                let notice = v.get("origin").and_then(|o| str_of(o, "kind")) == Some("task-notification");
+                let system = str_of(&v, "promptSource") == Some("system");
+                let lead = t.trim_start();
+                if !meta && !notice && !system && !lead.is_empty() && !lead.starts_with("<task-notification>") {
+                    out.push(Entry::UserPrompt { at });
+                }
+            }
+        }
+        Some("attachment") => {
+            let att = v.get("attachment").filter(|a| str_of(a, "type") == Some("queued_command"));
+            if let Some(att) = att {
+                let notice = str_of(att, "commandMode") == Some("task-notification")
+                    || att.get("origin").and_then(|o| str_of(o, "kind")) == Some("task-notification");
+                if let Some(id) = att.get("prompt").and_then(content_text).as_deref().and_then(notified_task).filter(|_| notice) {
+                    out.push(Entry::TaskFinished(id));
+                }
+            }
+        }
+        Some("permission-mode") => {
+            if let Some(m) = str_of(&v, "permissionMode") {
+                out.push(Entry::PermissionMode(cap_display(m)));
+            }
+        }
+        Some("queue-operation") => {
+            let op = match str_of(&v, "operation") {
+                Some("enqueue") => Some(QueueOp::Enqueue),
+                Some("dequeue") => Some(QueueOp::Dequeue),
+                Some("remove") => Some(QueueOp::Remove),
+                Some("popAll") => Some(QueueOp::PopAll),
+                _ => None,
+            };
+            if let (Some(op), Some(at)) = (op, at) {
+                out.push(Entry::Queue { op, content: str_of(&v, "content").map(str::to_string), at });
             }
         }
         Some("custom-title") => {
@@ -554,7 +645,7 @@ kısa
         let e = parse_line(l);
         assert!(matches!(&e[0], Entry::ToolResult { tool_use_id, is_error: true, .. } if tool_use_id == "toolu_A"));
         let s = r#"{"type":"user","message":{"role":"user","content":"hi"},"timestamp":"2026-11-02T07:12:53.000Z"}"#;
-        assert!(parse_line(s).is_empty());
+        assert!(matches!(&parse_line(s)[..], [Entry::UserPrompt { .. }]), "a plain prompt has no tool result");
     }
 
     #[test]
@@ -587,10 +678,10 @@ kısa
         // A truncated path is a different (possibly existing) folder.
         let long = format!(r"C:\\{}", "d".repeat(400));
         let l = format!(r#"{{"type":"user","timestamp":"2026-11-02T07:12:52Z","cwd":"{long}","gitBranch":"main","message":{{"content":"x"}}}}"#);
-        let e = parse_line(&l);
-        assert!(matches!(&e[0], Entry::Meta { cwd: None, git_branch: Some(g), .. } if g == "main"));
+        let meta = |l: &str| parse_line(l).into_iter().find(|e| matches!(e, Entry::Meta { .. }));
+        assert!(matches!(meta(&l), Some(Entry::Meta { cwd: None, git_branch: Some(g), .. }) if g == "main"));
         let ok = r#"{"type":"user","timestamp":"2026-11-02T07:12:52Z","cwd":"C:\\demo","message":{"content":"x"}}"#;
-        assert!(matches!(&parse_line(ok)[0], Entry::Meta { cwd: Some(c), .. } if c == r"C:\demo"));
+        assert!(matches!(meta(ok), Some(Entry::Meta { cwd: Some(c), .. }) if c == r"C:\demo"));
     }
 
     fn msg_line(i: usize) -> String {
@@ -754,8 +845,8 @@ kısa
     fn fixture_parses() {
         let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/transcript_basic.jsonl");
         let o = TranscriptReader::new(p).read_new().unwrap();
-        // user meta, assistant + meta, tool_result, title
-        assert_eq!(o.entries.len(), 5);
+        // user prompt + meta, assistant + meta, tool_result, title
+        assert_eq!(o.entries.len(), 6);
     }
 
     #[test]
@@ -812,5 +903,53 @@ kısa
         assert!(evs.len() >= 2);
         assert!(evs[0], "reset comes first");
         assert_eq!(evs.iter().filter(|x| **x).count(), 1);
+    }
+
+    #[test]
+    fn parses_permission_mode() {
+        assert_eq!(
+            parse_line(r#"{"type":"permission-mode","permissionMode":"auto","sessionId":"s"}"#),
+            vec![Entry::PermissionMode("auto".into())]
+        );
+    }
+
+    #[test]
+    fn parses_background_start_from_string_and_blocks() {
+        let s = r#"{"type":"user","timestamp":"2026-11-19T07:28:50.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","content":"Command running in background with ID: bwef6ptw2. Output is being written to: C:\\x"}]}}"#;
+        assert!(parse_line(s).iter().any(|e| matches!(e, Entry::BackgroundStarted { id, .. } if id == "bwef6ptw2")));
+        let b = r#"{"type":"user","timestamp":"2026-11-19T07:28:50.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","content":[{"type":"text","text":"Command running in background with ID: b2 now"}]}]}}"#;
+        assert!(parse_line(b).iter().any(|e| matches!(e, Entry::BackgroundStarted { id, .. } if id == "b2")));
+    }
+
+    #[test]
+    fn parses_task_finished_from_user_line_and_attachment() {
+        let note = "<task-notification>\\n<task-id>b1</task-id>\\n<status>killed</status>\\n</task-notification>";
+        let u = format!(r#"{{"type":"user","timestamp":"2026-11-19T07:30:00.000Z","message":{{"role":"user","content":"{note}"}}}}"#);
+        assert!(parse_line(&u).contains(&Entry::TaskFinished("b1".into())));
+        assert!(!parse_line(&u).iter().any(|e| matches!(e, Entry::UserPrompt { .. })), "a notice is no prompt");
+        let a = format!(r#"{{"type":"attachment","timestamp":"2026-11-19T07:30:00.000Z","attachment":{{"type":"queued_command","commandMode":"task-notification","prompt":"{note}"}}}}"#);
+        assert!(parse_line(&a).contains(&Entry::TaskFinished("b1".into())));
+    }
+
+    #[test]
+    fn parses_user_prompt_but_not_tool_results_or_meta() {
+        let p = r#"{"type":"user","timestamp":"2026-11-19T07:28:49.064Z","message":{"role":"user","content":"Run ping"}}"#;
+        assert!(parse_line(p).iter().any(|e| matches!(e, Entry::UserPrompt { .. })));
+        let tr = r#"{"type":"user","timestamp":"2026-11-19T07:28:49.064Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","content":"ok"}]}}"#;
+        assert!(!parse_line(tr).iter().any(|e| matches!(e, Entry::UserPrompt { .. })));
+        let meta = r#"{"type":"user","isMeta":true,"timestamp":"2026-11-19T07:28:49.064Z","message":{"role":"user","content":"x"}}"#;
+        assert!(!parse_line(meta).iter().any(|e| matches!(e, Entry::UserPrompt { .. })));
+    }
+
+    #[test]
+    fn parses_queue_operations() {
+        let q = |op: &str, extra: &str| {
+            format!(r#"{{"type":"queue-operation","operation":"{op}","timestamp":"2026-11-19T07:15:27.968Z","sessionId":"s"{extra}}}"#)
+        };
+        assert!(matches!(&parse_line(&q("enqueue", r#","content":"hi""#))[..], [Entry::Queue { op: QueueOp::Enqueue, content: Some(c), .. }] if c == "hi"));
+        assert!(matches!(&parse_line(&q("dequeue", ""))[..], [Entry::Queue { op: QueueOp::Dequeue, content: None, .. }]));
+        assert!(matches!(&parse_line(&q("remove", r#","content":"hi","reason":"absorbed_mid_turn""#))[..], [Entry::Queue { op: QueueOp::Remove, .. }]));
+        assert!(matches!(&parse_line(&q("popAll", r#","content":"a""#))[..], [Entry::Queue { op: QueueOp::PopAll, .. }]));
+        assert!(parse_line(&q("shuffle", "")).is_empty());
     }
 }

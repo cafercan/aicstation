@@ -4,7 +4,10 @@ import type { ConvItem, ConvPage, SessionCard } from "../api";
 
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...a: unknown[]) => invoke(...a) }));
-vi.mock("../terminal/store", () => ({ terminalForPid: () => undefined, openAdoptTerminal: vi.fn() }));
+const NO_TERMINALS = vi.hoisted(() => [] as never[]);
+vi.mock("../terminal/store", () => ({
+  terminalForPid: () => undefined, openAdoptTerminal: vi.fn(), getTerminals: () => NO_TERMINALS, subscribe: () => () => {},
+}));
 /** Texts Markdown was rendered with, one entry per render. */
 const rendered: string[] = [];
 vi.mock("./Markdown", () => ({
@@ -17,7 +20,7 @@ function card(lastActivityMs: number): SessionCard {
   return {
     sessionId: "s1", pid: 7, parentPid: 70, name: "demo", cwd: "C:/x/demo", status: "idle", waitingFor: null,
     model: null, contextPct: null, costUsd: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 },
-    agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs, transcriptBytes: 0,
+    agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs, transcriptBytes: 0, permissionMode: null, backgroundShells: 0, queuedMessages: 0, turnOutputTokens: 0, statusSinceMs: 0,
     gitBranch: null, hostKind: "embedded", movable: true, agentsRunning: 0, remoteControl: false,
   };
 }

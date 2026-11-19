@@ -26,7 +26,7 @@ function card(over: Partial<SessionCard> = {}): SessionCard {
     sessionId: "s1", pid: 1, parentPid: 10, name: "demo", cwd: "/home/u/aicstation", status: "busy",
     waitingFor: null, model: "claude-opus-5-5", contextPct: 62, costUsd: 1.2,
     tokens: { input: 1_000_000, output: 200_000, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 },
-    agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 0, transcriptBytes: 0,
+    agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 0, transcriptBytes: 0, permissionMode: null, backgroundShells: 0, queuedMessages: 0, turnOutputTokens: 0, statusSinceMs: 0,
     gitBranch: "main", hostKind: "embedded", movable: false, agentsRunning: 0, remoteControl: false, ...over,
   };
 }

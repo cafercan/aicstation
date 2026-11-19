@@ -357,4 +357,11 @@ export const en: Dict = {
   "conv.quote": "Quote",
   "conv.copy": "Copy",
   "conv.thought": "Thought",
+  "conv.mode.auto": "⏵⏵ auto mode",
+  "conv.mode.acceptEdits": "⏵⏵ accept edits",
+  "conv.mode.plan": "⏸ plan mode",
+  "conv.mode.bypassPermissions": "⏵⏵ bypass permissions",
+  "conv.bgShells": { one: "1 background command", other: "{n} background commands" },
+  "conv.queued": { one: "1 message queued", other: "{n} messages queued" },
+  "conv.turnTokens": "↓ {n} tokens",
 };
