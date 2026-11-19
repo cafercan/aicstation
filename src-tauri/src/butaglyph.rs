@@ -367,6 +367,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     fn strip_ansi(s: &str) -> String {
         let mut out = String::new();
         let mut esc = false;

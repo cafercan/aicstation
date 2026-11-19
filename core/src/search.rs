@@ -467,7 +467,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let a = write(tmp.path(), "a", &[user("hedef", "2026-11-02T10:00:00Z")]);
         let limits = Limits { max_time: Duration::ZERO, ..Limits::DEFAULT };
-        let out = search_transcripts_limited(&[a.clone()], "hedef", limits, &|| false);
+        let out = search_transcripts_limited(std::slice::from_ref(&a), "hedef", limits, &|| false);
         assert!(out.truncated && !out.cancelled && out.hits.is_empty());
         let out = search_transcripts_limited(&[a], "hedef", Limits::DEFAULT, &|| false);
         assert_eq!((out.hits.len(), out.truncated), (1, false));

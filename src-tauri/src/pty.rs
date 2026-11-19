@@ -325,6 +325,7 @@ impl PtyManager {
     /// `launch` (built with `resume: session_id`) in `cwd`: runs
     /// `claude --resume <session_id>`, left open afterwards. The caller passes
     /// an already validated id and folder (see `AppState::resume_target`).
+    #[allow(clippy::too_many_arguments)] // the size, both channels and the resume target
     pub fn spawn_resume(
         &self,
         launch: &crate::integration::Launch,

@@ -42,8 +42,10 @@ pub const WT_HOME_MISSING: &str = "wt_home_missing";
 pub const WT_POWERSHELL_INVALID: &str = "wt_powershell_invalid";
 
 /// Linux: no terminal emulator found ($TERMINAL or a known one).
+#[cfg_attr(windows, allow(dead_code))]
 pub const TERMINAL_NOT_FOUND: &str = "terminal_not_found";
-/// `terminal_open_failed:<OS message>`.
+/// `terminal_open_failed:<OS message>` (Linux).
+#[cfg_attr(windows, allow(dead_code))]
 pub const TERMINAL_OPEN_FAILED: &str = "terminal_open_failed";
 /// No usable shell for the embedded terminals.
 pub const SHELL_NOT_FOUND: &str = "shell_not_found";

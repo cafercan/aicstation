@@ -1980,6 +1980,8 @@ pub fn pty_spawn(
 /// A session still held by the terminal that resumed it is refused with
 /// `session_resume_terminal_open:<terminal>` before the generic live check.
 #[tauri::command(async)]
+// Tauri states and the call's own arguments are all parameters.
+#[allow(clippy::too_many_arguments)]
 pub fn pty_spawn_resume(
     settings: tauri::State<'_, SettingsStore>,
     app: tauri::State<'_, AppState>,
@@ -2014,6 +2016,8 @@ pub fn pty_spawn_resume(
 /// wait for the session to leave the registry, spawn. Errors after the kill
 /// go through `after_kill`.
 #[tauri::command(async)]
+// Tauri states and the call's own arguments are all parameters.
+#[allow(clippy::too_many_arguments)]
 pub fn adopt_session(
     settings: tauri::State<'_, SettingsStore>,
     app: tauri::State<'_, AppState>,
