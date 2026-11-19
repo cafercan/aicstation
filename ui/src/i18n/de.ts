@@ -361,6 +361,7 @@ export const de: Dict = {
   "conv.copy": "Kopieren",
   "conv.thought": "Nachgedacht",
   "conv.worked": "{dur} gearbeitet · {time}",
+  "conv.toBottom": "Zur neuesten Nachricht",
   "conv.lookTitle": "Darstellung des Chats",
   "conv.fontSize": "Schriftgröße",
   "conv.cmdTerminal": "Öffnet sich im Terminal-Tab",

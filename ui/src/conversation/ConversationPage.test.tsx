@@ -359,6 +359,24 @@ test("hosted live card shows the composer", async () => {
   expect(screen.queryByRole("button", { name: "Uygulamaya taşı" })).toBeNull();
 });
 
+test("scrolled up, a button goes back to the newest message", async () => {
+  serve({ get_conversation_page: () => page(ITEMS) });
+  const { container } = render(<ConversationPage sessionId="s1" card={card()} {...props} />);
+  await screen.findByText("merhaba");
+  const list = container.querySelector(".conv-list") as HTMLDivElement;
+  let top = 1000;
+  Object.defineProperty(list, "scrollHeight", { configurable: true, get: () => 1200 });
+  Object.defineProperty(list, "clientHeight", { configurable: true, get: () => 200 });
+  Object.defineProperty(list, "scrollTop", { configurable: true, get: () => top, set: (v: number) => { top = v; } });
+  fireEvent.scroll(list);
+  expect(screen.queryByRole("button", { name: "En yeni mesaja in" })).toBeNull();
+  top = 400;
+  fireEvent.scroll(list);
+  fireEvent.click(screen.getByRole("button", { name: "En yeni mesaja in" }));
+  expect(top).toBe(1200);
+  expect(screen.queryByRole("button", { name: "En yeni mesaja in" })).toBeNull();
+});
+
 test("an unsent message stays in the box after leaving the tab and coming back", async () => {
   serve({ get_conversation_page: () => page([]), send_to_session: () => undefined });
   const first = render(<ConversationPage sessionId="s1" card={card()} {...props} />);

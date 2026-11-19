@@ -54,6 +54,8 @@ export default function ConversationPage({ sessionId, card, onShowTerminal, onTe
   const alive = useRef(true);
   /** The list was at the bottom before the last change, so it stays there. */
   const pinned = useRef(true);
+  /** Scrolled away from the bottom: the "to the newest" button shows. */
+  const [away, setAway] = useState(false);
   /** Scroll height before an older page was prepended, to keep the view in place. */
   const prepended = useRef<number | null>(null);
   const loadingOlder = useRef(false);
@@ -152,7 +154,15 @@ export default function ConversationPage({ sessionId, card, onShowTerminal, onTe
     const el = listRef.current;
     if (!el) return;
     pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight <= PIN_PX;
+    setAway(!pinned.current);
     if (el.scrollTop < OLDER_PX) loadOlder();
+  };
+  const toBottom = () => {
+    const el = listRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    pinned.current = true;
+    setAway(false);
   };
 
   const hosted = live && terminalForPid(card.parentPid) !== undefined;
@@ -199,6 +209,12 @@ export default function ConversationPage({ sessionId, card, onShowTerminal, onTe
     <div className="conv" style={{ "--conv-font": `${fontSize}px` } as CSSProperties}>
       <div className="conv-list" ref={listRef} onScroll={onScroll} onContextMenu={onContextMenu}>
         <div className="conv-items">{body}</div>
+        {away && (
+          <div className="conv-to-bottom">
+            <button type="button" className="btn" onClick={toBottom}
+              aria-label={t("conv.toBottom")} title={t("conv.toBottom")}>↓</button>
+          </div>
+        )}
       </div>
       <div className="conv-foot">
         {live && <ConvStatus card={card} />}

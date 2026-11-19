@@ -368,6 +368,7 @@ export const tr = {
   "conv.copy": "Kopyala",
   "conv.thought": "Düşündü",
   "conv.worked": "{dur} çalıştı · {time}",
+  "conv.toBottom": "En yeni mesaja in",
   "conv.lookTitle": "Sohbet görünümü",
   "conv.fontSize": "Yazı boyutu",
   "conv.cmdTerminal": "Terminal sekmesinde açılır",

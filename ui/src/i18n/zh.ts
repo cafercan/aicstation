@@ -358,6 +358,7 @@ export const zh: Dict = {
   "conv.copy": "复制",
   "conv.thought": "已思考",
   "conv.worked": "工作了 {dur} · {time}",
+  "conv.toBottom": "跳到最新消息",
   "conv.lookTitle": "对话外观",
   "conv.fontSize": "字号",
   "conv.cmdTerminal": "在终端标签页中打开",

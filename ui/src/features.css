@@ -137,6 +137,9 @@ table.hist td .est { display: block; font-size: 11px; }
 /* Conversation tab: transcript list, message box or placeholder at the bottom. */
 .conv { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--bg); font-size: var(--conv-font, 13px); }
 .conv-list { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 18px 10px; }
+/* Stays at the bottom edge of the list while it scrolls; takes no room. */
+.conv-to-bottom { position: sticky; bottom: 4px; height: 0; display: flex; justify-content: center; align-items: flex-end; }
+.conv-to-bottom .btn { border-radius: 50%; width: 32px; height: 32px; padding: 0; box-shadow: 0 2px 8px rgba(0, 0, 0, .35); }
 .conv-items { max-width: 880px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px; }
 .conv-status { color: var(--muted); text-align: center; padding: 28px 0; }
 .conv-note { color: var(--muted); font-size: .846em; margin-top: 4px; }
