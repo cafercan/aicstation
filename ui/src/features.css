@@ -204,7 +204,18 @@ table.hist td .est { display: block; font-size: 11px; }
 }
 .conv-foot { flex: none; border-top: 1px solid var(--border); background: var(--surface-b); padding: 10px 18px; }
 .conv-foot .placeholder { margin: 0 auto; box-shadow: none; }
-.conv-composer { max-width: 880px; margin: 0 auto; }
+.conv-composer { max-width: 880px; margin: 0 auto; position: relative; }
+/* Command menu above the message box while "/name" is typed. */
+.conv-slash {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 4px); z-index: 20; margin: 0; padding: 4px; list-style: none;
+  max-height: calc(8 * 28px + 8px); overflow-y: auto;
+  background: var(--raised); border: 1px solid var(--border-strong); border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, .45);
+}
+.conv-slash li { display: flex; align-items: center; gap: 12px; height: 28px; padding: 0 10px; border-radius: 5px; cursor: pointer; font-size: 13px; }
+.conv-slash li.active { background: var(--selected); }
+.conv-slash .name { flex: none; color: var(--strong); font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; }
+.conv-slash .desc { flex: 1; min-width: 0; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv-slash .term { flex: none; color: var(--muted); }
 /* What the session is doing, one line above the message box; keeps its height. */
 .conv-status-line {
   max-width: 880px; margin: 0 auto 6px; display: flex; align-items: center; gap: 7px; min-height: 18px;

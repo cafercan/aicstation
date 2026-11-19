@@ -357,6 +357,7 @@ export const en: Dict = {
   "conv.quote": "Quote",
   "conv.copy": "Copy",
   "conv.thought": "Thought",
+  "conv.cmdTerminal": "Opens in the Terminal tab",
   "conv.mode.auto": "⏵⏵ auto mode",
   "conv.mode.acceptEdits": "⏵⏵ accept edits",
   "conv.mode.plan": "⏸ plan mode",

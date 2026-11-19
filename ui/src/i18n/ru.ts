@@ -375,6 +375,7 @@ export const ru: Dict = {
   "conv.quote": "Цитировать",
   "conv.copy": "Копировать",
   "conv.thought": "Размышлял",
+  "conv.cmdTerminal": "Открывается во вкладке «Терминал»",
   "conv.mode.auto": "⏵⏵ авторежим",
   "conv.mode.acceptEdits": "⏵⏵ принимать правки",
   "conv.mode.plan": "⏸ режим плана",

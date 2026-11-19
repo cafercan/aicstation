@@ -1,18 +1,22 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { sendToSession } from "../api";
+import { getSessionCommands, sendToSession, type SessionSkill } from "../api";
 import { errorText, useT } from "../i18n";
 import { appendQuote } from "./quote";
+import { matchCommands, slashQuery, type SlashEntry } from "./slashCommands";
+import SlashMenu from "./SlashMenu";
 
 /**
  * Message box under the conversation of a session in an app terminal. Enter
  * sends the text to that terminal (the backend re-checks everything), Shift+Enter
  * adds a line. While the session waits for an approval the box is disabled:
  * typing would answer the prompt. Each new `quote` (a new `seq`) is added
- * to the text, with the caret after it, to answer under.
+ * to the text, with the caret after it, to answer under. Typing `/name`
+ * opens the command menu (built-ins and the session's skills); the skills
+ * are asked for again when the menu opens after `skillsKey` changed.
  */
-export default function Composer({ sessionId, status, onShowTerminal, onSent, quote }: {
+export default function Composer({ sessionId, status, onShowTerminal, onSent, quote, skillsKey }: {
   sessionId: string; status: string; onShowTerminal: () => void; onSent?: () => void;
-  quote?: { text: string; seq: number };
+  quote?: { text: string; seq: number }; skillsKey?: number;
 }) {
   const t = useT();
   const [text, setText] = useState("");
@@ -62,17 +66,36 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
     el.scrollTop = el.scrollHeight;
   }, [text]);
 
-  const send = () => {
-    if (waiting || sendingRef.current || text.trim() === "") return;
+  // Command menu: open while a `/name` is typed, unless Esc closed it for
+  // this very text.
+  const [skills, setSkills] = useState<SessionSkill[]>([]);
+  const [active, setActive] = useState(0);
+  const [closedFor, setClosedFor] = useState<string | null>(null);
+  const query = slashQuery(text);
+  const entries: SlashEntry[] = query === null ? [] : matchCommands(query, skills);
+  const menuOpen = entries.length > 0 && closedFor !== text && !waiting;
+  const fetchedFor = useRef<number | null | undefined>(undefined);
+  useEffect(() => {
+    if (query === null) return;
+    const key = skillsKey ?? null;
+    if (fetchedFor.current === key) return;
+    fetchedFor.current = key;
+    getSessionCommands(sessionId).then(setSkills, () => {});
+  }, [query !== null, skillsKey, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setActive(0); }, [query]);
+
+  const send = (value = text) => {
+    if (waiting || sendingRef.current || value.trim() === "") return;
     sendingRef.current = true;
     setSending(true);
     setErr(null);
-    const sent = text;
+    const sent = value;
+    const before = text;
     sendToSession(sessionId, sent)
       .then(() => {
         // Cleared only when unchanged: text edited while the send was on its
         // way is the user's and stays as it is.
-        setText((cur) => (cur === sent ? "" : cur));
+        setText((cur) => (cur === before ? "" : cur));
         onSent?.();
       }, (e: unknown) => {
         // Pasted but not submitted: the message says the text sits in the terminal.
@@ -82,18 +105,53 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
       .finally(() => { sendingRef.current = false; setSending(false); });
   };
 
+  /** Runs a menu entry; a picker command also shows the Terminal tab. */
+  const pick = (e: SlashEntry) => {
+    send(`/${e.name}`);
+    if (e.terminal) onShowTerminal();
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // keyCode 229: WebKitGTK can send the Enter that commits an IME word with isComposing false.
+    const ime = e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229;
+    if (menuOpen && !ime) {
+      const n = entries.length;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setActive((i) => (i + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+        return;
+      }
+      const cur = entries[Math.min(active, n - 1)];
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        pick(cur);
+        return;
+      }
+      if (e.key === "Tab" && !e.shiftKey) {
+        e.preventDefault();
+        setText(`/${cur.name} `);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setClosedFor(text);
+        return;
+      }
+    }
+    if (e.key !== "Enter" || e.shiftKey || ime) return;
+    e.preventDefault();
+    send();
+  };
+
   return (
     <div className="conv-composer">
+      {menuOpen && <SlashMenu entries={entries} active={Math.min(active, entries.length - 1)} onPick={pick} onHover={setActive} />}
       <div className="conv-composer-row">
         <textarea ref={box} value={text} rows={2} disabled={waiting} placeholder={t("conv.placeholder")}
           onChange={(e) => { setText(e.target.value); setErr(null); }}
-          onKeyDown={(e) => {
-            // keyCode 229: WebKitGTK can send the Enter that commits an IME word with isComposing false.
-            if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
-            e.preventDefault();
-            send();
-          }} />
-        <button type="button" className="btn" disabled={waiting || sending || text.trim() === ""} onClick={send}>
+          onKeyDown={onKeyDown} />
+        <button type="button" className="btn" disabled={waiting || sending || text.trim() === ""} onClick={() => send()}>
           {t("conv.send")}
         </button>
       </div>

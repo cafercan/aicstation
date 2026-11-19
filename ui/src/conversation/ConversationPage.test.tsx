@@ -489,6 +489,94 @@ test("composer: the box grows with its text up to twice its first height, then s
   }
 });
 
+// Slash command menu
+
+function slashBox(onShowTerminal = noop) {
+  serve({
+    send_to_session: () => undefined,
+    get_session_commands: () => [{ name: "caveman:caveman-help", description: "Card." }],
+  });
+  render(<Composer sessionId="s1" status="idle" onShowTerminal={onShowTerminal} />);
+  return screen.getByRole("textbox") as HTMLTextAreaElement;
+}
+const options = () => screen.queryAllByRole("option");
+const selected = () => options().find((o) => o.getAttribute("aria-selected") === "true");
+const sent = () => invoke.mock.calls.filter(([c]) => c === "send_to_session").map(([, a]) => (a as { text: string }).text);
+
+test("slash menu: /co lists /compact first; arrows move and wrap", async () => {
+  const box = slashBox();
+  fireEvent.change(box, { target: { value: "/co" } });
+  expect(screen.getByRole("listbox")).toBeTruthy();
+  expect(options()[0].textContent).toContain("/compact");
+  expect(selected()).toBe(options()[0]);
+  fireEvent.keyDown(box, { key: "ArrowDown" });
+  expect(selected()).toBe(options()[1]);
+  fireEvent.keyDown(box, { key: "ArrowUp" });
+  fireEvent.keyDown(box, { key: "ArrowUp" });
+  expect(selected()).toBe(options()[options().length - 1]);
+});
+
+test("slash menu: Enter runs the highlighted command and clears the box", async () => {
+  const box = slashBox();
+  fireEvent.change(box, { target: { value: "/co" } });
+  fireEvent.keyDown(box, { key: "Enter" });
+  await waitFor(() => expect(box.value).toBe(""));
+  expect(sent()).toEqual(["/compact"]);
+  expect(screen.queryByRole("listbox")).toBeNull();
+});
+
+test("slash menu: Tab puts the name in the box without sending", () => {
+  const box = slashBox();
+  fireEvent.change(box, { target: { value: "/co" } });
+  fireEvent.keyDown(box, { key: "Tab" });
+  expect(box.value).toBe("/compact ");
+  expect(sent()).toEqual([]);
+  expect(screen.queryByRole("listbox")).toBeNull();
+});
+
+test("slash menu: Esc closes and keeps the text; typing reopens", () => {
+  const box = slashBox();
+  fireEvent.change(box, { target: { value: "/co" } });
+  fireEvent.keyDown(box, { key: "Escape" });
+  expect(screen.queryByRole("listbox")).toBeNull();
+  expect(box.value).toBe("/co");
+  fireEvent.change(box, { target: { value: "/com" } });
+  expect(screen.getByRole("listbox")).toBeTruthy();
+});
+
+test("slash menu: a picker command also shows the Terminal tab", async () => {
+  const onShowTerminal = vi.fn();
+  const box = slashBox(onShowTerminal);
+  fireEvent.change(box, { target: { value: "/mod" } });
+  fireEvent.keyDown(box, { key: "Enter" });
+  await waitFor(() => expect(sent()).toEqual(["/model"]));
+  expect(onShowTerminal).toHaveBeenCalledTimes(1);
+});
+
+test("slash menu: the session's skills are listed and run on click", async () => {
+  const box = slashBox();
+  fireEvent.change(box, { target: { value: "/cave" } });
+  const opt = await screen.findByRole("option", { name: /caveman:caveman-help/ });
+  fireEvent.mouseDown(opt);
+  await waitFor(() => expect(sent()).toEqual(["/caveman:caveman-help"]));
+});
+
+test("a space closes the menu and Enter sends as typed", async () => {
+  const box = slashBox();
+  fireEvent.change(box, { target: { value: "/compact now" } });
+  expect(screen.queryByRole("listbox")).toBeNull();
+  fireEvent.keyDown(box, { key: "Enter" });
+  await waitFor(() => expect(sent()).toEqual(["/compact now"]));
+});
+
+test("IME Enter does not pick", () => {
+  const box = slashBox();
+  fireEvent.change(box, { target: { value: "/co" } });
+  fireEvent.keyDown(box, { key: "Enter", keyCode: 229 });
+  expect(sent()).toEqual([]);
+  expect(screen.getByRole("listbox")).toBeTruthy();
+});
+
 test("composer: Enter sends the text and clears it", async () => {
   serve({ send_to_session: () => undefined });
   const onSent = vi.fn();

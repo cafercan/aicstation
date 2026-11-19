@@ -360,6 +360,7 @@ export const de: Dict = {
   "conv.quote": "Zitieren",
   "conv.copy": "Kopieren",
   "conv.thought": "Nachgedacht",
+  "conv.cmdTerminal": "Öffnet sich im Terminal-Tab",
   "conv.mode.auto": "⏵⏵ Auto-Modus",
   "conv.mode.acceptEdits": "⏵⏵ Änderungen annehmen",
   "conv.mode.plan": "⏸ Plan-Modus",
