@@ -28,22 +28,40 @@ export async function loadSettings(): Promise<Settings | null> {
   }
 }
 
-async function save(next: Settings): Promise<void> {
-  const prev = store.get();
-  store.set(next);
-  try {
-    store.set(await setSettings(next));
-  } catch (e) {
-    store.set(prev);
-    throw e;
-  }
+/** The saves in flight run one after another: a reply never overwrites a newer change. */
+let tail: Promise<unknown> = Promise.resolve();
+let inFlight = 0;
+
+/**
+ * Applies `patch` at once and saves the whole current state after the saves
+ * before it. Refused, only `patch`'s own keys go back to what they were.
+ */
+function save(patch: Partial<Settings>): Promise<void> {
+  const cur = store.get();
+  if (!cur) return Promise.resolve();
+  const undo = Object.fromEntries(Object.keys(patch).map((k) => [k, cur[k as keyof Settings]])) as Partial<Settings>;
+  store.set({ ...cur, ...patch });
+  inFlight++;
+  const run = tail.then(async () => {
+    try {
+      const saved = await setSettings(store.get()!);
+      // A newer change waits behind this one: keep the shown state, it sends it.
+      if (inFlight === 1) store.set(saved);
+    } catch (e) {
+      store.set({ ...store.get()!, ...undo });
+      throw e;
+    } finally {
+      inFlight--;
+    }
+  });
+  tail = run.catch(() => {});
+  return run;
 }
 
 /** Sets one toggle; rejects with the backend's error code (state rolled back). */
 export async function setToggle(key: Toggle, value: boolean): Promise<void> {
-  const cur = store.get();
-  if (!cur) return;
-  await save({ ...cur, [key]: value });
+  if (!store.get()) return;
+  await save({ [key]: value });
 }
 
 /** Settings chosen from a list (terminal shell and prompt). */
@@ -53,7 +71,7 @@ export type Choice = "shell" | "prompt" | "promptPreset";
 export async function setChoice(key: Choice, value: string): Promise<void> {
   const cur = store.get();
   if (!cur || cur[key] === value) return;
-  await save({ ...cur, [key]: value });
+  await save({ [key]: value });
 }
 
 /** Numeric settings (alert thresholds). */
@@ -63,12 +81,12 @@ export type NumberSetting = "contextThreshold" | "stalledMinutes" | "dailyBudget
 export async function setNumber(key: NumberSetting, value: number): Promise<void> {
   const cur = store.get();
   if (!cur || cur[key] === value) return;
-  await save({ ...cur, [key]: value });
+  await save({ [key]: value });
 }
 
 /** Tells the backend the UI language (no-op before load or when unchanged). */
 export async function pushLang(lang: string): Promise<void> {
   const cur = store.get();
   if (!cur || cur.lang === lang) return;
-  await save({ ...cur, lang });
+  await save({ lang });
 }
