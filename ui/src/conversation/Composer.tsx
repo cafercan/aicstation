@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { getSessionCommands, sendToSession, type SessionSkill } from "../api";
 import { errorText, useT } from "../i18n";
+import { getDraft, setDraft } from "./drafts";
 import { appendQuote } from "./quote";
 import { useConvFontSize } from "./convAppearance";
 import { matchCommands, slashQuery, type SlashEntry } from "./slashCommands";
@@ -13,14 +14,17 @@ import SlashMenu from "./SlashMenu";
  * typing would answer the prompt. Each new `quote` (a new `seq`) is added
  * to the text, with the caret after it, to answer under. Typing `/name`
  * opens the command menu (built-ins and the session's skills); the skills
- * are asked for again when the menu opens after `skillsKey` changed.
+ * are asked for again when the menu opens after `skillsKey` changed. Unsent
+ * text survives leaving the tab (see `drafts`).
  */
 export default function Composer({ sessionId, status, onShowTerminal, onSent, quote, skillsKey }: {
   sessionId: string; status: string; onShowTerminal: () => void; onSent?: () => void;
   quote?: { text: string; seq: number }; skillsKey?: number;
 }) {
   const t = useT();
-  const [text, setText] = useState("");
+  // What was being written when the box was last shown for this session.
+  const [text, setText] = useState(() => getDraft(sessionId));
+  useEffect(() => { setDraft(sessionId, text); }, [sessionId, text]);
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
   const [err, setErr] = useState<string | null>(null);

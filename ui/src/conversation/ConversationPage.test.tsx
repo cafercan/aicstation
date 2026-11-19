@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { ConvItem, ConvPage, SessionCard } from "../api";
 
@@ -16,6 +16,7 @@ vi.mock("../terminal/store", () => ({
 import ConversationPage from "./ConversationPage";
 import { setConvFontSize } from "./convAppearance";
 import Composer from "./Composer";
+import { clearDrafts } from "./drafts";
 
 function card(over: Partial<SessionCard> = {}): SessionCard {
   return {
@@ -55,6 +56,7 @@ const noop = () => {};
 const props = { onShowTerminal: noop, onTerminal: noop, onAdopted: noop, onResume: async () => {} };
 
 beforeEach(() => {
+  clearDrafts();
   invoke.mockReset();
   terminalForPid.mockReset();
   terminalForPid.mockImplementation((p) => (p === 70 ? 3 : undefined));
@@ -355,6 +357,29 @@ test("hosted live card shows the composer", async () => {
   await screen.findByText("Henüz mesaj yok.");
   expect(screen.getByRole("textbox")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Uygulamaya taşı" })).toBeNull();
+});
+
+test("an unsent message stays in the box after leaving the tab and coming back", async () => {
+  serve({ get_conversation_page: () => page([]), send_to_session: () => undefined });
+  const first = render(<ConversationPage sessionId="s1" card={card()} {...props} />);
+  await screen.findByText("Henüz mesaj yok.");
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "yarım kalan" } });
+  first.unmount();
+  render(<ConversationPage sessionId="s2" card={card({ sessionId: "s2" })} {...props} />);
+  await screen.findByText("Henüz mesaj yok.");
+  expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("");
+  cleanup();
+  render(<ConversationPage sessionId="s1" card={card()} {...props} />);
+  await screen.findByText("Henüz mesaj yok.");
+  const box = screen.getByRole("textbox") as HTMLTextAreaElement;
+  expect(box.value).toBe("yarım kalan");
+  // Sent, it is gone for good.
+  fireEvent.keyDown(box, { key: "Enter" });
+  await waitFor(() => expect(box.value).toBe(""));
+  cleanup();
+  render(<ConversationPage sessionId="s1" card={card()} {...props} />);
+  await screen.findByText("Henüz mesaj yok.");
+  expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("");
 });
 
 test("sent message is picked up by a since call shortly after", async () => {
