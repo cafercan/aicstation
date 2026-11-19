@@ -172,6 +172,24 @@ const SESSION_MARKERS: &[&str] = &[
 ];
 const SESSION_MARKER_PREFIXES: &[&str] = &["CLAUDE_CODE_MESSAGING_"];
 
+/// What Claude Code sets in the shells that run its tools: no colors, no git
+/// editor or credential prompts. The app started from such a shell (with a
+/// session marker) would pass them on and its terminals would lose colors
+/// and git prompts, so there they are dropped unless persistent.
+const TOOL_SHELL_VARS: &[&str] = &[
+    "NO_COLOR",
+    "AI_AGENT",
+    "GIT_EDITOR",
+    "GIT_TERMINAL_PROMPT",
+    "GCM_INTERACTIVE",
+    "GIT_ASKPASS",
+    "COREPACK_ENABLE_AUTO_PIN",
+];
+
+fn is_session_marker(upper: &str) -> bool {
+    SESSION_MARKERS.contains(&upper) || SESSION_MARKER_PREFIXES.iter().any(|p| upper.starts_with(p))
+}
+
 /// The child's environment, from this process's environment. Names are
 /// compared case-insensitively, as on Windows; `persistent` holds the
 /// uppercased names of the user's and machine's persistent variables.
@@ -181,6 +199,8 @@ const SESSION_MARKER_PREFIXES: &[&str] = &["CLAUDE_CODE_MESSAGING_"];
 ///   session (removed).
 /// - Inside an AppImage (Unix), what its runtime injected is removed (see
 ///   [`appimage_cleanup`]).
+/// - With a session marker present, Claude Code's tool shell settings
+///   ([`TOOL_SHELL_VARS`]) are removed unless persistent.
 /// - Everything else is kept, including NO_COLOR / FORCE_COLOR.
 /// - On Windows `NoDefaultCurrentDirectoryInExePath=1` is added (see `NO_CWD_EXE`).
 pub fn child_env(
@@ -189,10 +209,16 @@ pub fn child_env(
 ) -> Vec<(OsString, OsString)> {
     #[cfg(unix)]
     let vars = appimage_cleanup(vars.into_iter().collect());
+    #[cfg(not(unix))]
+    let vars: Vec<(OsString, OsString)> = vars.into_iter().collect();
+    let from_session = vars.iter().any(|(k, _)| is_session_marker(&k.to_string_lossy().to_ascii_uppercase()));
     let keep = |key: &OsString| {
         let k = key.to_string_lossy().to_ascii_uppercase();
-        if SESSION_MARKERS.contains(&k.as_str()) || SESSION_MARKER_PREFIXES.iter().any(|p| k.starts_with(p)) {
+        if is_session_marker(&k) {
             return false;
+        }
+        if from_session && TOOL_SHELL_VARS.contains(&k.as_str()) {
+            return persistent.contains(&k);
         }
         if k == NO_CWD_EXE.to_ascii_uppercase() {
             return false;
@@ -853,14 +879,39 @@ mod tests {
             ("CLAUDE_CODE_SESSION_ATTENDED", "1"),
             ("CLAUDECODE_X", "keep"),
             ("CLAUDE_CONFIG_DIR", r"D:\cfg"),
-            ("NO_COLOR", "1"),
         ]);
         // Even when the user made them persistent, markers never leak.
         let persistent = set(&["CLAUDECODE", "CLAUDE_CODE_SSE_PORT", "CLAUDE_CODE_ENTRYPOINT"]);
         assert_eq!(
             names(child_env(input, &persistent)),
-            tail(vec!["PATH", "CLAUDECODE_X", "CLAUDE_CONFIG_DIR", "NO_COLOR"])
+            tail(vec!["PATH", "CLAUDECODE_X", "CLAUDE_CONFIG_DIR"])
         );
+    }
+
+    #[test]
+    fn child_env_drops_claude_code_tool_shell_settings_when_started_from_a_session() {
+        // The app started from a Claude Code tool shell inherits what that
+        // shell sets for its commands: no colors, no git editor or prompts.
+        let shell = [
+            ("CLAUDECODE", "1"),
+            ("NO_COLOR", "1"),
+            ("AI_AGENT", "claude-code_2-1-328_agent"),
+            ("GIT_EDITOR", "true"),
+            ("GIT_TERMINAL_PROMPT", "0"),
+            ("GCM_INTERACTIVE", "never"),
+            ("GIT_ASKPASS", ""),
+            ("COREPACK_ENABLE_AUTO_PIN", "0"),
+            ("PATH", "x"),
+        ];
+        assert_eq!(names(child_env(kv(&shell), &HashSet::new())), tail(vec!["PATH"]));
+        // The user's own persistent ones stay.
+        assert_eq!(
+            names(child_env(kv(&shell), &set(&["NO_COLOR", "GIT_EDITOR"]))),
+            tail(vec!["NO_COLOR", "GIT_EDITOR", "PATH"])
+        );
+        // Started any other way they are the user's (a shell profile) and stay.
+        let own = [("NO_COLOR", "1"), ("GIT_EDITOR", "vim")];
+        assert_eq!(names(child_env(kv(&own), &HashSet::new())), tail(vec!["NO_COLOR", "GIT_EDITOR"]));
     }
 
     #[test]
