@@ -569,6 +569,45 @@ test("a space closes the menu and Enter sends as typed", async () => {
   await waitFor(() => expect(sent()).toEqual(["/compact now"]));
 });
 
+test("slash menu: a name only contained in others is sent as typed", async () => {
+  serve({
+    send_to_session: () => undefined,
+    get_session_commands: () => [{ name: "superpowers:writing-plans", description: "Plans." }],
+  });
+  render(<Composer sessionId="s1" status="idle" onShowTerminal={noop} />);
+  const box = screen.getByRole("textbox") as HTMLTextAreaElement;
+  fireEvent.change(box, { target: { value: "/plan" } });
+  await screen.findByRole("option", { name: /writing-plans/ });
+  expect(selected()).toBeUndefined();
+  fireEvent.keyDown(box, { key: "Enter" });
+  await waitFor(() => expect(sent()).toEqual(["/plan"]));
+});
+
+test("slash menu: in that case an arrow still picks one", async () => {
+  serve({
+    send_to_session: () => undefined,
+    get_session_commands: () => [{ name: "superpowers:writing-plans", description: "Plans." }],
+  });
+  render(<Composer sessionId="s1" status="idle" onShowTerminal={noop} />);
+  const box = screen.getByRole("textbox") as HTMLTextAreaElement;
+  fireEvent.change(box, { target: { value: "/plan" } });
+  await screen.findByRole("option", { name: /writing-plans/ });
+  fireEvent.keyDown(box, { key: "ArrowDown" });
+  fireEvent.keyDown(box, { key: "Enter" });
+  await waitFor(() => expect(sent()).toEqual(["/superpowers:writing-plans"]));
+});
+
+test("slash menu: Esc closes it only for that text", async () => {
+  const box = slashBox();
+  fireEvent.change(box, { target: { value: "/co" } });
+  fireEvent.keyDown(box, { key: "Escape" });
+  fireEvent.keyDown(box, { key: "Enter" });
+  await waitFor(() => expect(box.value).toBe(""));
+  fireEvent.change(box, { target: { value: "/c" } });
+  fireEvent.change(box, { target: { value: "/co" } });
+  expect(screen.getByRole("listbox")).toBeTruthy();
+});
+
 test("IME Enter does not pick", () => {
   const box = slashBox();
   fireEvent.change(box, { target: { value: "/co" } });

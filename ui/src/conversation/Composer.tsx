@@ -82,7 +82,10 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
     fetchedFor.current = key;
     getSessionCommands(sessionId).then(setSkills, () => {});
   }, [query !== null, skillsKey, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { setActive(0); }, [query]);
+  // A name typed that only others contain (a command missing from the list,
+  // typed in full) highlights nothing: Enter sends it as typed.
+  const prefix = query !== null && entries.some((e) => e.name.toLowerCase().startsWith(query.toLowerCase()));
+  useEffect(() => { setActive(prefix ? 0 : -1); }, [query, prefix]);
 
   const send = (value = text) => {
     if (waiting || sendingRef.current || value.trim() === "") return;
@@ -118,16 +121,17 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
       const n = entries.length;
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
-        setActive((i) => (i + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+        const down = e.key === "ArrowDown";
+        setActive((i) => (i < 0 ? (down ? 0 : n - 1) : (i + (down ? 1 : n - 1)) % n));
         return;
       }
-      const cur = entries[Math.min(active, n - 1)];
-      if (e.key === "Enter" && !e.shiftKey) {
+      const cur = active >= 0 ? entries[Math.min(active, n - 1)] : undefined;
+      if (cur && e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         pick(cur);
         return;
       }
-      if (e.key === "Tab" && !e.shiftKey) {
+      if (cur && e.key === "Tab" && !e.shiftKey) {
         e.preventDefault();
         setText(`/${cur.name} `);
         return;
@@ -149,7 +153,7 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
       {menuOpen && <SlashMenu entries={entries} active={Math.min(active, entries.length - 1)} onPick={pick} onHover={setActive} />}
       <div className="conv-composer-row">
         <textarea ref={box} value={text} rows={2} disabled={waiting} placeholder={t("conv.placeholder")}
-          onChange={(e) => { setText(e.target.value); setErr(null); }}
+          onChange={(e) => { setText(e.target.value); setErr(null); setClosedFor(null); }}
           onKeyDown={onKeyDown} />
         <button type="button" className="btn" disabled={waiting || sending || text.trim() === ""} onClick={() => send()}>
           {t("conv.send")}

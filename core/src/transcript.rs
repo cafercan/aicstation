@@ -62,9 +62,12 @@ fn listed_skills(content: &str) -> Vec<Skill> {
     content
         .lines()
         .filter_map(|l| {
-            let (name, text) = l.trim().strip_prefix("- ")?.split_once(": ")?;
+            let item = l.trim().strip_prefix("- ")?;
+            // Some skills are listed by name alone; a name has no spaces, so
+            // a wrapped description line cannot pass for one.
+            let (name, text) = item.split_once(": ").unwrap_or((item, ""));
             let name = name.trim();
-            if name.is_empty() || name.chars().count() > 200 {
+            if name.is_empty() || name.chars().count() > 200 || name.contains(char::is_whitespace) {
                 return None;
             }
             let text = text.trim();
@@ -1014,8 +1017,17 @@ kısa
 
     #[test]
     fn skips_malformed_listing_lines() {
-        let e = parse_line(&listing(false, "- nocolon\n- : x\n- ok: fine"));
+        let e = parse_line(&listing(false, "- two words\n- : x\n- ok: fine"));
         let [Entry::SkillListing { initial: false, skills }] = &e[..] else { panic!("{e:?}") };
         assert_eq!(skills.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(), ["ok"]);
+    }
+
+    #[test]
+    fn accepts_skills_listed_by_name_alone() {
+        // Claude Code lists some skills as a bare "- name" line.
+        let e = parse_line(&listing(true, "- anthropic-skills:pdf\n- run: Launch."));
+        let [Entry::SkillListing { skills, .. }] = &e[..] else { panic!("{e:?}") };
+        assert_eq!(skills[0], Skill { name: "anthropic-skills:pdf".into(), description: String::new() });
+        assert_eq!(skills[1].name, "run");
     }
 }

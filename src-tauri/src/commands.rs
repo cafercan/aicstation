@@ -766,8 +766,9 @@ pub async fn get_conversation_since(
         .map_err(|e| errors::with(errors::TASK_FAILED, e))?
 }
 
-/// Skills of a live session for the message box's command menu.
-#[tauri::command]
+/// Skills of a live session for the message box's command menu. Off the
+/// main thread: it waits for the monitor lock a refresh may hold.
+#[tauri::command(async)]
 pub fn get_session_commands(
     state: tauri::State<'_, AppState>,
     session_id: String,
