@@ -261,7 +261,9 @@ test("Kullanım: en pahalı projeler tam yol ipucuyla; model dağılımı; boş 
   const legend = [...document.querySelectorAll(".cost-models .legend li")].map((li) => li.textContent);
   expect(legend).toEqual(["claude-opus-5-575%", "claude-sonnet-5-525%"]);
   fireEvent.click(screen.getByRole("button", { name: "7 gün" }));
-  expect([...document.querySelectorAll(".cost-top .lbl")].map((e) => e.textContent)).toEqual(["İstanbul"]);
+  // The range is applied after a re-render, which can lag on a slow runner.
+  await waitFor(() =>
+    expect([...document.querySelectorAll(".cost-top .lbl")].map((e) => e.textContent)).toEqual(["İstanbul"]));
 });
 
 test("Kullanım: veri yoksa sıfır çubuklar ve 'kullanım yok' notları", async () => {
