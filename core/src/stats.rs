@@ -1,7 +1,7 @@
 //! Incremental per-session statistics built from transcript entries.
 use crate::model::{ChangedFile, ToolCall, ToolState, Usage};
 use crate::pricing;
-use crate::transcript::Entry;
+use crate::transcript::{Entry, QueueOp};
 use chrono::{DateTime, Local, NaiveDate, Utc};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
@@ -15,6 +15,8 @@ pub const MAX_SEEN_IDS: usize = 1024;
 pub const MAX_CHANGED_FILES: usize = 500;
 /// Distinct top-level cwds kept, in first-seen order, to find the resume folder.
 pub const MAX_CWDS: usize = 32;
+/// Running background tasks and queued prompts kept, each; past it the oldest goes.
+pub const MAX_LIVE_ITEMS: usize = 64;
 
 #[derive(Debug, Clone, Default, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -45,6 +47,20 @@ pub struct SessionStats {
     /// the UI only as the merged list of a session detail.
     #[serde(skip)]
     pub changed_files: HashMap<String, ChangedFile>,
+    /// Permission mode last written ("auto", "plan", …).
+    pub permission_mode: Option<String>,
+    /// Output tokens of the current turn (since the last prompt).
+    pub turn_output_tokens: u64,
+    /// Background tasks started and not seen finished: (id, start), in start order.
+    #[serde(skip)]
+    background: VecDeque<(String, DateTime<Utc>)>,
+    /// Queued prompts and notices: (content, enqueue time), oldest first.
+    #[serde(skip)]
+    queue: VecDeque<(Option<String>, DateTime<Utc>)>,
+    /// The session was seen idle at this time: nothing started or queued up
+    /// to it can still be running or waiting.
+    #[serde(skip)]
+    settled_before: Option<DateTime<Utc>>,
     #[serde(skip)]
     seen_ids: HashSet<String>,
     /// Insertion order of `seen_ids`; the oldest id is forgotten first.
@@ -65,6 +81,54 @@ impl SessionStats {
             .find(|c| crate::locate::cwd_matches_project_dir(c, project_dir))
             .cloned()
             .or_else(|| self.first_cwd.clone())
+    }
+
+    /// Background tasks started and not seen finished.
+    pub fn background_shells(&self) -> u32 {
+        self.background.len() as u32
+    }
+
+    /// Queued prompts of the user (queued task notices are not counted).
+    pub fn queued_messages(&self) -> u32 {
+        let notice = |c: &Option<String>| c.as_deref().is_some_and(|c| c.trim_start().starts_with("<task-notification>"));
+        self.queue.iter().filter(|(c, _)| !notice(c)).count() as u32
+    }
+
+    /// The session was seen idle at `since`: no background task or queued
+    /// prompt from up to then is still there, also one whose line is read later.
+    pub fn settle_idle(&mut self, since: DateTime<Utc>) {
+        self.background.retain(|(_, at)| *at > since);
+        self.queue.retain(|(_, at)| *at > since);
+        if self.settled_before.is_none_or(|s| since > s) {
+            self.settled_before = Some(since);
+        }
+    }
+
+    fn settled(&self, at: DateTime<Utc>) -> bool {
+        self.settled_before.is_some_and(|s| at <= s)
+    }
+
+    fn apply_queue(&mut self, op: QueueOp, content: &Option<String>, at: DateTime<Utc>) {
+        match op {
+            QueueOp::Enqueue => {
+                if self.settled(at) {
+                    return;
+                }
+                self.queue.push_back((content.clone(), at));
+                if self.queue.len() > MAX_LIVE_ITEMS {
+                    self.queue.pop_front();
+                }
+            }
+            QueueOp::Dequeue => {
+                self.queue.pop_front();
+            }
+            QueueOp::Remove => {
+                if let Some(i) = self.queue.iter().position(|(c, _)| c == content) {
+                    self.queue.remove(i);
+                }
+            }
+            QueueOp::PopAll => self.queue.clear(),
+        }
     }
 
     /// True the first time `id` is seen within the recent window.
@@ -126,6 +190,7 @@ impl SessionStats {
                         self.tokens.cache_read += u.cache_read;
                         self.tokens.cache_creation += u.cache_creation;
                         self.tokens.cache_creation_1h += u.cache_creation_1h;
+                        self.turn_output_tokens += u.output;
                         let day = at.with_timezone(&Local).date_naive();
                         let day_tokens = self.tokens_by_day.entry(day).or_insert(0);
                         *day_tokens = day_tokens.saturating_add(u.total());
@@ -164,11 +229,18 @@ impl SessionStats {
                 }
             }
             Entry::Title(t) => self.title = Some(t.clone()),
-            Entry::PermissionMode(_)
-            | Entry::BackgroundStarted { .. }
-            | Entry::TaskFinished(_)
-            | Entry::UserPrompt { .. }
-            | Entry::Queue { .. } => {}
+            Entry::PermissionMode(m) => self.permission_mode = Some(m.clone()),
+            Entry::BackgroundStarted { id, at } => {
+                if !self.settled(*at) && !self.background.iter().any(|(i, _)| i == id) {
+                    self.background.push_back((id.clone(), *at));
+                    if self.background.len() > MAX_LIVE_ITEMS {
+                        self.background.pop_front();
+                    }
+                }
+            }
+            Entry::TaskFinished(id) => self.background.retain(|(i, _)| i != id),
+            Entry::UserPrompt { .. } => self.turn_output_tokens = 0,
+            Entry::Queue { op, content, at } => self.apply_queue(*op, content, *at),
             Entry::Meta { cwd, git_branch, at } => {
                 if let Some(c) = cwd {
                     if self.first_cwd.is_none() {
@@ -424,5 +496,99 @@ mod tests {
         assert_eq!(s.tokens_by_day.len(), 2);
         assert_eq!(s.tokens_by_day.values().sum::<u64>(), 3520 + 4);
         assert_eq!(s.tokens.total(), 3524);
+    }
+
+    fn ts(s: u32) -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 11, 19, 7, 0, s).unwrap()
+    }
+    fn out(id: &str, o: u64, t: DateTime<Utc>) -> Entry {
+        asst(id, "claude-opus-5-5", None, usage(0, o, 0, 0), vec![], t)
+    }
+    fn queue(op: QueueOp, c: Option<&str>, s: u32) -> Entry {
+        Entry::Queue { op, content: c.map(Into::into), at: ts(s) }
+    }
+
+    #[test]
+    fn background_tasks_start_and_finish() {
+        let mut st = SessionStats::default();
+        st.apply(&Entry::BackgroundStarted { id: "a".into(), at: ts(1) });
+        st.apply(&Entry::BackgroundStarted { id: "b".into(), at: ts(2) });
+        st.apply(&Entry::TaskFinished("a".into()));
+        st.apply(&Entry::TaskFinished("zz".into()));
+        assert_eq!(st.background_shells(), 1);
+    }
+
+    #[test]
+    fn background_tasks_are_capped() {
+        let mut st = SessionStats::default();
+        for i in 0..70 {
+            st.apply(&Entry::BackgroundStarted { id: format!("t{i}"), at: ts(1) });
+        }
+        assert_eq!(st.background_shells(), 64);
+    }
+
+    #[test]
+    fn settle_idle_drops_older_starts_also_read_later() {
+        let mut st = SessionStats::default();
+        st.apply(&Entry::BackgroundStarted { id: "old".into(), at: ts(1) });
+        st.settle_idle(ts(5));
+        assert_eq!(st.background_shells(), 0);
+        st.apply(&Entry::BackgroundStarted { id: "late".into(), at: ts(4) });
+        assert_eq!(st.background_shells(), 0, "written before idle, read after");
+        st.apply(&Entry::BackgroundStarted { id: "new".into(), at: ts(9) });
+        assert_eq!(st.background_shells(), 1);
+    }
+
+    #[test]
+    fn queue_counts_messages_not_notifications() {
+        let mut st = SessionStats::default();
+        st.apply(&queue(QueueOp::Enqueue, Some("<task-notification>x</task-notification>"), 1));
+        st.apply(&queue(QueueOp::Enqueue, Some("hi"), 2));
+        st.apply(&queue(QueueOp::Enqueue, Some("again"), 3));
+        assert_eq!(st.queued_messages(), 2);
+        st.apply(&queue(QueueOp::Dequeue, None, 4)); // takes the notification (oldest)
+        assert_eq!(st.queued_messages(), 2);
+        st.apply(&queue(QueueOp::Remove, Some("hi"), 5));
+        assert_eq!(st.queued_messages(), 1);
+        st.apply(&queue(QueueOp::PopAll, Some("again"), 6));
+        assert_eq!(st.queued_messages(), 0);
+    }
+
+    #[test]
+    fn queue_remove_unknown_is_ignored() {
+        let mut st = SessionStats::default();
+        st.apply(&queue(QueueOp::Remove, Some("x"), 1));
+        st.apply(&queue(QueueOp::Dequeue, None, 2));
+        assert_eq!(st.queued_messages(), 0);
+    }
+
+    #[test]
+    fn settle_idle_empties_the_queue() {
+        let mut st = SessionStats::default();
+        st.apply(&queue(QueueOp::Enqueue, Some("hi"), 1));
+        st.settle_idle(ts(3));
+        st.apply(&queue(QueueOp::Enqueue, Some("late"), 2));
+        assert_eq!(st.queued_messages(), 0);
+    }
+
+    #[test]
+    fn turn_tokens_reset_by_a_prompt_only() {
+        let mut st = SessionStats::default();
+        st.apply(&out("m1", 100, ts(1)));
+        st.apply(&Entry::UserPrompt { at: ts(2) });
+        st.apply(&out("m2", 30, ts(3)));
+        st.apply(&result("t", false, ts(4)));
+        st.apply(&Entry::TaskFinished("b".into()));
+        st.apply(&out("m3", 12, ts(5)));
+        st.apply(&out("m3", 12, ts(5))); // same id: once
+        assert_eq!(st.turn_output_tokens, 42);
+    }
+
+    #[test]
+    fn permission_mode_is_the_last_seen() {
+        let mut st = SessionStats::default();
+        st.apply(&Entry::PermissionMode("auto".into()));
+        st.apply(&Entry::PermissionMode("plan".into()));
+        assert_eq!(st.permission_mode.as_deref(), Some("plan"));
     }
 }
