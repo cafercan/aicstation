@@ -33,9 +33,23 @@ function splitTop(s: string): string[] {
 
 const isHint = (p: string) => HINTS.has(p.trim().toLowerCase()) || /^\(.*\)$/.test(p.trim());
 
-/** First (from the bottom) spinner row, trimmed, without key hints. */
+/** A rule of Claude Code's input box: `─` across the row (the lower one may carry a name). */
+const isRule = (row: string) => row.trimStart().startsWith("─") && (row.match(/─/g)?.length ?? 0) >= 10;
+
+/** Indices of the input box's top and bottom rules, -1 when not on screen. */
+function inputBox(rows: string[]): { top: number; bottom: number } {
+  let bottom = -1;
+  for (let i = rows.length - 1; i >= 0; i--) if (isRule(rows[i])) { bottom = i; break; }
+  let top = -1;
+  for (let i = bottom - 1; i >= 0; i--) if (isRule(rows[i])) { top = i; break; }
+  return { top, bottom };
+}
+
+/** First (from the bottom) spinner row above the input box, trimmed, without key hints. */
 export function findSpinner(rows: string[]): string | null {
-  for (let i = rows.length - 1; i >= 0; i--) {
+  const box = inputBox(rows);
+  const end = box.top >= 0 ? box.top : box.bottom >= 0 ? box.bottom : rows.length;
+  for (let i = end - 1; i >= 0; i--) {
     const row = rows[i].trim();
     if (!SPINNER.test(row)) continue;
     const kept = splitTop(row).filter((p) => !isHint(p));
@@ -44,10 +58,16 @@ export function findSpinner(rows: string[]): string | null {
   return null;
 }
 
-/** First (from the bottom) footer mode row, trimmed, without key hints. */
+/**
+ * The footer mode row under the input box, trimmed, without key hints. Only
+ * its left column counts: a notice on the right of the same row ("Context
+ * left until auto-compact: 8%") is set off by a run of spaces.
+ */
 export function findModeLine(rows: string[]): string | null {
-  for (let i = rows.length - 1; i >= 0; i--) {
-    const row = rows[i].trim();
+  const { bottom } = inputBox(rows);
+  if (bottom < 0) return null;
+  for (let i = rows.length - 1; i > bottom; i--) {
+    const row = rows[i].trim().split(/\s{2,}/)[0];
     if (!row.startsWith("⏵⏵") && !row.startsWith("⏸")) continue;
     const kept = splitTop(row)
       // "plan mode on (shift+tab to cycle)": the hint rides on the part.

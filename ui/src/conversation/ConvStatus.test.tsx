@@ -58,6 +58,13 @@ test("busy from card data: label, elapsed, turn tokens, mode, shells, queue, age
   expect(line()).toContain("47 sn");
 });
 
+test("running a command after the turn: elapsed, but not the finished turn's tokens", () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(100_000);
+  show(card({ status: "shell", statusSinceMs: 90_000, turnOutputTokens: 123, backgroundShells: 1 }));
+  expect(line()).toBe("komut çalıştırıyor · 10 sn · 1 arka plan komutu");
+});
+
 test("idle: no elapsed, default mode and zero counts left out", () => {
   show(card({ status: "idle", permissionMode: "default" }));
   expect(line()).toBe("hazır");
@@ -72,7 +79,8 @@ test("other modes and an unknown one", () => {
 
 test("app terminal: spinner and mode line from the screen replace card parts", () => {
   m.state.terminals = [{ id: 3, pid: 70, term: m.term }];
-  m.state.screen = ["* Fermenting… (33s · ↓ 2.8k tokens)", "> ", "⏵⏵ auto mode on · 1 shell · ↓ to manage"];
+  m.state.screen = ["* Fermenting… (33s · ↓ 2.8k tokens)", "─".repeat(40), "> ", "─".repeat(40),
+    "⏵⏵ auto mode on · 1 shell · ↓ to manage"];
   show(card({ status: "busy", statusSinceMs: Date.now(), permissionMode: "plan", backgroundShells: 3, queuedMessages: 1 }));
   expect(line()).toBe("* Fermenting… (33s · ↓ 2.8k tokens) · ⏵⏵ auto mode on · 1 shell · 1 mesaj kuyrukta");
 });

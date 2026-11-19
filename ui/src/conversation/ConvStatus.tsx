@@ -69,7 +69,9 @@ export default function ConvStatus({ card }: { card: SessionCard }) {
   const t = useT();
   const screen = useScreen(card.parentPid);
   const kind = statusKind(card.status, card.pid);
-  const working = card.status === "busy" || card.status === "shell";
+  // Tokens belong to a turn in progress; "shell" also covers a background
+  // command left running after the turn, whose tokens are the finished turn's.
+  const working = card.status === "busy";
   const now = useNow(card.status !== "idle");
 
   const parts: string[] = [];
