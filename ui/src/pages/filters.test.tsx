@@ -16,7 +16,7 @@ import { resetUiState } from "../testing/reset";
 const card = (id: string, over: Partial<SessionCard>): SessionCard => ({
   sessionId: id, pid: 1, parentPid: null, name: id, cwd: `C:\\p\\${id}`, status: "busy", waitingFor: null,
   model: "Opus 5.5", contextPct: null, costUsd: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 }, agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0,
-  lastTool: null, startedAtMs: 0, lastActivityMs: 0, gitBranch: null, hostKind: "other", movable: false, agentsRunning: 0, remoteControl: false, ...over,
+  lastTool: null, startedAtMs: 0, lastActivityMs: 0, transcriptBytes: 0, gitBranch: null, hostKind: "other", movable: false, agentsRunning: 0, remoteControl: false, ...over,
 });
 const snap = (cards: SessionCard[]): Snapshot => ({ sessions: cards, runningAgents: 0, waitingCount: 0 });
 

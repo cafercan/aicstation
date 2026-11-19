@@ -69,7 +69,7 @@ test("Claude bar: only under a terminal running a Claude session, and only while
     sessionId: "s1", pid: 5, parentPid: 1, name: "demo", cwd: "/x/proj", status: "busy", waitingFor: null,
     model: "claude-opus-5-5", contextPct: 10, costUsd: 0,
     tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 },
-    agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 0,
+    agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 0, transcriptBytes: 0,
     gitBranch: null, hostKind: "embedded", movable: false, agentsRunning: 0, remoteControl: false,
   } as const;
   const { container } = render(<>

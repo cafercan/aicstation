@@ -17,7 +17,7 @@ function card(over: Partial<SessionCard> = {}): SessionCard {
   return {
     sessionId: "s1", pid: 7, parentPid: 70, name: "demo", cwd: "C:/x/demo", status: "idle", waitingFor: null,
     model: null, contextPct: null, costUsd: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 },
-    agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 1,
+    agentsTotal: 0, agentsFinished: 0, toolOk: 0, toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 1, transcriptBytes: 0,
     gitBranch: null, hostKind: "embedded", movable: true, agentsRunning: 0, remoteControl: false, ...over,
   };
 }
@@ -262,6 +262,21 @@ test("since appends on lastActivity change", async () => {
   expect(await screen.findByText("yeni yanıt")).toBeTruthy();
   expect(invoke).toHaveBeenCalledWith("get_conversation_since", { sessionId: "s1", epoch: 5, from: 1 });
   expect(screen.getAllByText("kalın")).toHaveLength(1);
+});
+
+test("since appends when the transcript grows with an unchanged lastActivity", async () => {
+  // Claude Code marks the turn idle before it writes the reply, whose
+  // timestamp is older: only the transcript size tells the reply arrived.
+  serve({
+    get_conversation_page: () => page(ITEMS.slice(0, 1), { epoch: 5 }),
+    get_conversation_since: () => page([ITEMS[0], { kind: "assistant", text: "geç yanıt", truncated: false, atMs: 9 }],
+      { epoch: 5, start: 0, total: 2 }),
+  });
+  const { rerender } = render(
+    <ConversationPage sessionId="s1" card={card({ lastActivityMs: 5, transcriptBytes: 100 })} {...props} />);
+  await screen.findByText("merhaba");
+  rerender(<ConversationPage sessionId="s1" card={card({ lastActivityMs: 5, transcriptBytes: 180 })} {...props} />);
+  expect(await screen.findByText("geç yanıt")).toBeTruthy();
 });
 
 test("closed session does not refresh and shows Resume", async () => {

@@ -7,7 +7,7 @@ const invoke = vi.hoisted(() => vi.fn(async (cmd: string): Promise<unknown> => {
       sessions: [{
         sessionId: "s-1", pid: 5, parentPid: null, name: "kalibrasyon", cwd: "C:\\p\\adc", status: "busy",
         waitingFor: null, model: null, contextPct: null, costUsd: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 }, agentsTotal: 0, agentsFinished: 0, toolOk: 0,
-        toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 0, gitBranch: null, hostKind: "other", movable: false, agentsRunning: 0, remoteControl: false,
+        toolErr: 0, lastTool: null, startedAtMs: 0, lastActivityMs: 0, transcriptBytes: 0, gitBranch: null, hostKind: "other", movable: false, agentsRunning: 0, remoteControl: false,
       }],
       runningAgents: 0, waitingCount: 0,
     };

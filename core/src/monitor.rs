@@ -45,6 +45,11 @@ pub struct SessionCard {
     pub last_tool: Option<ToolCall>,
     pub started_at_ms: u64,
     pub last_activity_ms: u64,
+    /// Transcript bytes read so far; 0 for a closed session. Changes with every
+    /// appended line, also one older than the status time in
+    /// `last_activity_ms` (Claude Code marks a turn idle before it writes the
+    /// turn's last lines), so the conversation tab refreshes on it.
+    pub transcript_bytes: u64,
     pub git_branch: Option<String>,
     /// Where the Claude process runs (decides "Sekmeye git"); Other when closed.
     pub host_kind: HostKind,
@@ -123,6 +128,11 @@ impl SessionState {
             #[cfg(test)]
             applied: 0,
         }
+    }
+
+    /// Transcript bytes read so far (0 before the transcript is found).
+    fn transcript_bytes(&self) -> u64 {
+        self.reader.as_ref().map_or(0, TranscriptReader::offset)
     }
 
     /// Reads newly appended transcript lines into `stats`.
@@ -253,6 +263,7 @@ fn make_card(
     parent_pid: Option<u32>,
     host_kind: HostKind,
     stats: &SessionStats,
+    transcript_bytes: u64,
     tree: &AgentTree,
 ) -> SessionCard {
     let cwd = live
@@ -289,6 +300,7 @@ fn make_card(
         last_activity_ms: live
             .map_or(0, |l| l.status_updated_at_ms)
             .max(dt_ms(stats.last_at).unwrap_or(0)),
+        transcript_bytes,
         git_branch: stats.git_branch.clone(),
         host_kind,
         movable: live.is_some_and(|l| l.movable),
@@ -429,8 +441,8 @@ impl Monitor {
             if l.status == SessionStatus::Waiting {
                 waiting += 1;
             }
-            let stats = &self.states[&l.session_id].stats;
-            cards.push(make_card(&l.session_id, Some(l), probe.terminal_pid(l.pid).or_else(|| probe.parent_pid(l.pid)), probe.host_kind(l.pid), stats, &tree));
+            let st = &self.states[&l.session_id];
+            cards.push(make_card(&l.session_id, Some(l), probe.terminal_pid(l.pid).or_else(|| probe.parent_pid(l.pid)), probe.host_kind(l.pid), &st.stats, st.transcript_bytes(), &tree));
         }
         cards.sort_by(|a, b| {
             status_rank(&a.status)
@@ -506,9 +518,10 @@ impl Monitor {
             .into_iter()
             .find(|l| l.session_id == session_id)?;
         let tree = self.update_live(session_id, now);
-        let stats = &self.states[session_id].stats;
+        let st = &self.states[session_id];
+        let stats = &st.stats;
         Some(SessionDetail {
-            card: make_card(session_id, Some(&l), probe.terminal_pid(l.pid).or_else(|| probe.parent_pid(l.pid)), probe.host_kind(l.pid), stats, &tree),
+            card: make_card(session_id, Some(&l), probe.terminal_pid(l.pid).or_else(|| probe.parent_pid(l.pid)), probe.host_kind(l.pid), stats, st.transcript_bytes(), &tree),
             first_cwd: stats.first_cwd.clone(),
             tokens: stats.tokens,
             tool_call_count: stats.tool_call_count,
@@ -590,7 +603,7 @@ impl ClosedJob {
             None => AgentTree::default(),
         };
         Some(SessionDetail {
-            card: make_card(session_id, None, None, HostKind::Other, &stats, &tree),
+            card: make_card(session_id, None, None, HostKind::Other, &stats, 0, &tree),
             first_cwd: project_dir.and_then(|d| stats.resume_cwd(&d)),
             tokens: stats.tokens,
             tool_call_count: stats.tool_call_count,
@@ -844,6 +857,30 @@ mod tests {
         let after = m.states[&sid].applied;
         assert_eq!(after - first, 2, "only the new line (assistant + meta) is read");
         assert_eq!(m.states[&sid].stats.tokens.output, 12);
+    }
+
+    /// Claude Code marks the session idle before it appends the turn's last
+    /// lines, whose timestamps are older than that status: the activity time
+    /// stays, but the card still changes as the transcript grows.
+    #[test]
+    fn card_transcript_bytes_grow_with_lines_older_than_the_status() {
+        let e = Env::new();
+        let sid = id(1);
+        let t = e.transcript(&sid);
+        e.append(&t, &asst("m1", 5, "2026-11-02T07:00:00Z"));
+        let status_ms = 1_793_602_810_000; // 2026-11-02T07:00:10Z
+        e.reg(1, &sid, "idle", status_ms, None);
+        let mut m = e.mon();
+        let before = m.refresh(&FakeProbe, now()).sessions[0].clone();
+        assert_eq!(before.last_activity_ms, status_ms);
+        assert_eq!(before.transcript_bytes, fs::metadata(&t).unwrap().len());
+        e.append(&t, &asst("m2", 7, "2026-11-02T07:00:05Z"));
+        let after = m.refresh(&FakeProbe, now()).sessions[0].clone();
+        assert_eq!(after.last_activity_ms, status_ms, "older line: activity time unchanged");
+        assert_eq!(after.transcript_bytes, fs::metadata(&t).unwrap().len(), "grown by the new line");
+        assert!(after.transcript_bytes > before.transcript_bytes);
+        let v = serde_json::to_value(&after).unwrap();
+        assert!(v.get("transcriptBytes").is_some());
     }
 
     #[test]

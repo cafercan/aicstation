@@ -223,6 +223,11 @@ impl TranscriptReader {
         Self { path, offset: 0, carry: Vec::new(), skipping: false, max_line: MAX_LINE }
     }
 
+    /// Bytes of the file read so far (restarts at 0 when the file shrank).
+    pub fn offset(&self) -> u64 {
+        self.offset
+    }
+
     /// Streams bytes appended since the last call, line by line, without collecting
     /// them. An unterminated trailing line stays in `carry` until its newline arrives.
     /// If the file shrank, `f(ReadEvent::Reset)` is called once BEFORE any entry so the

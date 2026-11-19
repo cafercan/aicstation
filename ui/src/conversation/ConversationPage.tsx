@@ -94,7 +94,9 @@ export default function ConversationPage({ sessionId, card, onShowTerminal, onTe
   useEffect(() => { refresh(); }, [refresh]);
 
   const live = card !== undefined && card.pid !== 0;
-  const activity = live ? card.lastActivityMs : null;
+  // The transcript size too: Claude Code marks a turn idle before it writes
+  // the reply, whose older timestamp leaves lastActivityMs unchanged.
+  const activity = live ? `${card.lastActivityMs}:${card.transcriptBytes}` : null;
   const seen = useRef(activity);
   useEffect(() => {
     if (activity === null || activity === seen.current) return;

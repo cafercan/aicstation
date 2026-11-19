@@ -281,6 +281,7 @@ mod tests {
             last_tool: None,
             started_at_ms: 0,
             last_activity_ms: 0,
+            transcript_bytes: 0,
             git_branch: None,
             host_kind: HostKind::Other,
             agents_running: 0,

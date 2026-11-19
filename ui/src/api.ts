@@ -48,6 +48,8 @@ export interface SessionCard {
   lastTool: ToolCall | null;
   startedAtMs: number;
   lastActivityMs: number;
+  /** Transcript bytes read so far (0 when closed); grows with every new line. */
+  transcriptBytes: number;
   gitBranch: string | null;
   /** Where the Claude process runs; "other" for closed sessions. */
   hostKind: HostKind;

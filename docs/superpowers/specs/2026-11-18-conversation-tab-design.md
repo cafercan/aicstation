@@ -181,7 +181,10 @@ everything below.
   system browser (Windows `ShellExecuteW`/`explorer`, Linux `xdg-open`),
   following how `open_folder` launches things.
 - Live updates: when a snapshot shows the open session's `lastActivityMs`
-  changed, the UI calls `get_conversation_since` (no new event needed).
+  or `transcriptBytes` changed, the UI calls `get_conversation_since` (no new
+  event needed). `lastActivityMs` alone misses a turn's reply: Claude Code
+  marks the session idle before it appends the reply, whose timestamp is
+  older than that status time; only the transcript size changes then.
 
 ### UI (`ui/`, React)
 
