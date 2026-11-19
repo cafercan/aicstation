@@ -628,11 +628,20 @@ impl AppState {
         );
     }
 
-    pub fn open_folder(&self, path: &str) -> Result<(), String> {
-        let mut known: Vec<String> =
-            self.get_snapshot().sessions.iter().map(|c| c.cwd.clone()).collect();
+    /// Folders of the sessions the UI can show: live ones, indexed history
+    /// rows, and the closed session whose detail was read last (its page can
+    /// be open before the index has its row).
+    pub fn known_cwds(&self) -> Vec<String> {
+        let mut known: Vec<String> = self.get_snapshot().sessions.iter().map(|c| c.cwd.clone()).collect();
         known.extend(lock(&self.history_rows).iter().filter_map(|r| r.cwd.clone()));
-        let dir = validate_open_folder(path, &known)?;
+        if let Some((_, d)) = lock(&self.closed_cache).as_ref() {
+            known.push(d.card.cwd.clone());
+        }
+        known
+    }
+
+    pub fn open_folder(&self, path: &str) -> Result<(), String> {
+        let dir = validate_open_folder(path, &self.known_cwds())?;
         crate::platform::open_folder(&dir).map_err(|e| errors::with(errors::FOLDER_OPEN_FAILED, e))
     }
 }
@@ -1007,6 +1016,19 @@ mod tests {
         fs::write(proj.join(format!("{LIVE_ID}.jsonl")), asst("m1", out, &ts) + "\n").unwrap();
         fs::write(proj.join(format!("{CLOSED_ID}.jsonl")), asst("m2", out, &ts) + "\n").unwrap();
         (claude, FakeProbe(HashMap::from([(4242, 777)])))
+    }
+
+    #[test]
+    fn a_closed_session_shown_before_indexing_knows_its_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, probe) = two_sessions(tmp.path(), 1);
+        let closed = claude.join("projects").join("C--demo").join(format!("{CLOSED_ID}.jsonl"));
+        fs::write(&closed, asst("m2", 1, "2026-11-19T10:00:00.000Z").replace(r"C:\\demo", r"C:\\kapali") + "\n").unwrap();
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(probe));
+        // Not indexed yet: no history row carries the real cwd.
+        let d = state.get_session_detail(CLOSED_ID).unwrap();
+        assert_eq!(d.card.cwd, r"C:\kapali");
+        assert!(state.known_cwds().iter().any(|c| c == r"C:\kapali"), "the detail page's own folder is known");
     }
 
     #[test]

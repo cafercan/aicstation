@@ -88,7 +88,8 @@ fn new_row(path: &Path, md: &fs::Metadata) -> Option<HistoryRow> {
         modified_ms: md.modified().map_or(0, ms),
         size: md.len(),
         name: stem.to_string(),
-        cwd: path.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()),
+        // Known once indexed; the project folder's encoded name is no path.
+        cwd: None,
         summary: None,
         path: path.to_path_buf(),
     })
@@ -407,7 +408,8 @@ mod tests {
         assert!(r.summary.is_none());
         assert_eq!(r.session_id, ID_A);
         assert!(!r.name.is_empty());
-        assert_eq!(r.cwd.as_deref(), Some("d--x"));
+        // The project folder's encoded name ("d--x") is no folder: unknown until indexed.
+        assert_eq!(r.cwd, None);
         assert!(r.modified_ms > 0);
         assert!(r.size > 0);
     }
