@@ -203,7 +203,8 @@ table.hist td .est { display: block; font-size: 11px; }
 .conv-composer { max-width: 880px; margin: 0 auto; }
 .conv-composer-row { display: flex; align-items: flex-end; gap: 8px; }
 .conv-composer textarea {
-  flex: 1; min-height: 38px; max-height: 30vh; resize: vertical; padding: 8px 10px; background: var(--bg); color: var(--text);
+  /* border-box: the grown height set from code includes padding and border. */
+  flex: 1; box-sizing: border-box; min-height: 38px; resize: none; padding: 8px 10px; background: var(--bg); color: var(--text);
   border: 1px solid var(--border); border-radius: 8px; font: inherit; line-height: 1.45; outline: none;
 }
 .conv-composer textarea:focus { border-color: var(--accent); }

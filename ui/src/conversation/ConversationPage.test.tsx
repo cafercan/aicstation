@@ -434,6 +434,32 @@ test("a session without a message box offers only Kopyala", async () => {
 
 // Composer
 
+test("composer: the box grows with its text up to twice its first height, then scrolls", () => {
+  // jsdom lays nothing out: 2 lines are 54 px of content plus a 2 px border
+  // (56 px tall), each further line 22 px.
+  const proto = HTMLTextAreaElement.prototype;
+  const lines = (el: HTMLTextAreaElement) => Math.max(2, el.value.split("\n").length);
+  Object.defineProperty(proto, "offsetHeight", { configurable: true, get() { return 56; } });
+  Object.defineProperty(proto, "clientHeight", { configurable: true, get() { return 54; } });
+  Object.defineProperty(proto, "scrollHeight", { configurable: true, get(this: HTMLTextAreaElement) { return 10 + 22 * lines(this); } });
+  try {
+    render(<Composer sessionId="s1" status="idle" onShowTerminal={noop} />);
+    const box = screen.getByRole("textbox") as HTMLTextAreaElement;
+    expect(box.style.height).toBe("56px");
+    fireEvent.change(box, { target: { value: "a\nb\nc" } });
+    expect(box.style.height).toBe("78px");
+    expect(box.style.overflowY).toBe("hidden");
+    fireEvent.change(box, { target: { value: "1\n2\n3\n4\n5\n6\n7\n8" } });
+    expect(box.style.height).toBe("112px");
+    expect(box.style.overflowY).toBe("auto");
+    fireEvent.change(box, { target: { value: "" } });
+    expect(box.style.height).toBe("56px");
+  } finally {
+    // The own stubs go; the HTMLElement getters underneath apply again.
+    for (const k of ["offsetHeight", "clientHeight", "scrollHeight"]) delete (proto as unknown as Record<string, unknown>)[k];
+  }
+});
+
 test("composer: Enter sends the text and clears it", async () => {
   serve({ send_to_session: () => undefined });
   const onSent = vi.fn();

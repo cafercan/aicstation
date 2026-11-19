@@ -36,6 +36,23 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
     setErr(null);
   }, [quoteSeq]);
 
+  /** Height of the empty box (its 2 rows), measured once: the grow base. */
+  const baseH = useRef(0);
+  // The box grows with its text up to twice its first height; past that its
+  // content scrolls. Runs before the caret effect below, which scrolls it.
+  useLayoutEffect(() => {
+    const el = box.current;
+    // Not laid out (hidden): measure when it is, still at its own 2 rows.
+    if (!el || (baseH.current === 0 && el.offsetHeight === 0)) return;
+    if (baseH.current === 0) baseH.current = el.offsetHeight;
+    const border = el.offsetHeight - el.clientHeight;
+    el.style.height = "auto";
+    const need = el.scrollHeight + border;
+    const max = baseH.current * 2;
+    el.style.height = `${Math.max(baseH.current, Math.min(need, max))}px`;
+    el.style.overflowY = need > max ? "auto" : "hidden";
+  }, [text]);
+
   useLayoutEffect(() => {
     const el = box.current;
     if (!toEnd.current || !el) return;
