@@ -64,7 +64,8 @@ export default function ClaudeBar({ session: c, now = Date.now() }: Props) {
   }
 
   return (
-    <div className="cbar" role="status" aria-label={t("cbar.label")} data-testid="claude-bar">
+    // A labelled group, not a live region: its numbers change every second.
+    <div className="cbar" role="group" aria-label={t("cbar.label")} data-testid="claude-bar">
       {parts.map(([k, node], i) => <Fragment key={k}>{i > 0 && <span className="cbar-sep"> │ </span>}{node}</Fragment>)}
     </div>
   );

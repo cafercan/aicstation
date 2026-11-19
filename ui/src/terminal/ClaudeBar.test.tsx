@@ -112,3 +112,11 @@ test("one shared poll for all bars, stopped when none is shown", async () => {
     vi.useRealTimers();
   }
 });
+
+test("the bar is not a live region: its numbers change every second", () => {
+  render(<ClaudeBar session={card()} now={NOW} />);
+  const bar = screen.getByTestId("claude-bar");
+  expect(bar.getAttribute("role")).not.toBe("status");
+  expect(bar.getAttribute("aria-live")).not.toBe("polite");
+  expect(bar.getAttribute("aria-label")).toBeTruthy();
+});

@@ -64,3 +64,15 @@ test("görünüm paneli: uygulama temasını izle; bir şema seçmek izlemeyi ka
   fireEvent.click(screen.getByRole("button", { name: /Monokai/ }));
   expect(getAppearance()).toMatchObject({ followApp: false, scheme: "monokai" });
 });
+
+test("scrollback numbers follow the app language, not the system's", async () => {
+  const { setLang } = await import("../i18n");
+  for (const [lang, loc] of [["en", "en-US"], ["tr", "tr-TR"], ["de", "de-DE"]] as const) {
+    setLang(lang);
+    const r = render(<TerminalAppearance />);
+    const opts = [...document.querySelectorAll("option")].map((o) => o.textContent);
+    expect(opts, lang).toContain((10000).toLocaleString(loc));
+    r.unmount();
+  }
+  setLang("tr");
+});

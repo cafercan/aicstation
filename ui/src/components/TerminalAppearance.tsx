@@ -1,4 +1,4 @@
-import { useT, type Key } from "../i18n";
+import { locale, useT, type Key } from "../i18n";
 import {
   CURSOR_STYLES, FONTS, FONT_WEIGHTS, resetAppearance, updateAppearance, useAppearance, validFontName,
   type Appearance, type CursorStyle, type FontChoice,
@@ -132,7 +132,7 @@ export default function TerminalAppearance() {
         <span>{t("look.scrollback")}</span>
         <select value={a.scrollback} onChange={(e) => set({ scrollback: Number(e.target.value) })}>
           {(SCROLLBACK.includes(a.scrollback) ? SCROLLBACK : [...SCROLLBACK, a.scrollback].sort((x, y) => x - y))
-            .map((n) => <option key={n} value={n}>{n.toLocaleString()}</option>)}
+            .map((n) => <option key={n} value={n}>{n.toLocaleString(locale())}</option>)}
         </select>
       </label>
       <label className="settings-row">
