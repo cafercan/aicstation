@@ -105,9 +105,21 @@ struct Seen {
 pub struct BudgetWatch {
     /// The day and limit (in dollars) last alerted for.
     alerted: Option<(chrono::NaiveDate, u32)>,
+    /// Where `alerted` is kept, so a restart on the same day does not alert again.
+    file: Option<std::path::PathBuf>,
 }
 
 impl BudgetWatch {
+    /// A watch that remembers its last alert in `file` ("YYYY-MM-DD limit").
+    /// A missing or unreadable file means no alert yet.
+    pub fn persisted(file: std::path::PathBuf) -> Self {
+        let alerted = std::fs::read_to_string(&file).ok().and_then(|s| {
+            let (d, l) = s.trim().split_once(' ')?;
+            Some((d.parse().ok()?, l.parse().ok()?))
+        });
+        Self { alerted, file: Some(file) }
+    }
+
     /// True when the alert should be shown now. `limit` is None while the
     /// alert is off.
     pub fn observe(&mut self, day: chrono::NaiveDate, cost_usd: f64, limit: Option<u32>) -> bool {
@@ -116,6 +128,10 @@ impl BudgetWatch {
             return false;
         }
         self.alerted = Some((day, limit));
+        if let Some(f) = &self.file {
+            // Not kept: at worst the alert comes once more after a restart.
+            let _ = std::fs::write(f, format!("{day} {limit}"));
+        }
         true
     }
 }
@@ -682,5 +698,21 @@ mod tests {
         // The next day starts over.
         assert!(!b.observe(next, 1.0, Some(40)));
         assert!(b.observe(next, 40.0, Some(40)));
+    }
+
+    #[test]
+    fn budget_alert_is_not_repeated_after_a_restart() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("budget-alert.txt");
+        let day = chrono::NaiveDate::from_ymd_opt(2026, 11, 5).unwrap();
+        let mut b = BudgetWatch::persisted(file.clone());
+        assert!(b.observe(day, 25.0, Some(20)));
+        // The app restarted on the same day, still over the limit.
+        let mut again = BudgetWatch::persisted(file.clone());
+        assert!(!again.observe(day, 26.0, Some(20)));
+        assert!(again.observe(day, 41.0, Some(40)), "a new limit alerts");
+        // An unreadable file is no alert at all.
+        std::fs::write(&file, "bozuk").unwrap();
+        assert!(BudgetWatch::persisted(file).observe(day, 25.0, Some(20)));
     }
 }

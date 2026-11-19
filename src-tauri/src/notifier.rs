@@ -22,6 +22,13 @@ pub struct Notifier {
     focus: Mutex<Vec<String>>,
 }
 
+impl Notifier {
+    /// A notifier whose daily cost alert remembers its last day in `budget_file`.
+    pub fn with_budget_file(budget_file: std::path::PathBuf) -> Self {
+        Self { budget: Mutex::new(BudgetWatch::persisted(budget_file)), ..Self::default() }
+    }
+}
+
 /// Sessions the UI can show at once: the detail view, or two split panes.
 pub const MAX_FOCUS: usize = 2;
 

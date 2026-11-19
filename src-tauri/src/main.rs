@@ -272,7 +272,7 @@ fn main() {
             }
             let lang = settings.get().lang;
             app.manage(settings);
-            app.manage(notifier::Notifier::default());
+            app.manage(notifier::Notifier::with_budget_file(data.join("budget-alert.txt")));
             app.manage(tray::TrayState::default());
             app.manage(toast::Toaster::new(
                 &app.config().identifier,
