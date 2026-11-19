@@ -240,12 +240,13 @@ test("Kullanım: 30 gün varsayılan, bugün vurgulu; 7/90 aralığı; tahmini t
   expect(screen.getByText(/^4,5M$/)).toBeTruthy();
   expect(screen.getByText("~$4.50 tah.")).toBeTruthy();
   expect(screen.getByText("aralık toplamı")).toBeTruthy();
+  // A range switch can render after the click on a slow machine (CI).
   fireEvent.click(screen.getByRole("button", { name: "90 gün" }));
-  expect(bars()).toHaveLength(90);
+  await waitFor(() => expect(bars()).toHaveLength(90));
   expect(screen.getByText(/^11,5M$/)).toBeTruthy();
   expect(screen.getByText("~$11.50 tah.")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "7 gün" }));
-  expect(bars()).toHaveLength(7);
+  await waitFor(() => expect(bars()).toHaveLength(7));
   expect(screen.getByRole("button", { name: "7 gün" }).getAttribute("aria-pressed")).toBe("true");
 });
 
