@@ -1,6 +1,7 @@
 import { memo, useState } from "react";
 import type { ConvImageRef, ConvItem, ConvStep } from "../api";
-import { useT } from "../i18n";
+import { locale, useT } from "../i18n";
+import { fmtElapsed } from "../format";
 import ImageThumb from "./ImageThumb";
 import Markdown from "./Markdown";
 import { stepSummary } from "./summary";
@@ -100,6 +101,17 @@ function ConvItemView({ sessionId, item, onOpen }: { sessionId: string; item: Co
     case "notice": {
       const text = item.text || t("conv.taskFinished");
       return <div className="conv-notice" title={text}>{text}</div>;
+    }
+    case "turnDone": {
+      // Like the terminal's "Worked for 1m 30s · done 16:31" under a turn.
+      const end = new Date(item.atMs);
+      const time = end.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" });
+      return (
+        <div className="conv-turn" title={end.toLocaleString(locale())}>
+          <span aria-hidden="true">✻ </span>
+          <span>{t("conv.worked", { dur: fmtElapsed(item.durationMs), time })}</span>
+        </div>
+      );
     }
   }
 }

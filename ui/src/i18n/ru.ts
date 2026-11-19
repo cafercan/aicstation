@@ -375,6 +375,7 @@ export const ru: Dict = {
   "conv.quote": "Цитировать",
   "conv.copy": "Копировать",
   "conv.thought": "Размышлял",
+  "conv.worked": "Работал {dur} · {time}",
   "conv.lookTitle": "Вид беседы",
   "conv.fontSize": "Размер шрифта",
   "conv.cmdTerminal": "Открывается во вкладке «Терминал»",

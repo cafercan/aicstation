@@ -28,6 +28,8 @@ pub enum ConvItem {
     /// A one-line note from the system (a background task finished); an
     /// empty text means it carried no summary.
     Notice { text: String, at_ms: i64 },
+    /// The end of a turn: how long it took; `at_ms` is when it ended.
+    TurnDone { duration_ms: u64, at_ms: i64 },
 }
 
 /// Items `start..start + items.len()` of the `total` items of the branch
@@ -199,6 +201,9 @@ pub(super) fn group(chain: &[Link]) -> Vec<ConvItem> {
             }
             NodeBody::CompactBoundary => items.push(ConvItem::Compacted { at_ms: n.at_ms }),
             NodeBody::Notice { text } => items.push(ConvItem::Notice { text: text.clone(), at_ms: n.at_ms }),
+            NodeBody::TurnDone { duration_ms } => {
+                items.push(ConvItem::TurnDone { duration_ms: *duration_ms, at_ms: n.at_ms })
+            }
             NodeBody::Other => {}
         }
     }

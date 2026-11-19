@@ -83,6 +83,14 @@ fn hides_meta_and_compact_summary() {
 }
 
 #[test]
+fn turn_duration_is_the_end_of_a_turn() {
+    let td = r#"{"type":"system","subtype":"turn_duration","durationMs":333611,"uuid":"x","parentUuid":"p"}"#;
+    assert_eq!(parse_node(0, td).unwrap().body, NodeBody::TurnDone { duration_ms: 333611 });
+    let bad = r#"{"type":"system","subtype":"turn_duration","uuid":"x","parentUuid":"p"}"#;
+    assert_eq!(parse_node(0, bad).unwrap().body, NodeBody::Other, "without a duration");
+}
+
+#[test]
 fn keeps_offset_and_assistant_message_id() {
     let l = r#"{"type":"assistant","uuid":"x","message":{"id":"msg_1","content":[{"type":"text","text":"t"}]}}"#;
     let n = parse_node(42, l).unwrap();
@@ -268,8 +276,24 @@ fn kinds(items: &[ConvItem]) -> Vec<String> {
             ConvItem::Compacted { .. } => "C".to_string(),
             ConvItem::Notice { text, .. } => format!("N:{text}"),
             ConvItem::Thinking { text, .. } => format!("T:{text}"),
+            ConvItem::TurnDone { duration_ms, .. } => format!("D:{duration_ms}"),
         })
         .collect()
+}
+
+#[test]
+fn a_finished_turn_shows_its_duration() {
+    let mut t = Tx::new();
+    t.push(u("u1", None, "go"));
+    t.push(a("a1", "u1", "done"));
+    let mut td = line("system", "td", Some("a1"), Value::Null);
+    td["subtype"] = "turn_duration".into();
+    td["durationMs"] = 90_000.into();
+    let (_, at_td) = t.push(td);
+    t.push(u("u2", Some("td"), "next"));
+    let items = all(&t.conv());
+    assert_eq!(kinds(&items), ["U:go", "A:done", "D:90000", "U:next"]);
+    assert_eq!(items[2], ConvItem::TurnDone { duration_ms: 90_000, at_ms: at_td });
 }
 
 fn all(c: &Conversation) -> Vec<ConvItem> {
@@ -301,7 +325,8 @@ fn groups_text_and_steps() {
             | ConvItem::Thinking { at_ms, .. }
             | ConvItem::Steps { at_ms, .. }
             | ConvItem::Compacted { at_ms }
-            | ConvItem::Notice { at_ms, .. } => *at_ms,
+            | ConvItem::Notice { at_ms, .. }
+            | ConvItem::TurnDone { at_ms, .. } => *at_ms,
         })
         .collect();
     assert_eq!(ats, [at_u, at_a, at_s, at_end]);

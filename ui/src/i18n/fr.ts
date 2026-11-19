@@ -360,6 +360,7 @@ export const fr: Dict = {
   "conv.quote": "Citer",
   "conv.copy": "Copier",
   "conv.thought": "A réfléchi",
+  "conv.worked": "A travaillé {dur} · {time}",
   "conv.lookTitle": "Apparence de la conversation",
   "conv.fontSize": "Taille du texte",
   "conv.cmdTerminal": "S'ouvre dans l'onglet Terminal",

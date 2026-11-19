@@ -197,7 +197,9 @@ export type ConvItem =
   | { kind: "steps"; steps: ConvStep[]; atMs: number }
   | { kind: "compacted"; atMs: number }
   /** A background task finished; an empty text: it carried no summary. */
-  | { kind: "notice"; text: string; atMs: number };
+  | { kind: "notice"; text: string; atMs: number }
+  /** The end of a turn: how long it took; `atMs` is when it ended. */
+  | { kind: "turnDone"; durationMs: number; atMs: number };
 
 export interface ConvPage {
   epoch: number;

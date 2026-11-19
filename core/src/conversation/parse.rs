@@ -32,6 +32,8 @@ pub enum NodeBody {
     /// A line the system wrote into the conversation (a background task
     /// finished): its summary, empty when it has none.
     Notice { text: String },
+    /// Claude Code's note at the end of a turn: how long the turn took.
+    TurnDone { duration_ms: u64 },
     Other,
 }
 
@@ -401,6 +403,10 @@ pub fn parse_node(offset: u64, line: &str) -> Option<Node> {
         (Some("attachment"), _) => attachment_body(offset, &v),
         (Some("assistant"), _) => content.map_or(NodeBody::Other, assistant_body),
         (Some("system"), _) if s(&v, "subtype") == Some("compact_boundary") => NodeBody::CompactBoundary,
+        (Some("system"), _) if s(&v, "subtype") == Some("turn_duration") => v
+            .get("durationMs")
+            .and_then(Value::as_u64)
+            .map_or(NodeBody::Other, |duration_ms| NodeBody::TurnDone { duration_ms }),
         _ => NodeBody::Other,
     };
     Some(Node {

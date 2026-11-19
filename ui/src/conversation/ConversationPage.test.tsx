@@ -216,6 +216,19 @@ test("background task notices show as a muted line, with a fallback text", async
   expect(screen.getByText("Arka plan görevi bitti").className).toBe("conv-notice");
 });
 
+test("the end of a turn shows how long it took and when it ended", async () => {
+  const end = new Date(2026, 10, 19, 16, 31).getTime();
+  serve({
+    get_conversation_page: () => page([
+      { kind: "assistant", text: "bitti", truncated: false, atMs: end - 1 },
+      { kind: "turnDone", durationMs: 90_000, atMs: end },
+    ]),
+  });
+  render(<ConversationPage sessionId="s1" card={card()} {...props} />);
+  const line = await screen.findByText("1 dk çalıştı · 16:31");
+  expect(line.closest(".conv-turn")).toBeTruthy();
+});
+
 test("a failed first load recovers on the next activity", async () => {
   let calls = 0;
   serve({
