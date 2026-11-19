@@ -164,6 +164,11 @@ impl SessionStats {
                 }
             }
             Entry::Title(t) => self.title = Some(t.clone()),
+            Entry::PermissionMode(_)
+            | Entry::BackgroundStarted { .. }
+            | Entry::TaskFinished(_)
+            | Entry::UserPrompt { .. }
+            | Entry::Queue { .. } => {}
             Entry::Meta { cwd, git_branch, at } => {
                 if let Some(c) = cwd {
                     if self.first_cwd.is_none() {
