@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { getConversationPage, getConversationSince, type ConvPage, type SessionCard } from "../api";
 import { errorText, useT } from "../i18n";
 import SessionTerminalPlaceholder from "../pages/SessionTerminalPlaceholder";
@@ -166,6 +166,11 @@ export default function ConversationPage({ sessionId, card, onShowTerminal, onTe
   };
 
   const hosted = live && terminalForPid(card.parentPid) !== undefined;
+  /** The user's messages of the loaded pages, oldest first, for ↑ in the message box. */
+  const sent = useMemo(
+    () => (conv?.items ?? []).flatMap((i) => (i.kind === "user" && i.text.trim() !== "" ? [i.text] : [])),
+    [conv],
+  );
 
   // Right click on text selected in the list opens the Quote/Copy menu;
   // without a selection the system's own menu stays.
@@ -220,7 +225,7 @@ export default function ConversationPage({ sessionId, card, onShowTerminal, onTe
         {live && <ConvStatus card={card} />}
         {hosted
           ? <Composer sessionId={sessionId} status={card.status} onShowTerminal={onShowTerminal} onSent={onSent} quote={quote}
-            skillsKey={card.transcriptBytes} />
+            skillsKey={card.transcriptBytes} sent={sent} />
           : <SessionTerminalPlaceholder card={card} sessionId={sessionId} onTerminal={onTerminal}
             onAdopted={onAdopted} onResume={onResume} />}
       </div>

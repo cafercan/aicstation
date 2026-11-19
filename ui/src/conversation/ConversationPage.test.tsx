@@ -377,6 +377,39 @@ test("scrolled up, a button goes back to the newest message", async () => {
   expect(screen.queryByRole("button", { name: "En yeni mesaja in" })).toBeNull();
 });
 
+test("up and down in the empty box go through the messages sent before", async () => {
+  serve({
+    get_conversation_page: () => page([
+      { kind: "user", text: "ilk", truncated: false, images: [], atMs: 1 },
+      { kind: "assistant", text: "tamam", truncated: false, atMs: 2 },
+      { kind: "user", text: "ikinci\nsatır", truncated: false, images: [], atMs: 3 },
+    ]),
+  });
+  render(<ConversationPage sessionId="s1" card={card()} {...props} />);
+  await screen.findByText("tamam");
+  const box = screen.getByRole("textbox") as HTMLTextAreaElement;
+  const key = (k: string) => fireEvent.keyDown(box, { key: k });
+  key("ArrowUp");
+  expect(box.value).toBe("ikinci\nsatır");
+  // The caret goes to the start, so the next up goes on to the older one.
+  expect(box.selectionStart).toBe(0);
+  key("ArrowUp");
+  expect(box.value).toBe("ilk");
+  key("ArrowUp");
+  expect(box.value).toBe("ilk");
+  box.setSelectionRange(3, 3);
+  key("ArrowDown");
+  expect(box.value).toBe("ikinci\nsatır");
+  box.setSelectionRange(box.value.length, box.value.length);
+  key("ArrowDown");
+  expect(box.value).toBe("");
+  // Text of its own is not replaced.
+  fireEvent.change(box, { target: { value: "yeni" } });
+  box.setSelectionRange(0, 0);
+  key("ArrowUp");
+  expect(box.value).toBe("yeni");
+});
+
 test("an unsent message stays in the box after leaving the tab and coming back", async () => {
   serve({ get_conversation_page: () => page([]), send_to_session: () => undefined });
   const first = render(<ConversationPage sessionId="s1" card={card()} {...props} />);

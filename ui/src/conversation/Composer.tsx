@@ -17,9 +17,11 @@ import SlashMenu from "./SlashMenu";
  * are asked for again when the menu opens after `skillsKey` changed. Unsent
  * text survives leaving the tab (see `drafts`).
  */
-export default function Composer({ sessionId, status, onShowTerminal, onSent, quote, skillsKey }: {
+export default function Composer({ sessionId, status, onShowTerminal, onSent, quote, skillsKey, sent = [] }: {
   sessionId: string; status: string; onShowTerminal: () => void; onSent?: () => void;
   quote?: { text: string; seq: number }; skillsKey?: number;
+  /** Messages sent before, oldest first: ↑ in the empty box brings them back. */
+  sent?: string[];
 }) {
   const t = useT();
   // What was being written when the box was last shown for this session.
@@ -70,6 +72,40 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
     el.style.overflowY = need > max ? "auto" : "hidden";
   }, [text, fontSize]);
 
+  // History: `browse` is how far back the shown sent message is (0 = the
+  // newest), null while the text is the user's own.
+  const [browse, setBrowse] = useState<number | null>(null);
+  const caretTo = useRef<"start" | "end" | null>(null);
+  useLayoutEffect(() => {
+    const el = box.current;
+    const to = caretTo.current;
+    if (!to || !el) return;
+    caretTo.current = null;
+    const at = to === "start" ? 0 : el.value.length;
+    el.setSelectionRange(at, at);
+  }, [text]);
+  /** A recalled "/command" does not open the menu: ↑/↓ keep going through the history. */
+  const show = (v: string) => { setText(v); setClosedFor(v); setErr(null); };
+  /** ↑/↓ through `sent`; false when the key is left to the box (moving in its lines). */
+  const recall = (up: boolean, el: HTMLTextAreaElement): boolean => {
+    const n = sent.length;
+    if (n === 0) return false;
+    if (up) {
+      if (browse === null ? text !== "" : el.value.slice(0, el.selectionStart).includes("\n")) return false;
+      const next = Math.min((browse ?? -1) + 1, n - 1);
+      setBrowse(next);
+      caretTo.current = "start";
+      show(sent[n - 1 - next]);
+      return true;
+    }
+    if (browse === null || el.value.slice(el.selectionEnd).includes("\n")) return false;
+    const next = browse - 1;
+    setBrowse(next < 0 ? null : next);
+    caretTo.current = "end";
+    show(next < 0 ? "" : sent[n - 1 - next]);
+    return true;
+  };
+
   useLayoutEffect(() => {
     const el = box.current;
     if (!toEnd.current || !el) return;
@@ -112,6 +148,7 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
         // Cleared only when unchanged: text edited while the send was on its
         // way is the user's and stays as it is.
         setText((cur) => (cur === before ? "" : cur));
+        setBrowse(null);
         onSent?.();
       }, (e: unknown) => {
         // Pasted but not submitted: the message says the text sits in the terminal.
@@ -156,6 +193,10 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
         return;
       }
     }
+    if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !ime && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      if (recall(e.key === "ArrowUp", e.currentTarget)) e.preventDefault();
+      return;
+    }
     if (e.key !== "Enter" || e.shiftKey || ime) return;
     e.preventDefault();
     send();
@@ -166,7 +207,7 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
       {menuOpen && <SlashMenu entries={entries} active={Math.min(active, entries.length - 1)} onPick={pick} onHover={setActive} />}
       <div className="conv-composer-row">
         <textarea ref={box} value={text} rows={2} disabled={waiting} placeholder={t("conv.placeholder")}
-          onChange={(e) => { setText(e.target.value); setErr(null); setClosedFor(null); }}
+          onChange={(e) => { setText(e.target.value); setErr(null); setClosedFor(null); setBrowse(null); }}
           onKeyDown={onKeyDown} />
         <button type="button" className="btn" disabled={waiting || sending || text.trim() === ""} onClick={() => send()}>
           {t("conv.send")}
