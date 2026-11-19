@@ -45,10 +45,13 @@ function Steps({ sessionId, steps, onOpen }: { sessionId: string; steps: ConvSte
   );
 }
 
-/** Claude's thinking: a closed muted line, like the terminal's; a click shows the text. */
+/**
+ * Claude's thinking: a muted line with the text open under it, since it
+ * often says what Claude is doing next; a click on the line hides the text.
+ */
 function Thinking({ text, truncated }: { text: string; truncated: boolean }) {
   const t = useT();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   return (
     <div className="conv-thinking">
       <button type="button" className="conv-steps-line" aria-expanded={open} onClick={() => setOpen(!open)}>

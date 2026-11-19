@@ -83,7 +83,7 @@ closed session in its own folder.
   while Claude works and `!` shell commands show as your messages; a finished
   background task shows as a short muted note. Tables in Claude's replies
   show as tables. Claude's thinking, when Claude Code kept its text, shows as
-  a closed "∴ Thought" line that opens to the text; a long pasted message
+  a "∴ Thought" line with the text open under it (a click hides it); a long pasted message
   shows as plain text.
 - **Message box**: for a session that runs in an app terminal, text typed in
   the box is sent to the session. Enter sends, Shift+Enter adds a new line;
@@ -507,7 +507,7 @@ Claude ve Claude Code, Anthropic'in ticari markalarıdır.
   resim sürüklenerek kaydırılır. Yalnızca geçerli dal gösterilir (geri sarma ile
   terk edilenler gizli); `/compact` öncesi geçmiş "Konuşma sıkıştırıldı"
   ayracıyla kalır. Claude'un düşünmesi, Claude Code metnini sakladıysa,
-  kapalı bir "∴ Düşündü" satırı olarak görünür, tıklayınca açılır. Uygulama
+  "∴ Düşündü" satırının altında açık görünür, satıra tıklayınca gizlenir. Uygulama
   terminalinde çalışan oturuma mesaj kutusundan
   metin gönderilir (Enter gönderir, Shift+Enter yeni satır; Claude onay
   beklerken kapalı; Claude çalışırken ya da arka planda komut çalışırken

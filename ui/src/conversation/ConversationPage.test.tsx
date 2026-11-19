@@ -359,7 +359,7 @@ test("sent message is picked up by a since call shortly after", async () => {
   expect(await screen.findByText("gönderilen", {}, { timeout: 2000 })).toBeTruthy();
 });
 
-test("thinking shows as a closed Düşündü line that opens to its text", async () => {
+test("thinking shows open under its Düşündü line, which closes it", async () => {
   serve({
     get_conversation_page: () => page([
       { kind: "user", text: "soru", truncated: false, images: [], atMs: 1 },
@@ -369,11 +369,11 @@ test("thinking shows as a closed Düşündü line that opens to its text", async
   });
   render(<ConversationPage sessionId="s1" card={card()} {...props} />);
   const line = await screen.findByRole("button", { name: /Düşündü/ });
-  expect(line.getAttribute("aria-expanded")).toBe("false");
-  expect(screen.queryByText("önce ızgaraya bakayım")).toBeNull();
-  fireEvent.click(line);
   expect(line.getAttribute("aria-expanded")).toBe("true");
   expect(screen.getByText("önce ızgaraya bakayım")).toBeTruthy();
+  fireEvent.click(line);
+  expect(line.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByText("önce ızgaraya bakayım")).toBeNull();
 });
 
 test("the conversation follows the font size set in Settings", async () => {
