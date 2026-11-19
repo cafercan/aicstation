@@ -267,6 +267,7 @@ export const fr: Dict = {
   "settings.loading": "Chargement des paramètres…",
   "err.settings_invalid": "Paramètres non valides",
   "err.settings_save_failed": "Impossible d'enregistrer les paramètres",
+  "err.usage_bridge_failed": "Impossible de modifier la ligne d'état de Claude Code",
   "err.search_query_invalid": "Le texte recherché doit contenir de 2 à 200 caractères",
   "usage.title": "Utilisation",
   "usage.estimated": "$ estimé",

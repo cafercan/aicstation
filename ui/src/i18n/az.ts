@@ -264,6 +264,7 @@ export const az: Dict = {
   "settings.loading": "Parametrlər yüklənir…",
   "err.settings_invalid": "Parametrlər yanlışdır",
   "err.settings_save_failed": "Parametrlər yadda saxlanıla bilmədi",
+  "err.usage_bridge_failed": "Claude Code status sətri dəyişdirilə bilmədi",
   "err.search_query_invalid": "Axtarış mətni 2–200 simvol olmalıdır",
   "usage.title": "İstifadə",
   "usage.estimated": "$ təxmini",

@@ -280,6 +280,7 @@ export const ru: Dict = {
   "settings.loading": "Загрузка настроек…",
   "err.settings_invalid": "Недопустимые настройки",
   "err.settings_save_failed": "Не удалось сохранить настройки",
+  "err.usage_bridge_failed": "Не удалось изменить строку состояния Claude Code",
   "err.search_query_invalid": "Текст поиска должен содержать от 2 до 200 символов",
   "usage.title": "Использование",
   "usage.estimated": "$ оценка",

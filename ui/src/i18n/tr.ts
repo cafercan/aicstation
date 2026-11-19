@@ -274,6 +274,7 @@ export const tr = {
   "settings.loading": "Ayarlar yükleniyor…",
   "err.settings_invalid": "Ayarlar geçersiz",
   "err.settings_save_failed": "Ayarlar kaydedilemedi",
+  "err.usage_bridge_failed": "Claude Code'un durum satırı değiştirilemedi",
   "err.search_query_invalid": "Arama metni 2–200 karakter olmalı",
   "usage.title": "Kullanım",
   "usage.estimated": "$ tahmini",

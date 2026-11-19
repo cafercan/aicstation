@@ -500,14 +500,20 @@ pub fn status_now(data: &Path) -> ClaudeStatus {
 
 /// Turns the bridge on or off; returns whether it is on afterwards.
 pub fn set_bridge(data: &Path, on: bool) -> Result<bool, String> {
-    let settings = claude_settings();
+    set_bridge_in(&claude_settings(), data, program_path(), on)
+}
+
+/// [`set_bridge`] on a given settings file and program path. A failure is
+/// `usage_bridge_failed:<what went wrong>`, which the UI translates.
+pub fn set_bridge_in(settings: &Path, data: &Path, exe: Option<PathBuf>, on: bool) -> Result<bool, String> {
+    let fail = |e: String| crate::errors::with(crate::errors::USAGE_BRIDGE_FAILED, e);
     if on {
-        let exe = program_path().ok_or("program path unknown")?;
-        enable(&settings, data, &exe)?;
+        let exe = exe.ok_or_else(|| fail("program path unknown".into()))?;
+        enable(settings, data, &exe).map_err(fail)?;
     } else {
-        disable(&settings, data)?;
+        disable(settings, data).map_err(fail)?;
     }
-    Ok(is_enabled(&settings, data))
+    Ok(is_enabled(settings, data))
 }
 
 /// At startup: an enabled bridge follows the program to its current path.
@@ -700,6 +706,15 @@ mod tests {
         let s = d.path().join("settings.json");
         enable_with(&s, &d.path().join("data"), |_| Ok("bridge".into())).unwrap();
         assert!(is_enabled(&s, &d.path().join("data")));
+    }
+
+    #[test]
+    fn a_bridge_failure_is_an_error_code() {
+        let (_d, s, data) = settings_with("[]");
+        let e = set_bridge_in(&s, &data, Some(PathBuf::from("aicstation")), true).unwrap_err();
+        assert!(e.starts_with("usage_bridge_failed:"), "{e}");
+        let e = set_bridge_in(&s, &data, None, true).unwrap_err();
+        assert!(e.starts_with("usage_bridge_failed:"), "{e}");
     }
 
     #[test]

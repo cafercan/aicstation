@@ -264,6 +264,7 @@ export const en: Dict = {
   "settings.loading": "Loading settings…",
   "err.settings_invalid": "Invalid settings",
   "err.settings_save_failed": "Settings could not be saved",
+  "err.usage_bridge_failed": "Claude Code's status line could not be changed",
   "err.search_query_invalid": "The search text must be 2–200 characters",
   "usage.title": "Usage",
   "usage.estimated": "$ estimated",

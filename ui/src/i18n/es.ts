@@ -267,6 +267,7 @@ export const es: Dict = {
   "settings.loading": "Cargando ajustes…",
   "err.settings_invalid": "Ajustes no válidos",
   "err.settings_save_failed": "No se pudieron guardar los ajustes",
+  "err.usage_bridge_failed": "No se pudo cambiar la línea de estado de Claude Code",
   "err.search_query_invalid": "El texto de búsqueda debe tener entre 2 y 200 caracteres",
   "usage.title": "Uso",
   "usage.estimated": "$ estimado",

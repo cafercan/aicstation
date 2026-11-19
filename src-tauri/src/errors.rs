@@ -97,6 +97,9 @@ pub fn with(code: &str, detail: impl std::fmt::Display) -> String {
     format!("{code}:{detail}")
 }
 
+/// `usage_bridge_failed:<detail>`: Claude Code's status line could not be changed.
+pub const USAGE_BRIDGE_FAILED: &str = "usage_bridge_failed";
+
 /// The session has no transcript file (or it could not be read).
 pub const CONV_UNAVAILABLE: &str = "conv_unavailable";
 /// The image is no longer in the transcript.
@@ -127,7 +130,7 @@ pub const ALL: &[&str] = &[
     WT_NOT_FOUND, WT_OPEN_FAILED, WT_HOME_INVALID, WT_HOME_MISSING, WT_POWERSHELL_INVALID,
     TERMINAL_NOT_FOUND, TERMINAL_OPEN_FAILED, SHELL_NOT_FOUND, BUTAGLYPH_NOT_FOUND, BUTAGLYPH_FAILED,
     TAB_NOT_FOUND, TAB_AMBIGUOUS, TAB_NO_MATCH, TAB_SELECT_FAILED,
-    SETTINGS_INVALID, SETTINGS_SAVE_FAILED, SEARCH_QUERY_INVALID,
+    SETTINGS_INVALID, SETTINGS_SAVE_FAILED, SEARCH_QUERY_INVALID, USAGE_BRIDGE_FAILED,
     ADOPT_NOT_MOVABLE, ADOPT_BUSY, ADOPT_WAITING, ADOPT_AGENTS_RUNNING, ADOPT_EMBEDDED, ADOPT_IN_PROGRESS, ADOPT_TIMEOUT,
     ADOPT_KILL_FAILED, ADOPT_RESUME_FAILED,
     CONV_UNAVAILABLE, CONV_IMAGE_GONE,

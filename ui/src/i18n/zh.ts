@@ -264,6 +264,7 @@ export const zh: Dict = {
   "settings.loading": "正在加载设置…",
   "err.settings_invalid": "设置无效",
   "err.settings_save_failed": "无法保存设置",
+  "err.usage_bridge_failed": "无法更改 Claude Code 的状态栏",
   "err.search_query_invalid": "搜索文本须为 2–200 个字符",
   "usage.title": "用量",
   "usage.estimated": "美元估算",
