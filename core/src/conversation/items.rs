@@ -21,6 +21,8 @@ pub struct Step {
 pub enum ConvItem {
     User { text: String, truncated: bool, images: Vec<ImageRef>, at_ms: i64 },
     Assistant { text: String, truncated: bool, at_ms: i64 },
+    /// Claude's thinking with its text; a run of it is one item.
+    Thinking { text: String, truncated: bool, at_ms: i64 },
     Steps { steps: Vec<Step>, at_ms: i64 },
     Compacted { at_ms: i64 },
     /// A one-line note from the system (a background task finished); an
@@ -117,6 +119,25 @@ pub(super) fn shown_nodes<'a>(nodes: &'a HashMap<String, Node>, chain: Vec<Link<
     out
 }
 
+/// Adds `text` to an item's text `t` after a blank line, within `MAX_TEXT`;
+/// a cut (or an already shortened `text`) marks the item `truncated`.
+fn append_capped(t: &mut String, tr: &mut bool, text: &str, truncated: bool) {
+    let room = MAX_TEXT.saturating_sub(t.len());
+    if room >= 2 + text.len() {
+        t.push_str("\n\n");
+        t.push_str(text);
+    } else {
+        if room > 2 {
+            t.push_str("\n\n");
+            t.push_str(prefix(text, room - 2));
+            // No bare blank line where the cut fell.
+            t.truncate(t.trim_end().len());
+        }
+        *tr = true;
+    }
+    *tr |= truncated;
+}
+
 /// Groups displayed nodes into items (see [`ConvItem`]).
 pub(super) fn group(chain: &[Link]) -> Vec<ConvItem> {
     let mut items = Vec::new();
@@ -138,23 +159,12 @@ pub(super) fn group(chain: &[Link]) -> Vec<ConvItem> {
                 at_ms: n.at_ms,
             }),
             NodeBody::AssistantText { text, truncated } => match items.last_mut() {
-                Some(ConvItem::Assistant { text: t, truncated: tr, .. }) => {
-                    let room = MAX_TEXT.saturating_sub(t.len());
-                    if room >= 2 + text.len() {
-                        t.push_str("\n\n");
-                        t.push_str(text);
-                    } else {
-                        if room > 2 {
-                            t.push_str("\n\n");
-                            t.push_str(prefix(text, room - 2));
-                            // No bare blank line where the cut fell.
-                            t.truncate(t.trim_end().len());
-                        }
-                        *tr = true;
-                    }
-                    *tr |= *truncated;
-                }
+                Some(ConvItem::Assistant { text: t, truncated: tr, .. }) => append_capped(t, tr, text, *truncated),
                 _ => items.push(ConvItem::Assistant { text: text.clone(), truncated: *truncated, at_ms: n.at_ms }),
+            },
+            NodeBody::Thinking { text, truncated } => match items.last_mut() {
+                Some(ConvItem::Thinking { text: t, truncated: tr, .. }) => append_capped(t, tr, text, *truncated),
+                _ => items.push(ConvItem::Thinking { text: text.clone(), truncated: *truncated, at_ms: n.at_ms }),
             },
             NodeBody::ToolUses(uses) => {
                 if !matches!(items.last(), Some(ConvItem::Steps { .. })) {

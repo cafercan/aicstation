@@ -356,4 +356,5 @@ export const az: Dict = {
   "conv.sendFailed": "Göndərilmədi: {err}",
   "conv.quote": "Sitat gətir",
   "conv.copy": "Kopyala",
+  "conv.thought": "Düşündü",
 };

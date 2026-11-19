@@ -45,6 +45,25 @@ function Steps({ sessionId, steps, onOpen }: { sessionId: string; steps: ConvSte
   );
 }
 
+/** Claude's thinking: a closed muted line, like the terminal's; a click shows the text. */
+function Thinking({ text, truncated }: { text: string; truncated: boolean }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="conv-thinking">
+      <button type="button" className="conv-steps-line" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span aria-hidden="true">∴ </span>{t("conv.thought")} <span className="chev" aria-hidden="true">›</span>
+      </button>
+      {open && (
+        <div className="conv-thinking-text">
+          <Markdown text={text} />
+          {truncated && <div className="conv-note">{t("conv.truncated")}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * One conversation item; images open through `onOpen`. Memoised: a merge
  * keeps the unchanged items' objects, so their Markdown is not parsed again.
@@ -69,6 +88,8 @@ function ConvItemView({ sessionId, item, onOpen }: { sessionId: string; item: Co
           {item.truncated && <div className="conv-note">{t("conv.truncated")}</div>}
         </div>
       );
+    case "thinking":
+      return <Thinking text={item.text} truncated={item.truncated} />;
     case "steps":
       return <Steps sessionId={sessionId} steps={item.steps} onOpen={onOpen} />;
     case "compacted":

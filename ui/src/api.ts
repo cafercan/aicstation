@@ -182,6 +182,8 @@ export interface ConvStep {
 export type ConvItem =
   | { kind: "user"; text: string; truncated: boolean; images: ConvImageRef[]; atMs: number }
   | { kind: "assistant"; text: string; truncated: boolean; atMs: number }
+  /** Claude's thinking that was kept with its text. */
+  | { kind: "thinking"; text: string; truncated: boolean; atMs: number }
   | { kind: "steps"; steps: ConvStep[]; atMs: number }
   | { kind: "compacted"; atMs: number }
   /** A background task finished; an empty text: it carried no summary. */

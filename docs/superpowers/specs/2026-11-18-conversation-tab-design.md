@@ -65,7 +65,9 @@ everything below.
   terminal).
 - Subagent conversations (a Task/Agent step shows as one step line; the Info
   tab keeps the agent tree).
-- Showing Claude's thinking blocks, full tool inputs or tool output text.
+- Showing full tool inputs or tool output text. (Thinking blocks kept with
+  their text were added later as a closed "Thought" line; see
+  `2026-11-19-conversation-status-line-design.md` for the live status.)
 - Remote Control mark for closed sessions.
 - Editing, forking or rewinding the conversation from this view.
 

@@ -366,4 +366,5 @@ export const tr = {
   "conv.sendFailed": "Gönderilemedi: {err}",
   "conv.quote": "Alıntıla",
   "conv.copy": "Kopyala",
+  "conv.thought": "Düşündü",
 } as const satisfies Record<string, string>;

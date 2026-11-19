@@ -374,4 +374,5 @@ export const ru: Dict = {
   "conv.sendFailed": "Не удалось отправить: {err}",
   "conv.quote": "Цитировать",
   "conv.copy": "Копировать",
+  "conv.thought": "Размышлял",
 };

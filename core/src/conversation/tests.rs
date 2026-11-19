@@ -74,8 +74,10 @@ fn hides_meta_and_compact_summary() {
     let n = parse_node(0, cb).unwrap();
     assert_eq!(n.body, NodeBody::CompactBoundary);
     assert_eq!(n.logical_parent.as_deref(), Some("l"));
-    let th = r#"{"type":"assistant","uuid":"x","message":{"content":[{"type":"thinking","thinking":"hm"}]}}"#;
-    assert_eq!(parse_node(0, th).unwrap().body, NodeBody::Other);
+    let th = r#"{"type":"assistant","uuid":"x","message":{"content":[{"type":"thinking","thinking":" "}]}}"#;
+    assert_eq!(parse_node(0, th).unwrap().body, NodeBody::Other, "thinking without text");
+    let th = r#"{"type":"assistant","uuid":"x","message":{"content":[{"type":"thinking","thinking":"hm, the grid"}]}}"#;
+    assert_eq!(parse_node(0, th).unwrap().body, NodeBody::Thinking { text: "hm, the grid".into(), truncated: false });
     let out = user(r#""<local-command-stdout>ok</local-command-stdout>""#, "");
     assert_eq!(parse_node(0, &out).unwrap().body, NodeBody::Other);
 }
@@ -215,7 +217,25 @@ fn a(uuid: &str, parent: &str, text: &str) -> Value {
 }
 
 fn think(uuid: &str, parent: &str) -> Value {
-    line("assistant", uuid, Some(parent), serde_json::json!([{"type":"thinking","thinking":"hm"}]))
+    line("assistant", uuid, Some(parent), serde_json::json!([{"type":"thinking","thinking":""}]))
+}
+
+fn think_text(uuid: &str, parent: &str, text: &str) -> Value {
+    line("assistant", uuid, Some(parent), serde_json::json!([{"type":"thinking","thinking":text}]))
+}
+
+#[test]
+fn thinking_with_text_is_an_item_and_runs_of_it_merge() {
+    let mut t = Tx::new();
+    t.push(u("u1", None, "hi"));
+    t.push(think_text("th1", "u1", "first idea"));
+    t.push(think("th0", "th1"));
+    t.push(think_text("th2", "th0", "second idea"));
+    t.push(a("a1", "th2", "answer"));
+    t.push(think_text("th3", "a1", "after"));
+    t.push(bash("b1", "th3", "t1"));
+    let items = all(&t.conv());
+    assert_eq!(kinds(&items), ["U:hi", "T:first idea\n\nsecond idea", "A:answer", "T:after", "S1"]);
 }
 
 fn tu(uuid: &str, parent: &str, id: &str, name: &str, input: Value) -> Value {
@@ -247,6 +267,7 @@ fn kinds(items: &[ConvItem]) -> Vec<String> {
             ConvItem::Steps { steps, .. } => format!("S{}", steps.len()),
             ConvItem::Compacted { .. } => "C".to_string(),
             ConvItem::Notice { text, .. } => format!("N:{text}"),
+            ConvItem::Thinking { text, .. } => format!("T:{text}"),
         })
         .collect()
 }
@@ -277,6 +298,7 @@ fn groups_text_and_steps() {
         .map(|i| match i {
             ConvItem::User { at_ms, .. }
             | ConvItem::Assistant { at_ms, .. }
+            | ConvItem::Thinking { at_ms, .. }
             | ConvItem::Steps { at_ms, .. }
             | ConvItem::Compacted { at_ms }
             | ConvItem::Notice { at_ms, .. } => *at_ms,

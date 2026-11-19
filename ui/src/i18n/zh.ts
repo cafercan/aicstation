@@ -356,4 +356,5 @@ export const zh: Dict = {
   "conv.sendFailed": "发送失败：{err}",
   "conv.quote": "引用",
   "conv.copy": "复制",
+  "conv.thought": "已思考",
 };

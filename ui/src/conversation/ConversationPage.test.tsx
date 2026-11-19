@@ -355,6 +355,23 @@ test("sent message is picked up by a since call shortly after", async () => {
   expect(await screen.findByText("gönderilen", {}, { timeout: 2000 })).toBeTruthy();
 });
 
+test("thinking shows as a closed Düşündü line that opens to its text", async () => {
+  serve({
+    get_conversation_page: () => page([
+      { kind: "user", text: "soru", truncated: false, images: [], atMs: 1 },
+      { kind: "thinking", text: "önce ızgaraya bakayım", truncated: false, atMs: 2 },
+      { kind: "assistant", text: "cevap", truncated: false, atMs: 3 },
+    ]),
+  });
+  render(<ConversationPage sessionId="s1" card={card()} {...props} />);
+  const line = await screen.findByRole("button", { name: /Düşündü/ });
+  expect(line.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByText("önce ızgaraya bakayım")).toBeNull();
+  fireEvent.click(line);
+  expect(line.getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByText("önce ızgaraya bakayım")).toBeTruthy();
+});
+
 // Quote menu
 
 /** Selects all text of `el` as a mouse selection would. */

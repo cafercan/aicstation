@@ -359,4 +359,5 @@ export const es: Dict = {
   "conv.sendFailed": "No se pudo enviar: {err}",
   "conv.quote": "Citar",
   "conv.copy": "Copiar",
+  "conv.thought": "Pensó",
 };

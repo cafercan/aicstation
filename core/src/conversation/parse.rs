@@ -21,6 +21,9 @@ pub struct ImageRef {
 pub enum NodeBody {
     UserText { text: String, truncated: bool, images: Vec<ImageRef> },
     AssistantText { text: String, truncated: bool },
+    /// Claude's thinking that was kept with its text (many thinking blocks
+    /// are written without it; those stay `Other`).
+    Thinking { text: String, truncated: bool },
     /// (id, tool, target)
     ToolUses(Vec<(String, String, String)>),
     /// (tool_use_id, is_error, images)
@@ -367,6 +370,17 @@ fn assistant_body(content: &Value) -> NodeBody {
     }
     if !uses.is_empty() {
         return NodeBody::ToolUses(uses);
+    }
+    let thoughts: Vec<&str> = blocks
+        .iter()
+        .filter(|b| s(b, "type") == Some("thinking"))
+        .filter_map(|b| s(b, "thinking"))
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .collect();
+    if !thoughts.is_empty() {
+        let (text, truncated) = cap_text(&thoughts.join("\n\n"));
+        return NodeBody::Thinking { text, truncated };
     }
     NodeBody::Other
 }
