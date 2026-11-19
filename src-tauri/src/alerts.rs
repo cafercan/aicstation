@@ -568,8 +568,9 @@ mod tests {
         let mut d = Detector::default();
         d.observe(&[ctx(A, Some(80.0))], t0, ALL, &[]);
         let both = SessionCard { agents_finished: 1, ..ctx(A, Some(90.0)) };
-        assert_eq!(kinds(&d.observe(&[both.clone()], secs(t0, 1), ALL, &[])), [(AlertKind::Subagent, A)]);
-        d.observe(&[both.clone()], secs(t0, 2), ALL, &[]);
+        let one = std::slice::from_ref(&both);
+        assert_eq!(kinds(&d.observe(one, secs(t0, 1), ALL, &[])), [(AlertKind::Subagent, A)]);
+        d.observe(one, secs(t0, 2), ALL, &[]);
         assert_eq!(kinds(&d.observe(&[both], secs(t0, 20), ALL, &[])), [(AlertKind::Context, A)]);
     }
 
