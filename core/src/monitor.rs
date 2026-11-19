@@ -142,8 +142,15 @@ impl SessionState {
 
     /// A live session seen idle has no background task running and no
     /// prompt queued: what the transcript still holds from up to its status
-    /// time is cleared for good.
+    /// time is cleared for good. Nothing from before its process started is
+    /// still there either: an earlier process (one that died, then resumed)
+    /// took its shells and queue with it.
     fn settle(&mut self, l: &LiveSession) {
+        if l.started_at_ms > 0 {
+            if let Some(t) = chrono::DateTime::from_timestamp_millis(l.started_at_ms as i64) {
+                self.stats.settle_idle(t);
+            }
+        }
         if l.status != SessionStatus::Idle {
             return;
         }
@@ -323,10 +330,11 @@ fn make_card(
             .map_or(0, |l| l.status_updated_at_ms)
             .max(dt_ms(stats.last_at).unwrap_or(0)),
         transcript_bytes,
-        permission_mode: stats.permission_mode.clone(),
-        background_shells: stats.background_shells(),
-        queued_messages: stats.queued_messages(),
-        turn_output_tokens: stats.turn_output_tokens,
+        // Live state only: a closed session runs and queues nothing.
+        permission_mode: live.and(stats.permission_mode.clone()),
+        background_shells: if live.is_some() { stats.background_shells() } else { 0 },
+        queued_messages: if live.is_some() { stats.queued_messages() } else { 0 },
+        turn_output_tokens: if live.is_some() { stats.turn_output_tokens } else { 0 },
         status_since_ms: live.map_or(0, |l| l.status_updated_at_ms),
         git_branch: stats.git_branch.clone(),
         host_kind,
@@ -945,6 +953,45 @@ mod tests {
         for k in ["permissionMode", "backgroundShells", "queuedMessages", "turnOutputTokens", "statusSinceMs"] {
             assert!(v.get(k).is_some(), "{k}");
         }
+    }
+
+    #[test]
+    fn shells_and_queue_of_an_earlier_process_are_gone_after_a_resume() {
+        let e = Env::new();
+        let sid = id(1);
+        let t = e.transcript(&sid);
+        // The old process started a background shell and died without going idle.
+        e.append(&t, r#"{"type":"user","timestamp":"2026-11-02T07:00:01Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","content":"Command running in background with ID: b1."}]}}"#);
+        e.append(&t, r#"{"type":"queue-operation","operation":"enqueue","timestamp":"2026-11-02T07:00:02Z","content":"hi"}"#);
+        // Resumed: a new process started at 07:00:05Z, busy.
+        let j = format!(
+            r#"{{"pid":2,"sessionId":"{sid}","cwd":"C:\\work\\demo","startedAt":1793602805000,"procStart":"1002","status":"busy","statusUpdatedAt":1793602806000}}"#
+        );
+        fs::write(e.dir.path().join("sessions").join("2.json"), j).unwrap();
+        let mut m = e.mon();
+        let c = m.refresh(&FakeProbe, now()).sessions[0].clone();
+        assert_eq!((c.background_shells, c.queued_messages), (0, 0));
+        // One the new process starts counts.
+        e.append(&t, r#"{"type":"user","timestamp":"2026-11-02T07:00:07Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t2","content":"Command running in background with ID: b2."}]}}"#);
+        let c = m.refresh(&FakeProbe, now()).sessions[0].clone();
+        assert_eq!(c.background_shells, 1);
+    }
+
+    #[test]
+    fn a_closed_card_has_no_live_state() {
+        use crate::transcript::{Entry, QueueOp};
+        let at = chrono::DateTime::parse_from_rfc3339("2026-11-02T07:00:01Z").unwrap().with_timezone(&chrono::Utc);
+        let mut s = SessionStats::default();
+        s.apply(&Entry::PermissionMode("auto".into()));
+        s.apply(&Entry::BackgroundStarted { id: "b1".into(), at });
+        s.apply(&Entry::Queue { op: QueueOp::Enqueue, content: Some("hi".into()), at });
+        assert_eq!((s.background_shells(), s.queued_messages()), (1, 1), "the transcript says so");
+        let c = make_card(&id(1), None, None, HostKind::Other, &s, 0, &AgentTree::default());
+        assert_eq!(
+            (c.permission_mode, c.background_shells, c.queued_messages, c.turn_output_tokens),
+            (None, 0, 0, 0),
+            "a closed session runs nothing and queues nothing"
+        );
     }
 
     #[test]
