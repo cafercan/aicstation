@@ -106,15 +106,23 @@ fn content_text(c: &Value) -> Option<String> {
     }
 }
 
-/// The task id of a `<task-notification>` text.
-fn notified_task(t: &str) -> Option<String> {
+/// The task ids of a `<task-notification>` text (one line may carry several).
+fn notified_tasks(t: &str) -> Vec<String> {
+    let mut out = Vec::new();
     if !t.contains("<task-notification>") {
-        return None;
+        return out;
     }
-    let start = t.find("<task-id>")? + "<task-id>".len();
-    let end = start + t[start..].find("</task-id>")?;
-    let id = t[start..end].trim();
-    (!id.is_empty()).then(|| id.to_string())
+    let mut rest = t;
+    while let Some(s) = rest.find("<task-id>") {
+        let from = &rest[s + "<task-id>".len()..];
+        let Some(e) = from.find("</task-id>") else { break };
+        let id = from[..e].trim();
+        if !id.is_empty() {
+            out.push(id.to_string());
+        }
+        rest = &from[e..];
+    }
+    out
 }
 
 /// The id of "Command running in background with ID: <id>. …".
@@ -259,10 +267,14 @@ pub fn parse_line(line: &str) -> Vec<Entry> {
                 }
             }
             let text = content.and_then(content_text);
-            if let Some(id) = text.as_deref().and_then(notified_task) {
-                out.push(Entry::TaskFinished(id));
+            let done = text.as_deref().map(notified_tasks).unwrap_or_default();
+            if !done.is_empty() {
+                out.extend(done.into_iter().map(Entry::TaskFinished));
             } else if let (Some(t), Some(at)) = (text.as_deref(), at) {
-                let meta = v.get("isMeta").and_then(Value::as_bool).unwrap_or(false);
+                let flag = |k: &str| v.get(k).and_then(Value::as_bool).unwrap_or(false);
+                // Lines Claude Code writes itself: the summary after a compact,
+                // a subagent's line, a line only for the transcript view.
+                let meta = flag("isMeta") || flag("isCompactSummary") || flag("isSidechain") || flag("isVisibleInTranscriptOnly");
                 let notice = v.get("origin").and_then(|o| str_of(o, "kind")) == Some("task-notification");
                 let system = str_of(&v, "promptSource") == Some("system");
                 let lead = t.trim_start();
@@ -282,8 +294,9 @@ pub fn parse_line(line: &str) -> Vec<Entry> {
             if let Some(att) = att {
                 let notice = str_of(att, "commandMode") == Some("task-notification")
                     || att.get("origin").and_then(|o| str_of(o, "kind")) == Some("task-notification");
-                if let Some(id) = att.get("prompt").and_then(content_text).as_deref().and_then(notified_task).filter(|_| notice) {
-                    out.push(Entry::TaskFinished(id));
+                if notice {
+                    let ids = att.get("prompt").and_then(content_text).as_deref().map(notified_tasks).unwrap_or_default();
+                    out.extend(ids.into_iter().map(Entry::TaskFinished));
                 }
             }
         }
@@ -974,6 +987,19 @@ kısa
         assert!(!parse_line(&u).iter().any(|e| matches!(e, Entry::UserPrompt { .. })), "a notice is no prompt");
         let a = format!(r#"{{"type":"attachment","timestamp":"2026-11-19T07:30:00.000Z","attachment":{{"type":"queued_command","commandMode":"task-notification","prompt":"{note}"}}}}"#);
         assert!(parse_line(&a).contains(&Entry::TaskFinished("b1".into())));
+        // Several notices in one line: each task is finished.
+        let two = format!("{note}\\n<task-notification>\\n<task-id>b2</task-id>\\n</task-notification>");
+        let u = format!(r#"{{"type":"user","timestamp":"2026-11-19T07:30:00.000Z","message":{{"role":"user","content":"{two}"}}}}"#);
+        let done: Vec<Entry> = parse_line(&u).into_iter().filter(|e| matches!(e, Entry::TaskFinished(_))).collect();
+        assert_eq!(done, [Entry::TaskFinished("b1".into()), Entry::TaskFinished("b2".into())]);
+    }
+
+    #[test]
+    fn a_compact_summary_or_sidechain_line_is_no_prompt() {
+        for extra in [r#""isCompactSummary":true,"#, r#""isSidechain":true,"#, r#""isVisibleInTranscriptOnly":true,"#] {
+            let l = format!(r#"{{"type":"user",{extra}"timestamp":"2026-11-19T07:28:49.064Z","message":{{"role":"user","content":"This session is being continued"}}}}"#);
+            assert!(!parse_line(&l).iter().any(|e| matches!(e, Entry::UserPrompt { .. })), "{extra}");
+        }
     }
 
     #[test]
