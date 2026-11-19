@@ -1,0 +1,99 @@
+# Slash Command Menu Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Typing `/` at the start of the Conversation tab's message box lists built-in commands and the session's skills; ↑/↓, Enter (run), Tab (insert), Esc, click.
+
+**Architecture:** core parses `skill_listing` attachments into an `Entry`, `SessionStats` keeps their union, the monitor exposes it per live session and a new app command `get_session_commands` returns it. The UI keeps the built-in list, matches and orders entries in a pure module, and `SlashMenu` renders above the message box, driven by `Composer`'s keys.
+
+**Tech Stack:** Rust (core `station-core`, app `aicstation`), React 19 + TypeScript, vitest.
+
+**Spec:** `docs/superpowers/specs/2026-11-19-slash-command-menu-design.md`
+
+## Global Constraints
+
+- Menu shows while the box text matches `^/[^\s]*$` (a `/`, then no space or line break).
+- Match on the name without `/`, case-insensitive: prefix matches; if none, contains matches. Built-ins before skills; in each group prefix matches first, then alphabetical. No match → no menu.
+- At most 8 rows visible; the list scrolls with the highlight; ↑/↓ wrap.
+- Enter: box becomes `/name`, it is sent, the box clears (the normal send path); a `terminal` built-in then calls `onShowTerminal`. Tab: box becomes `/name ` (no send). Esc: menu closes, text stays; it reopens when the text changes. Click: as Enter.
+- Built-ins (name, English description, `terminal` flag): `add-dir`, `agents`†, `clear`, `compact`, `config`†, `context`, `cost`, `doctor`, `export`†, `help`, `hooks`†, `init`, `mcp`†, `memory`†, `model`†, `permissions`†, `plugin`†, `release-notes`, `rename`, `resume`†, `review`, `rewind`†, `status`†, `todos`, `usage`† (†: `terminal: true`).
+- Skills: union of the transcript's `skill_listing` attachments (`isInitial: true` starts over); description = first sentence of the text after `name: `, at most 120 characters (cut with `…`).
+- New i18n key `conv.cmdTerminal` ("opens in the Terminal tab"; tr "Terminal sekmesinde açılır") in all 8 languages.
+
+## Review Focus
+
+- A skill name that equals a built-in (`review`): both listed, built-in first; Enter on either sends the same text. (Task 3 `a skill named like a built-in comes after it`.)
+- Typing fast past the menu (`/compact now`): the space closes the menu and Enter sends the text as typed. (Task 4 `a space closes the menu and Enter sends as typed`.)
+- IME composition Enter (keyCode 229) while the menu is open: not taken as a pick. (Task 4 `IME Enter does not pick`.)
+- `get_session_commands` for a closed or unknown session: empty list, no error. (Task 2 `session_commands_empty_when_not_live`.)
+- A listing line without `: ` or with an empty name: skipped. (Task 1 `skips_malformed_listing_lines`.)
+
+---
+
+### Task 1: Parse skill listings and keep their union
+
+**Files:**
+- Modify: `core/src/transcript.rs` (`Entry::SkillListing`, `parse_line`, tests)
+- Modify: `core/src/stats.rs` (`skills`, tests)
+
+**Interfaces:**
+- Produces: `Entry::SkillListing { initial: bool, skills: Vec<Skill> }` and `#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)] pub struct Skill { pub name: String, pub description: String }` in `transcript.rs`; from an `attachment` line whose `attachment.type == "skill_listing"`: `initial` = `attachment.isInitial` (default false), skills from `attachment.content` lines `- <name>: <text>`.
+- Produces on `SessionStats`: `pub fn skills(&self) -> Vec<Skill>` (sorted by name); private `BTreeMap<String, String>` updated by `apply` (initial clears it first).
+
+- [ ] **Step 1: Failing tests:** `parses_skill_listing` (two lines incl. `caveman:caveman-init: Drop the rule. More text.` → description `Drop the rule.`; a 300-char sentence → 120 chars ending in `…`), `skips_malformed_listing_lines` (`- nocolon`, `- : x` skipped), and in stats `skill_listings_join_and_initial_starts_over`.
+- [ ] **Step 2:** `cargo test -p station-core` → compile errors.
+- [ ] **Step 3:** implement.
+- [ ] **Step 4:** `cargo test -p station-core` → all pass.
+- [ ] **Step 5:** commit `Keep the skills a session lists from its transcript`.
+
+### Task 2: App command `get_session_commands`
+
+**Files:**
+- Modify: `core/src/monitor.rs` (`pub fn session_skills(&self, id: &str) -> Vec<Skill>`: the live state's `stats.skills()`, empty when no state)
+- Modify: `src-tauri/src/commands.rs` (`AppState::session_commands(&self, id: &str) -> Result<Vec<Skill>, String>`: `session_invalid` for a bad id, else the monitor's list; `#[tauri::command] pub fn get_session_commands(state, session_id) -> Result<Vec<Skill>, String>`), `src-tauri/src/main.rs` (handler), `src-tauri/build.rs` (command list), `src-tauri/capabilities/default.json` (`allow-get-session-commands`); `src-tauri/permissions/autogenerated/get_session_commands.toml` is generated by the build.
+- Modify: `ui/src/api.ts` (`export interface SessionSkill { name: string; description: string }`, `getSessionCommands(sessionId): Promise<SessionSkill[]>`)
+
+- [ ] **Step 1: Failing tests:** monitor `session_skills_from_the_transcript` (live session with a listing line → names), app `session_commands_empty_when_not_live` and invalid id → `session_invalid`.
+- [ ] **Step 2–4:** run, implement, `cargo test --workspace` green, `cd ui && npx tsc --noEmit` clean.
+- [ ] **Step 5:** commit `Serve a live session's skills to the UI`.
+
+### Task 3: Built-ins and matching
+
+**Files:**
+- Create: `ui/src/conversation/slashCommands.ts`, `ui/src/conversation/slashCommands.test.ts`
+
+**Interfaces:**
+- Produces: `export interface SlashEntry { name: string; description: string; terminal: boolean; builtin: boolean }`, `export const BUILTINS: SlashEntry[]`, `export function slashQuery(text: string): string | null` (the typed name or null when the menu must not show), `export function matchCommands(query: string, skills: SessionSkill[]): SlashEntry[]`.
+
+- [ ] **Step 1: Failing tests:** `slashQuery` (`"/"`→`""`, `"/co"`→`"co"`, `"/co "`/`"/co\n"`/`"x/co"`→null); `matchCommands("co", [])` starts `compact, config, context, cost` (prefix, alphabetical); `matchCommands("pact", [])` → `compact` (contains fallback); `a skill named like a built-in comes after it` (`review` skill after `review` built-in); `matchCommands("zzz", [])` → `[]`; skills keep their namespace (`caveman:caveman-help` matched by `cave`).
+- [ ] **Step 2–4:** run, implement, `npx vitest run src/conversation/slashCommands.test.ts` green.
+- [ ] **Step 5:** commit `List built-in commands and match typed command names`.
+
+### Task 4: The menu in the message box
+
+**Files:**
+- Create: `ui/src/conversation/SlashMenu.tsx`
+- Modify: `ui/src/conversation/Composer.tsx` (menu state, keys, skills fetch), `ui/src/conversation/ConversationPage.tsx` (pass `skillsKey={card.transcriptBytes}`), `ui/src/features.css`, `ui/src/i18n/*.ts` (`conv.cmdTerminal`)
+- Test: `ui/src/conversation/ConversationPage.test.tsx` (composer section)
+
+**Interfaces:**
+- Consumes: Task 2 `getSessionCommands`; Task 3 `slashQuery`, `matchCommands`.
+- `Composer` gains `skillsKey?: number`; fetches skills when the menu first opens and when it opens after `skillsKey` changed.
+- `SlashMenu({ entries, active, onPick, onHover }: { entries: SlashEntry[]; active: number; onPick: (e: SlashEntry) => void; onHover: (i: number) => void })` renders `role="listbox"` with `role="option"` rows (`aria-selected` on the active one), name, description, and a `terminal` mark titled `conv.cmdTerminal`.
+
+- [ ] **Step 1: Failing tests** (Composer rendered alone, `get_session_commands` served with one skill `caveman:caveman-help`):
+  - typing `/co` shows a listbox whose first option is `/compact`; ↓ moves `aria-selected` to the second; ↑ from the first wraps to the last.
+  - Enter sends `/compact` (`send_to_session` called with text `/compact`) and the box clears.
+  - Tab sets the box to `/compact ` and sends nothing.
+  - Esc closes the listbox and keeps `/co`; typing `m` reopens it.
+  - Enter on `/model` (type `/mod`) sends `/model` and calls `onShowTerminal`.
+  - clicking the `caveman:caveman-help` option sends `/caveman:caveman-help`.
+  - `a space closes the menu and Enter sends as typed` (`/compact now` → sent as is).
+  - `IME Enter does not pick` (keyDown Enter with keyCode 229 while open: nothing sent, menu still open).
+- [ ] **Step 2–4:** run, implement, `npx tsc --noEmit && npx vitest run` green.
+- [ ] **Step 5:** commit `Show a slash command menu in the message box`.
+
+### Task 5: On screen, docs
+
+- [ ] Local build; in a Haiku test session in an app terminal: `/` lists built-ins then skills; `/co` → `/compact` first; Enter runs it (the terminal shows the compaction); `/mod` + Enter opens the model picker and switches to the Terminal tab; Esc keeps the text.
+- [ ] README (English and Turkish Conversation sections): one sentence each. Commit `Describe the slash command menu`.
