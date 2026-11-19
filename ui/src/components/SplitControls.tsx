@@ -18,6 +18,15 @@ export function TermBar({ splitShown, others, onSplit, onJoin, inline = false }:
   const t = useT();
   const cls = inline ? "term-bar inline" : "term-bar";
   const [picking, setPicking] = useState(false);
+  /** The terminal reached with the arrows, not picked yet. */
+  const [choice, setChoice] = useState("");
+  const byKeys = useRef(false);
+  const pick = (v: string) => {
+    setPicking(false);
+    setChoice("");
+    byKeys.current = false;
+    if (v) onSplit(v === "new" ? "new" : Number(v));
+  };
   if (splitShown) {
     return (
       <div className={cls}>
@@ -28,12 +37,20 @@ export function TermBar({ splitShown, others, onSplit, onJoin, inline = false }:
   return (
     <div className={cls}>
       {picking && (
-        <select autoFocus aria-label={t("split.pick")} value=""
-          onKeyDown={(e) => { if (e.key === "Escape") setPicking(false); }}
+        <select autoFocus aria-label={t("split.pick")} value={choice}
+          onMouseDown={() => { byKeys.current = false; }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") { setPicking(false); setChoice(""); return; }
+            // Chromium changes a closed select on each arrow: the arrows only
+            // walk the list, Enter picks.
+            // Alt+arrow, F4 and Space open the list instead: a choice made there is final.
+            if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.altKey) byKeys.current = true;
+            if (e.altKey || e.key === "F4" || e.key === " ") byKeys.current = false;
+            if (e.key === "Enter" && choice) { e.preventDefault(); pick(choice); }
+          }}
           onChange={(e) => {
-            setPicking(false);
-            const v = e.target.value;
-            if (v) onSplit(v === "new" ? "new" : Number(v));
+            if (byKeys.current) setChoice(e.target.value);
+            else pick(e.target.value);
           }}>
           <option value="" disabled>{t("split.pick")}</option>
           {others.map((o) => <option key={o.id} value={String(o.id)}>{o.label}</option>)}
