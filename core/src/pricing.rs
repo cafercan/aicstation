@@ -76,9 +76,10 @@ pub fn context_window(requested_model: &str) -> Option<u64> {
         .map(|&(_, w)| w)
 }
 
-/// Estimated cost in USD, or None for an unknown model. A `[1m]` suffix is ignored.
+/// Estimated cost in USD, or None for an unknown model. A `[1m]` suffix and
+/// a `-YYYYMMDD` date (`claude-haiku-4-5-20251001`) are ignored.
 pub fn cost_usd(model: &str, u: &Usage) -> Option<f64> {
-    let id = base_id(model);
+    let id = strip_date(base_id(model));
     let &(_, inp, out, cr, cw5, cw1) = PRICES.iter().find(|r| r.0 == id)?;
     let m = 1_000_000.0;
     // The 1h part is a subset of the total; clamp defensively.
@@ -96,6 +97,13 @@ pub fn cost_usd(model: &str, u: &Usage) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_dated_model_id_has_its_family_price() {
+        let u = Usage { input: 1_000_000, ..Default::default() };
+        assert_eq!(cost_usd("claude-sonnet-4-6-20260101", &u), cost_usd("claude-sonnet-4-6", &u));
+        assert!(cost_usd("claude-sonnet-4-6-20260101", &u).is_some());
+    }
 
     #[test]
     fn cost_known_and_unknown() {
