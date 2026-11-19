@@ -530,11 +530,17 @@ impl AppState {
     /// it text. Read fresh from the registry (never the cached snapshot). Only
     /// an idle or busy session with nothing in `waitingFor` takes text; any
     /// other status (waiting, unknown, missing) is `send_waiting`, since the
-    /// text could land in a prompt. One outside an app terminal is
-    /// `send_not_embedded`.
+    /// text could land in a prompt. "shell" (a shell command running in the
+    /// session, also a background one) counts as busy: the text is queued.
+    /// One outside an app terminal is `send_not_embedded`.
     pub fn send_target(&self, id: &str) -> Result<u32, String> {
         let l = self.fresh_live(id)?;
-        let ready = matches!(l.status, SessionStatus::Idle | SessionStatus::Busy) && l.waiting_for.is_none();
+        let takes_text = match &l.status {
+            SessionStatus::Idle | SessionStatus::Busy => true,
+            SessionStatus::Other(o) => o == "shell",
+            SessionStatus::Waiting => false,
+        };
+        let ready = takes_text && l.waiting_for.is_none();
         if !ready {
             return Err(errors::SEND_WAITING.into());
         }
@@ -1689,6 +1695,10 @@ mod tests {
         let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(EmbeddedProbe(adopt_probe())));
         assert_eq!(state.send_target(ADOPT_ID), Ok(EMBED_SHELL));
         write_registry(&reg, &work.to_string_lossy(), "busy");
+        assert_eq!(state.send_target(ADOPT_ID), Ok(EMBED_SHELL));
+        // A shell command running in the session (also a background shell
+        // while Claude is otherwise idle): typed text is queued, as when busy.
+        write_registry(&reg, &work.to_string_lossy(), "shell");
         assert_eq!(state.send_target(ADOPT_ID), Ok(EMBED_SHELL));
         assert_eq!(state.send_target("../x").unwrap_err(), errors::SESSION_INVALID);
         assert_eq!(state.send_target(CLOSED_ID).unwrap_err(), errors::SESSION_NOT_LIVE);
