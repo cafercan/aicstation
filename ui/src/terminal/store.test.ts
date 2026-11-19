@@ -149,7 +149,20 @@ test("spawn: ESC[6n yanıtı pty_write ile iletilir, çıktı bayt olarak yazıl
   FakeChannel.all[0].onmessage([104, 105] as never);
   expect(writes[0]).toBeInstanceOf(Uint8Array);
   dataCb("\x1b[1;1R");
-  expect(invoke).toHaveBeenCalledWith("pty_write", { id: 7, data: "\x1b[1;1R" });
+  await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("pty_write", { id: 7, data: "\x1b[1;1R" }));
+});
+
+test("a paste larger than one write arrives whole, in order, in pieces", async () => {
+  await openTerminal();
+  const big = "ş".repeat(40_000);
+  dataCb(big);
+  dataCb("x");
+  await vi.waitFor(() => {
+    const w = invoke.mock.calls.filter((c) => c[0] === "pty_write").map((c) => (c[1] as { data: string }).data);
+    expect(w.join("")).toBe(big + "x");
+    expect(w.length).toBeGreaterThan(2);
+    for (const d of w) expect(new TextEncoder().encode(d).length).toBeLessThanOrEqual(64 * 1024);
+  });
 });
 
 test("kapatma: içinde herhangi bir Claude oturumu varsa onay ister", async () => {
@@ -188,10 +201,12 @@ test("spawn çözülmeden gelen klavye/yanıt verisi kaybolmaz, sırayla iletili
   });
   await openTerminal();
   dataCb("b");
-  const w = invoke.mock.calls.filter((c) => c[0] === "pty_write").map((c) => c[1]);
-  expect(w).toEqual([
-    { id: 9, data: "\x1b[1;1R" }, { id: 9, data: "a" }, { id: 9, data: "b" },
-  ]);
+  await vi.waitFor(() => {
+    const w = invoke.mock.calls.filter((c) => c[0] === "pty_write").map((c) => c[1]);
+    expect(w).toEqual([
+      { id: 9, data: "\x1b[1;1R" }, { id: 9, data: "a" }, { id: 9, data: "b" },
+    ]);
+  });
 });
 
 test("xterm: bağlantılar pencere açmaz, ConPTY arka ucu bildirilir", async () => {

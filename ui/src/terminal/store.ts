@@ -12,6 +12,7 @@ import { clampFontSize } from "./keys";
 import { osc52Clipboard } from "./clipboard";
 import { isWindows } from "../platform";
 import { renderOptions } from "./theme";
+import { createWriter } from "./writeQueue";
 import { getAppearance, subscribeAppearance, xtermOptions } from "./appearance";
 import { subscribeTheme } from "../theme";
 
@@ -146,7 +147,8 @@ async function startTerminal(spawn: Spawn, title?: TerminalTitle): Promise<Termi
   // reply, which xterm may produce before pty_spawn resolves. Data is queued
   // until the id is known, then sent in order.
   const queued: string[] = [];
-  const send = (d: string) => { invoke("pty_write", { id, data: d }).catch(() => {}); };
+  // In order and in pieces that fit one write (a large paste).
+  const send = createWriter((data) => invoke("pty_write", { id, data }));
   term.onData((d) => { if (id < 0) queued.push(d); else send(d); });
 
   let info: PtyInfo;
