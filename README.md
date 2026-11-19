@@ -84,7 +84,9 @@ closed session in its own folder.
   background task shows as a short muted note. Tables in Claude's replies
   show as tables. Claude's thinking, when Claude Code kept its text, shows as
   a "∴ Thought" line with the text open under it (a click hides it); a long pasted message
-  shows as plain text.
+  shows as plain text. The end of each turn shows how long it took and when
+  it ended (`✻ Worked for 5 min · 16:31`). Scrolled up, a round ↓ button
+  goes back to the newest message.
 - **Message box**: for a session that runs in an app terminal, text typed in
   the box is sent to the session. Enter sends, Shift+Enter adds a new line;
   multi-line text arrives as one message. The box is disabled while Claude
@@ -92,7 +94,9 @@ closed session in its own folder.
   input is sent together with it. If the session starts waiting (or leaves
   the terminal) between the paste and the Enter, the text stays unsent in the
   terminal's input and the box says so. Text sent while Claude works or runs a
-  shell command (also a background one) is queued in the session. Outside the
+  shell command (also a background one) is queued in the session. ↑ in the
+  empty box brings back the messages sent before (↓ goes back to newer ones);
+  unsent text stays in the box when you switch tabs. Outside the
   app, the Move to app / Go to tab placeholder shows instead; a closed session
   shows Resume.
 - **Status line**: above the message box, one line says what a live session
@@ -507,7 +511,11 @@ Claude ve Claude Code, Anthropic'in ticari markalarıdır.
   resim sürüklenerek kaydırılır. Yalnızca geçerli dal gösterilir (geri sarma ile
   terk edilenler gizli); `/compact` öncesi geçmiş "Konuşma sıkıştırıldı"
   ayracıyla kalır. Claude'un düşünmesi, Claude Code metnini sakladıysa,
-  "∴ Düşündü" satırının altında açık görünür, satıra tıklayınca gizlenir. Uygulama
+  "∴ Düşündü" satırının altında açık görünür, satıra tıklayınca gizlenir. Her
+  turun sonunda ne kadar sürdüğü ve ne zaman bittiği yazar (`✻ 5 dk çalıştı ·
+  16:31`); yukarı kaydırılmışken yuvarlak ↓ düğmesi en yeni mesaja iner. Boş
+  mesaj kutusunda ↑ önceki gönderilen mesajları getirir (↓ yenilere döner);
+  gönderilmemiş metin sekme değiştirince kutuda kalır. Uygulama
   terminalinde çalışan oturuma mesaj kutusundan
   metin gönderilir (Enter gönderir, Shift+Enter yeni satır; Claude onay
   beklerken kapalı; Claude çalışırken ya da arka planda komut çalışırken
