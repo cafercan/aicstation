@@ -163,6 +163,8 @@ test("a thumb drops its image out of view and gets it back from the cache", asyn
     });
     const { container } = render(<ConversationPage sessionId="s-io" card={card()} {...props} />);
     const thumb = await screen.findByRole("button", { name: "Resmi aç" });
+    // The thumb can be found before its effect has created the observer.
+    await waitFor(() => expect(FakeIO.all).toHaveLength(1));
     expect(FakeIO.all[0].opts.root).toBe(container.querySelector(".conv-list"));
     expect(FakeIO.all[0].opts.rootMargin).toBe("300px");
     expect(thumb.querySelector("img")).toBeNull();
