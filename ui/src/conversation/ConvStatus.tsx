@@ -30,9 +30,14 @@ function useScreen(parentPid: number | null): Screen {
   const [screen, setScreen] = useState<Screen>(NONE);
   useEffect(() => {
     if (!term) { setScreen(NONE); return; }
+    let shown: Screen | null = null;
     const read = () => {
       const rows = screenRows(term);
-      setScreen({ spinner: findSpinner(rows), mode: findModeLine(rows) });
+      const next = { spinner: findSpinner(rows), mode: findModeLine(rows) };
+      // The same lines again: no state change, no redraw.
+      if (shown && shown.spinner === next.spinner && shown.mode === next.mode) return;
+      shown = next;
+      setScreen(next);
     };
     read();
     let timer: number | undefined;

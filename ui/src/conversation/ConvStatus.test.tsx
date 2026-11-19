@@ -1,4 +1,5 @@
 import { act, render } from "@testing-library/react";
+import { Profiler } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { SessionCard } from "../api";
 
@@ -7,13 +8,15 @@ const m = vi.hoisted(() => {
   const state = {
     screen: [] as string[],
     disposed: 0,
+    /** The terminal's write listener (onWriteParsed). */
+    write: null as (() => void) | null,
     terminals: [] as { id: number; pid: number; term: unknown }[],
     listeners: new Set<() => void>(),
   };
   const term = {
     get rows() { return state.screen.length; },
     buffer: { active: { baseY: 0, getLine: (i: number) => ({ translateToString: () => state.screen[i] ?? "" }) } },
-    onWriteParsed: () => ({ dispose: () => { state.disposed++; } }),
+    onWriteParsed: (cb: () => void) => { state.write = cb; return { dispose: () => { state.disposed++; state.write = null; } }; },
   };
   return { state, term };
 });
@@ -90,6 +93,34 @@ test("a spinner drawn with a middle dot gets no second dot before it", () => {
   m.state.screen = ["· Pollinating… (5s · ↓ 130 tokens)", "─".repeat(40), "> ", "─".repeat(40), "⏵⏵ auto mode on"];
   show(card({ status: "busy", statusSinceMs: Date.now() }));
   expect(line()).toBe("⏵⏵ auto mode on · Pollinating… (5s · ↓ 130 tokens)");
+});
+
+test("the screen is read at most every 250 ms, and once more after the last write", () => {
+  vi.useFakeTimers();
+  m.state.terminals = [{ id: 3, pid: 70, term: m.term }];
+  m.state.screen = ["* Fermenting… (1s · ↓ 10 tokens)"];
+  show(card({ status: "busy", statusSinceMs: Date.now() }));
+  expect(line()).toMatch(/\(1s/);
+  m.state.screen = ["* Fermenting… (2s · ↓ 20 tokens)"];
+  act(() => { m.state.write!(); });
+  expect(line()).toMatch(/\(1s/);
+  m.state.screen = ["* Fermenting… (3s · ↓ 30 tokens)"];
+  act(() => { m.state.write!(); vi.advanceTimersByTime(100); });
+  expect(line()).toMatch(/\(1s/);
+  // The trailing read shows the last state of the burst.
+  act(() => { vi.advanceTimersByTime(200); });
+  expect(line()).toMatch(/\(3s/);
+});
+
+test("an unchanged screen does not redraw the line", () => {
+  vi.useFakeTimers();
+  m.state.terminals = [{ id: 3, pid: 70, term: m.term }];
+  m.state.screen = ["* Fermenting… (1s · ↓ 10 tokens)"];
+  const renders = vi.fn();
+  render(<Profiler id="s" onRender={renders}><ConvStatus card={card({ status: "busy", statusSinceMs: 0 })} /></Profiler>);
+  const before = renders.mock.calls.length;
+  for (let i = 0; i < 3; i++) act(() => { m.state.write!(); vi.advanceTimersByTime(300); });
+  expect(renders.mock.calls.length).toBe(before);
 });
 
 test("falls_back_when_the_terminal_goes_away", () => {

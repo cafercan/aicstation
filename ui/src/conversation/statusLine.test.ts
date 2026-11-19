@@ -37,6 +37,31 @@ test("the spinner is looked for above the input box", () => {
   expect(findSpinner(["* Fermenting… (3s · ↓ 10 tokens)", "", ...BOX, "⏵⏵ auto mode on"])).toBe("* Fermenting… (3s · ↓ 10 tokens)");
 });
 
+test("a key hint inside the spinner's parentheses is dropped too", () => {
+  expect(findSpinner(["✻ Fermenting… (33s · ↓ 2.8k tokens · esc to interrupt)"])).toBe("✻ Fermenting… (33s · ↓ 2.8k tokens)");
+  expect(findSpinner(["✻ Fermenting… (esc to interrupt)"])).toBe("✻ Fermenting…");
+});
+
+test("only a key hint in parentheses leaves the mode line, not other text", () => {
+  expect(findModeLine([...BOX, "⏵⏵ auto mode on · 2 shells (1 running)"])).toBe("⏵⏵ auto mode on · 2 shells (1 running)");
+  expect(findModeLine([...BOX, "⏵⏵ auto mode on · 1 shell (ctrl+b to run in background)"])).toBe("⏵⏵ auto mode on · 1 shell");
+});
+
+test("a spinner wrapped onto the next row is read whole", () => {
+  const lines = [
+    { text: "✻ Fermenting… (33s · ↓ 2.8k to", wrapped: false },
+    { text: "kens · thinking with high effort)", wrapped: true },
+    { text: "next", wrapped: false },
+  ];
+  const term = {
+    rows: 3,
+    buffer: { active: { baseY: 0, getLine: (i: number) => ({ isWrapped: lines[i].wrapped, translateToString: () => lines[i].text }) } },
+  };
+  const rows = screenRows(term as never);
+  expect(rows).toEqual(["✻ Fermenting… (33s · ↓ 2.8k tokens · thinking with high effort)", "next"]);
+  expect(findSpinner(rows)).toBe("✻ Fermenting… (33s · ↓ 2.8k tokens · thinking with high effort)");
+});
+
 test("screenRows reads the screen at the bottom, not the scrolled view", () => {
   const lines = ["old", "a", "b"];
   const term = {

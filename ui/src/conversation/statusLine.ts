@@ -31,7 +31,24 @@ function splitTop(s: string): string[] {
   return parts;
 }
 
-const isHint = (p: string) => HINTS.has(p.trim().toLowerCase()) || /^\(.*\)$/.test(p.trim());
+/** "<key> to <action>": a key hint ("ctrl+b to run in background", "↓ to manage"). */
+const KEY_HINT = /^(shift\+tab|esc|tab|enter|space|(ctrl|alt|shift|cmd|meta)\+\S+|[↑↓←→]+) to \S/i;
+const keyHint = (s: string) => HINTS.has(s.trim().toLowerCase()) || KEY_HINT.test(s.trim());
+/** A key hint, bare or in parentheses; other parenthesised text ("(1 running)") stays. */
+const isHint = (p: string) => {
+  const s = p.trim();
+  const inner = /^\((.*)\)$/.exec(s);
+  return keyHint(inner ? inner[1] : s);
+};
+
+/** `s` with the key hints inside its parentheses dropped (a group left empty goes too). */
+function dropInnerHints(s: string): string {
+  return s.replace(/\s*\(([^()]*)\)/g, (group, inner: string) => {
+    const kept = inner.split(" · ").filter((p) => !keyHint(p));
+    if (kept.length === 0) return "";
+    return kept.length === inner.split(" · ").length ? group : `${group.match(/^\s*/)![0]}(${kept.join(" · ")})`;
+  });
+}
 
 /** A rule of Claude Code's input box: `─` across the row (the lower one may carry a name). */
 const isRule = (row: string) => row.trimStart().startsWith("─") && (row.match(/─/g)?.length ?? 0) >= 10;
@@ -52,7 +69,7 @@ export function findSpinner(rows: string[]): string | null {
   for (let i = end - 1; i >= 0; i--) {
     const row = rows[i].trim();
     if (!SPINNER.test(row)) continue;
-    const kept = splitTop(row).filter((p) => !isHint(p));
+    const kept = splitTop(row).filter((p) => !isHint(p)).map(dropInnerHints);
     return kept.join(" · ").trim() || null;
   }
   return null;
@@ -71,19 +88,26 @@ export function findModeLine(rows: string[]): string | null {
     if (!row.startsWith("⏵⏵") && !row.startsWith("⏸")) continue;
     const kept = splitTop(row)
       // "plan mode on (shift+tab to cycle)": the hint rides on the part.
-      .map((p) => p.replace(/\s*\([^()]*\)\s*$/, ""))
+      .map(dropInnerHints)
       .filter((p) => p.trim() !== "" && !isHint(p));
     return kept.join(" · ").trim() || null;
   }
   return null;
 }
 
-/** The terminal's screen rows (the bottom of the buffer, not the scrolled view). */
+/**
+ * The terminal's screen rows (the bottom of the buffer, not the scrolled
+ * view). A line wrapped onto the next row is one row: a long spinner reads whole.
+ */
 export function screenRows(term: Terminal): string[] {
   const buf = term.buffer.active;
   const rows: string[] = [];
   for (let y = buf.baseY; y < buf.baseY + term.rows; y++) {
-    rows.push(buf.getLine(y)?.translateToString(true) ?? "");
+    const line = buf.getLine(y);
+    // Untrimmed while a wrapped row may follow: a space at the wrap is text.
+    const text = line?.translateToString(false) ?? "";
+    if (line?.isWrapped && rows.length > 0) rows[rows.length - 1] += text;
+    else rows.push(text);
   }
-  return rows;
+  return rows.map((r) => r.trimEnd());
 }
