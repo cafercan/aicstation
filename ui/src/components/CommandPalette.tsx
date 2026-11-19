@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { keepFocusIn } from "../a11y";
 import { useT } from "../i18n";
 import { fuzzyRank } from "../shortcuts/fuzzy";
 
@@ -32,6 +33,7 @@ export default function CommandPalette({ items, onClose }: Props) {
     else if (e.key === "ArrowDown") { e.preventDefault(); setSel((cur + 1) % Math.max(1, list.length)); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setSel((cur - 1 + list.length) % Math.max(1, list.length)); }
     else if (e.key === "Enter") { e.preventDefault(); run(list[cur]); }
+    else keepFocusIn(e as KeyboardEvent<HTMLElement>);
   };
   const kind = (k: PaletteItem["kind"]) =>
     k === "action" ? t("palette.kindAction") : k === "session" ? t("palette.kindSession") : t("palette.kindTerminal");

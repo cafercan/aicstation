@@ -1,3 +1,4 @@
+import { keepFocusIn } from "../a11y";
 import { useEffect, useRef, useState } from "react";
 import { useT, type Key } from "../i18n";
 import { KEYMAP, displayChord, loadLayoutMap, type ActionId, type LayoutMap } from "../shortcuts/keymap";
@@ -44,7 +45,7 @@ export default function ShortcutsHelp({ onClose }: { onClose: () => void }) {
   return (
     <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="help" role="dialog" aria-modal="true" aria-labelledby="help-title"
-        onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onClose(); } }}>
+        onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onClose(); } else keepFocusIn(e); }}>
         <h3 id="help-title">{t("help.title")}</h3>
         <table>
           <tbody>

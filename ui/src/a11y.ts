@@ -21,3 +21,19 @@ export function pressable(fn: () => void, role: "button" | "link" | null = "butt
     },
   };
 }
+
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * keyDown handler of a modal dialog: Tab and Shift+Tab go round its own
+ * controls instead of reaching the page behind it.
+ */
+export function keepFocusIn(e: KeyboardEvent<HTMLElement>): void {
+  if (e.key !== "Tab" || e.ctrlKey || e.altKey || e.metaKey) return;
+  const items = [...e.currentTarget.querySelectorAll<HTMLElement>(FOCUSABLE)];
+  e.preventDefault();
+  if (items.length === 0) return;
+  const at = items.indexOf(document.activeElement as HTMLElement);
+  const next = e.shiftKey ? (at <= 0 ? items.length - 1 : at - 1) : (at + 1) % items.length;
+  items[next].focus();
+}

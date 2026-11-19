@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
-import { pressable } from "./a11y";
+import { keepFocusIn, pressable } from "./a11y";
 
 test("a pressable element takes the focus and runs on Enter and Space", () => {
   const fn = vi.fn();
@@ -23,4 +23,19 @@ test("a control inside it acts alone", () => {
   fireEvent.click(x);
   expect(inner).toHaveBeenCalledTimes(2);
   expect(row).not.toHaveBeenCalled();
+});
+
+test("Tab stays inside a dialog, going round its controls", () => {
+  render(
+    <div role="dialog" onKeyDown={keepFocusIn}>
+      <button type="button">bir</button>
+      <button type="button">iki</button>
+    </div>,
+  );
+  const [a, b] = screen.getAllByRole("button");
+  b.focus();
+  fireEvent.keyDown(b, { key: "Tab" });
+  expect(document.activeElement).toBe(a);
+  fireEvent.keyDown(a, { key: "Tab", shiftKey: true });
+  expect(document.activeElement).toBe(b);
 });
