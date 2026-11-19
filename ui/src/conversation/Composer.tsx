@@ -1,11 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { getSessionCommands, sendToSession, type SessionSkill } from "../api";
 import { errorText, useT } from "../i18n";
 import { getDraft, setDraft } from "./drafts";
 import { appendQuote } from "./quote";
 import { useConvFontSize } from "./convAppearance";
 import { matchCommands, slashQuery, type SlashEntry } from "./slashCommands";
-import SlashMenu from "./SlashMenu";
+import SlashMenu, { slashOptionId } from "./SlashMenu";
 
 /**
  * Message box under the conversation of a session in an app terminal. Enter
@@ -120,18 +120,23 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
   // Command menu: open while a `/name` is typed, unless Esc closed it for
   // this very text.
   const [skills, setSkills] = useState<SessionSkill[]>([]);
+  /** The list's id: unique, two boxes can be on screen (split view). */
+  const listId = useId();
   const [active, setActive] = useState(0);
   const [closedFor, setClosedFor] = useState<string | null>(null);
   const query = slashQuery(text);
   const entries: SlashEntry[] = query === null ? [] : matchCommands(query, skills);
   const menuOpen = entries.length > 0 && closedFor !== text && !waiting;
   const fetchedFor = useRef<number | null | undefined>(undefined);
+  /** Number of the last skills request: an older reply arriving later is dropped. */
+  const skillsReq = useRef(0);
   useEffect(() => {
     if (query === null) return;
     const key = skillsKey ?? null;
     if (fetchedFor.current === key) return;
     fetchedFor.current = key;
-    getSessionCommands(sessionId).then(setSkills, () => {});
+    const n = ++skillsReq.current;
+    getSessionCommands(sessionId).then((s) => { if (n === skillsReq.current) setSkills(s); }, () => {});
   }, [query !== null, skillsKey, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
   // A name typed that only others contain (a command missing from the list,
   // typed in full) highlights nothing: Enter sends it as typed.
@@ -209,9 +214,11 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
 
   return (
     <div className="conv-composer">
-      {menuOpen && <SlashMenu entries={entries} active={Math.min(active, entries.length - 1)} onPick={pick} onHover={setActive} />}
+      {menuOpen && <SlashMenu id={listId} entries={entries} active={Math.min(active, entries.length - 1)} onPick={pick} onHover={setActive} />}
       <div className="conv-composer-row">
         <textarea ref={box} value={text} rows={2} disabled={waiting} placeholder={t("conv.placeholder")}
+          aria-autocomplete="list" aria-controls={menuOpen ? listId : undefined}
+          aria-activedescendant={menuOpen && active >= 0 ? slashOptionId(listId, Math.min(active, entries.length - 1)) : undefined}
           onChange={(e) => { setText(e.target.value); setErr(null); setClosedFor(null); setBrowse(null); }}
           onKeyDown={onKeyDown} />
         <button type="button" className="btn" disabled={waiting || sending || text.trim() === ""} onClick={() => send()}>

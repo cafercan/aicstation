@@ -663,6 +663,63 @@ test("slash menu: /co lists /compact first; arrows move and wrap", async () => {
   expect(selected()).toBe(options()[options().length - 1]);
 });
 
+test("slash menu: screen readers hear the list and the highlighted command", () => {
+  const box = slashBox();
+  expect(box.getAttribute("aria-autocomplete")).toBe("list");
+  expect(box.getAttribute("aria-controls")).toBeNull();
+  fireEvent.change(box, { target: { value: "/co" } });
+  const list = screen.getByRole("listbox");
+  expect(box.getAttribute("aria-controls")).toBe(list.id);
+  expect(box.getAttribute("aria-activedescendant")).toBe(selected()!.id);
+  fireEvent.keyDown(box, { key: "ArrowDown" });
+  expect(box.getAttribute("aria-activedescendant")).toBe(options()[1].id);
+  fireEvent.keyDown(box, { key: "Escape" });
+  expect(box.getAttribute("aria-activedescendant")).toBeNull();
+});
+
+test("slash menu: a row moving under a still pointer does not take the highlight", () => {
+  const box = slashBox();
+  fireEvent.change(box, { target: { value: "/co" } });
+  // Arrows scroll the list under the pointer: the browser sends mouseenter.
+  fireEvent.mouseEnter(options()[2]);
+  expect(selected()).toBe(options()[0]);
+  // A real move of the mouse does.
+  fireEvent.mouseMove(options()[2]);
+  expect(selected()).toBe(options()[2]);
+});
+
+test("slash menu: a narrower list scrolls its highlighted first row into view", () => {
+  const scroll = vi.fn();
+  const proto = HTMLElement.prototype as unknown as { scrollIntoView?: unknown };
+  const had = proto.scrollIntoView;
+  proto.scrollIntoView = scroll;
+  try {
+    const box = slashBox();
+    fireEvent.change(box, { target: { value: "/c" } });
+    const before = scroll.mock.calls.length;
+    fireEvent.change(box, { target: { value: "/co" } });
+    expect(scroll.mock.calls.length).toBeGreaterThan(before);
+  } finally {
+    proto.scrollIntoView = had;
+  }
+});
+
+test("slash menu: an older skills reply does not replace a newer one", async () => {
+  const replies: ((v: unknown) => void)[] = [];
+  serve({ send_to_session: () => undefined, get_session_commands: () => new Promise((r) => { replies.push(r); }) });
+  const r = render(<Composer sessionId="s1" status="idle" onShowTerminal={noop} skillsKey={1} />);
+  const box = screen.getByRole("textbox") as HTMLTextAreaElement;
+  fireEvent.change(box, { target: { value: "/x" } });
+  fireEvent.change(box, { target: { value: "" } });
+  r.rerender(<Composer sessionId="s1" status="idle" onShowTerminal={noop} skillsKey={2} />);
+  fireEvent.change(box, { target: { value: "/x" } });
+  expect(replies).toHaveLength(2);
+  await act(async () => { replies[1]([{ name: "xnew", description: "" }]); });
+  await act(async () => { replies[0]([{ name: "xold", description: "" }]); });
+  expect(screen.getByRole("option", { name: /xnew/ })).toBeTruthy();
+  expect(screen.queryByRole("option", { name: /xold/ })).toBeNull();
+});
+
 test("slash menu: Enter runs the highlighted command and clears the box", async () => {
   const box = slashBox();
   fireEvent.change(box, { target: { value: "/co" } });
