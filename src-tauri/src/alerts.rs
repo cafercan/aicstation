@@ -163,19 +163,27 @@ impl Detector {
             let stalled = card.status == SessionStatus::Busy
                 && toggles.stalled.is_some_and(|limit| now.duration_since(quiet_since) >= limit);
             let mut stall_alerted = stalled && old.is_some_and(|o| o.stall_alerted);
+            // Stored as seen; a subagent or context alert that lost to another
+            // alert on this tick keeps the old value, so it comes next tick.
+            let mut seen_context_over = context_over;
+            let mut seen_agents_finished = card.agents_finished;
             let in_window =
                 |last: &HashMap<String, Instant>| last.get(&card.session_id).is_some_and(|t| now.duration_since(*t) < DEBOUNCE);
             if let (false, Some(o)) = (first, old) {
-                let kind = if ph == Phase::Waiting && o.phase != Phase::Waiting {
-                    toggles.waiting.then_some(AlertKind::Waiting)
-                } else if ph == Phase::Idle
+                let subagent = toggles.subagent && card.agents_finished > o.agents_finished;
+                let context = context_over && !o.context_over;
+                // The enabled alerts of this tick, the first one wins.
+                let kind = if toggles.waiting && ph == Phase::Waiting && o.phase != Phase::Waiting {
+                    Some(AlertKind::Waiting)
+                } else if toggles.finished
+                    && ph == Phase::Idle
                     && matches!(o.phase, Phase::Busy | Phase::Other)
                     && o.busy_since.is_some_and(|t| now.duration_since(t) >= MIN_BUSY)
                 {
-                    toggles.finished.then_some(AlertKind::Finished)
-                } else if card.agents_finished > o.agents_finished {
-                    toggles.subagent.then_some(AlertKind::Subagent)
-                } else if context_over && !o.context_over {
+                    Some(AlertKind::Finished)
+                } else if subagent {
+                    Some(AlertKind::Subagent)
+                } else if context {
                     Some(AlertKind::Context)
                 } else if stalled && !o.stall_alerted {
                     stall_alerted = true;
@@ -183,6 +191,12 @@ impl Detector {
                 } else {
                     None
                 };
+                if subagent && kind != Some(AlertKind::Subagent) {
+                    seen_agents_finished = o.agents_finished;
+                }
+                if context && kind != Some(AlertKind::Context) {
+                    seen_context_over = o.context_over;
+                }
                 if let Some(kind) = kind {
                     let alert = Alert {
                         kind,
@@ -230,8 +244,8 @@ impl Detector {
                 Seen {
                     phase: ph,
                     busy_since,
-                    agents_finished: card.agents_finished,
-                    context_over,
+                    agents_finished: seen_agents_finished,
+                    context_over: seen_context_over,
                     activity,
                     quiet_since,
                     stall_alerted,
@@ -528,6 +542,35 @@ mod tests {
         d.observe(&[ctx(A, Some(20.0))], secs(t0, 40), ALL, &[]);
         let got = d.observe(&[ctx(A, Some(90.0))], secs(t0, 60), ALL, &[]);
         assert_eq!(kinds(&got), [(AlertKind::Context, A)]);
+    }
+
+    #[test]
+    fn context_crossing_on_the_tick_of_another_alert_still_alerts() {
+        let t0 = Instant::now();
+        let idle_at = |pct: f32| SessionCard { context_pct: Some(pct), ..card(A, SessionStatus::Idle) };
+        // The last reply lifts the context over the threshold as the turn ends.
+        let mut d = Detector::default();
+        d.observe(&[ctx(A, Some(80.0))], t0, ALL, &[]);
+        let got = d.observe(&[idle_at(90.0)], secs(t0, 20), ALL, &[]);
+        assert_eq!(kinds(&got), [(AlertKind::Finished, A)]);
+        // It follows once the debounce window has passed.
+        assert!(d.observe(&[idle_at(90.0)], secs(t0, 21), ALL, &[]).is_empty());
+        let got = d.observe(&[idle_at(90.0)], secs(t0, 40), ALL, &[]);
+        assert_eq!(kinds(&got), [(AlertKind::Context, A)]);
+        assert!(d.observe(&[idle_at(90.0)], secs(t0, 80), ALL, &[]).is_empty());
+        // With "finished" off, the context alert is not swallowed.
+        let no_finish = AlertToggles { finished: false, ..ALL };
+        let mut d = Detector::default();
+        d.observe(&[ctx(A, Some(80.0))], t0, no_finish, &[]);
+        let got = d.observe(&[idle_at(90.0)], secs(t0, 20), no_finish, &[]);
+        assert_eq!(kinds(&got), [(AlertKind::Context, A)]);
+        // A finished subagent on the same tick follows later too.
+        let mut d = Detector::default();
+        d.observe(&[ctx(A, Some(80.0))], t0, ALL, &[]);
+        let both = SessionCard { agents_finished: 1, ..ctx(A, Some(90.0)) };
+        assert_eq!(kinds(&d.observe(&[both.clone()], secs(t0, 1), ALL, &[])), [(AlertKind::Subagent, A)]);
+        d.observe(&[both.clone()], secs(t0, 2), ALL, &[]);
+        assert_eq!(kinds(&d.observe(&[both], secs(t0, 20), ALL, &[])), [(AlertKind::Context, A)]);
     }
 
     #[test]
