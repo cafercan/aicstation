@@ -956,6 +956,22 @@ mod tests {
     }
 
     #[test]
+    fn a_shell_written_before_idle_but_read_after_it_is_not_counted() {
+        let e = Env::new();
+        let sid = id(1);
+        let t = e.transcript(&sid);
+        e.append(&t, r#"{"type":"permission-mode","permissionMode":"auto","sessionId":"s"}"#);
+        e.reg(1, &sid, "busy", 1_793_602_803_000, None); // 07:00:03Z
+        let mut m = e.mon();
+        m.refresh(&FakeProbe, now());
+        e.reg(1, &sid, "idle", 1_793_602_810_000, None); // 07:00:10Z
+        assert_eq!(m.refresh(&FakeProbe, now()).sessions[0].background_shells, 0);
+        // Its line reaches the file (or the reader) only after idle was seen.
+        e.append(&t, r#"{"type":"user","timestamp":"2026-11-02T07:00:05Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","content":"Command running in background with ID: b1."}]}}"#);
+        assert_eq!(m.refresh(&FakeProbe, now()).sessions[0].background_shells, 0);
+    }
+
+    #[test]
     fn shells_and_queue_of_an_earlier_process_are_gone_after_a_resume() {
         let e = Env::new();
         let sid = id(1);
