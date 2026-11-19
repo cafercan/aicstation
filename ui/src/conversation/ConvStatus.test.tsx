@@ -112,6 +112,14 @@ test("the screen is read at most every 250 ms, and once more after the last writ
   expect(line()).toMatch(/\(3s/);
 });
 
+test("waiting for an approval is said even with a spinner still on the screen", () => {
+  m.state.terminals = [{ id: 3, pid: 70, term: m.term }];
+  m.state.screen = ["* Fermenting… (3s · ↓ 10 tokens)"];
+  show(card({ status: "waiting", statusSinceMs: Date.now() }));
+  expect(line()).toMatch(/^onay bekliyor/);
+  expect(line()).not.toMatch(/Fermenting/);
+});
+
 test("an unchanged screen does not redraw the line", () => {
   vi.useFakeTimers();
   m.state.terminals = [{ id: 3, pid: 70, term: m.term }];

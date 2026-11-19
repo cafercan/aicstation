@@ -88,8 +88,9 @@ export default function ConvStatus({ card }: { card: SessionCard }) {
     const mode = card.permissionMode;
     if (mode && mode !== "default") parts.push(MODES[mode] ? t(MODES[mode]) : `⏵⏵ ${mode}`);
   }
-  // A spinner drawn with "·" would read "· ·" after the separator.
-  if (screen.spinner) parts.push(screen.spinner.replace(/^·\s+/, ""));
+  // A spinner drawn with "·" would read "· ·" after the separator. While an
+  // approval is waited for, that is said, not the spinner left on screen.
+  if (screen.spinner && card.status !== "waiting") parts.push(screen.spinner.replace(/^·\s+/, ""));
   else {
     let state = statusLabel(card.status, card.pid);
     if (card.status !== "idle" && card.statusSinceMs > 0) state += ` · ${fmtElapsed(now - card.statusSinceMs)}`;

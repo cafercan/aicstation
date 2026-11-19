@@ -8,6 +8,13 @@ test("finds the spinner, ASCII star included, and drops key hints", () => {
     .toBe("✽ Prestidigitating… (46s · ↓ 3.9k tokens)");
 });
 
+test("a spinner of several words is a spinner too", () => {
+  expect(findSpinner(["✻ Compacting conversation… (12s)"])).toBe("✻ Compacting conversation… (12s)");
+  expect(findSpinner(["✻ Compacting conversation…"])).toBe("✻ Compacting conversation…");
+  // A reply line with an ellipsis is not.
+  expect(findSpinner(["● Okay, I will look… (later)"])).toBeNull();
+});
+
 test("finished_line_is_not_a_spinner", () => {
   expect(findSpinner(["✻ Crunched for 3s · done 10:40 · 1 shell still running"])).toBeNull();
 });

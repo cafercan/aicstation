@@ -8,8 +8,12 @@ import type { Terminal } from "@xterm/xterm";
  * conversation tab.
  */
 
-/** One glyph that is no letter, digit or space; a word; `…`; then ` (`. */
-const SPINNER = /^[^\p{L}\p{N}\s]\s+\p{L}[\p{L}'-]*…\s\(/u;
+/**
+ * One glyph that is no letter, digit or space (nor the `●` of a reply or the
+ * `⎿` of a result); one or more words ("Fermenting", "Compacting
+ * conversation"); `…`; then ` (` or the end.
+ */
+const SPINNER = /^[^\p{L}\p{N}\s●⎿>❯]\s+\p{L}[\p{L}'-]*(?: \p{L}[\p{L}'-]*)*…(?:\s\(|$)/u;
 const HINTS = new Set(["shift+tab to cycle", "esc to interrupt", "↓ to manage", "ctrl+t to hide tasks"]);
 
 /** `s` split at ` · ` outside parentheses. */
