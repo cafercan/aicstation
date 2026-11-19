@@ -1,6 +1,6 @@
 import { pressable } from "../a11y";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { cancelSearch, getHistory, searchHistory, type HistorySummary, type HistoryView, type SearchOutcome } from "../api";
+import { cancelSearch, getHistory, searchHistory, type HistorySummary, type HistoryView, type SearchOutcome, type SessionCard } from "../api";
 import CostCharts from "../components/CostCharts";
 import { filterHistory, rowCwd, type HistoryFilter, type HistorySort } from "../filter";
 import { fmtBreakdown, fmtElapsed, fmtEstCost, fmtTokens, usageSum } from "../format";
@@ -15,7 +15,11 @@ interface Props {
   onResume?: (sessionId: string, name: string) => Promise<unknown>;
   /** "Go to tab" when the session still runs in the app terminal that resumed it. */
   onTerminal?: (id: number) => void;
+  /** The running sessions: a content-search hit in one shows its name. */
+  live?: SessionCard[];
 }
+
+const NO_LIVE: SessionCard[] = [];
 
 /** Filters survive page switches for the app session only (memory, not storage). */
 const filterStore = createStore<HistoryFilter & { folder: string }>({ query: "", from: "", to: "", sort: "date", folder: "" });
@@ -26,7 +30,7 @@ let searchGen = 0;
 /** How often the page reloads history (cost charts) while open and indexed. */
 export const HISTORY_REFRESH_MS = 30_000;
 
-function ContentSearch({ view, onOpen }: { view: HistoryView; onOpen: (id: string) => void }) {
+function ContentSearch({ view, live, onOpen }: { view: HistoryView; live: SessionCard[]; onOpen: (id: string) => void }) {
   const t = useT();
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
@@ -68,7 +72,9 @@ function ContentSearch({ view, onOpen }: { view: HistoryView; onOpen: (id: strin
   const clear = () => { stop(); setBusy(false); setResult(null); setErr(null); setQ(""); };
   const nameOf = (id: string) => {
     const r = view.rows.find((x) => x.sessionId === id);
-    return r ? r.summary?.name ?? r.name : id.slice(0, 8);
+    if (r) return r.summary?.name ?? r.name;
+    // History lists closed sessions; the search also reads the running ones.
+    return live.find((c) => c.sessionId === id)?.name ?? id.slice(0, 8);
   };
 
   return (
@@ -124,7 +130,7 @@ function HistoryTokens({ s }: { s: HistorySummary }) {
   );
 }
 
-export default function History({ onOpen, onResume, onTerminal }: Props) {
+export default function History({ onOpen, onResume, onTerminal, live = NO_LIVE }: Props) {
   const t = useT();
   const [view, setView] = useState<HistoryView | null>(null);
   const [rowErr, setRowErr] = useState<{ id: string; msg: string; terminal: number | null } | null>(null);
@@ -172,7 +178,7 @@ export default function History({ onOpen, onResume, onTerminal }: Props) {
           <option value="tokens">{t("hist.sortTokens")}</option>
         </select></label>
       </div>
-      <ContentSearch view={view} onOpen={onOpen} />
+      <ContentSearch view={view} live={live} onOpen={onOpen} />
       {view.indexing && <div className="meta">{t("hist.indexing")}</div>}
       {rows.length === 0 ? (
         <p className="empty">{view.rows.length === 0 ? t("hist.empty") : t("hist.noMatch")}</p>

@@ -167,6 +167,17 @@ test("İçerikte ara: yeni arama eskisinin geç gelen yanıtını ezer; her aram
   expect(invoke.mock.calls.filter(([c]) => c === "cancel_search")).toHaveLength(0);
 });
 
+test("İçerikte ara: çalışan oturumdaki sonuç kimlikle değil adıyla görünür", async () => {
+  const liveId = "9f1e2d3c-0000-4000-8000-000000000001";
+  mockBackend(hview(), async () => ({ hits: [hit(liveId, "", "bul", "")], truncated: false, cancelled: false }));
+  render(<History onOpen={() => {}} live={[card(liveId, { name: "canlı-proje" })]} />);
+  await screen.findByText("ad-a");
+  const box = screen.getByLabelText("İçerikte ara");
+  fireEvent.change(box, { target: { value: "bul" } });
+  fireEvent.submit(box.closest("form")!);
+  expect(await screen.findByText(/canlı-proje/)).toBeTruthy();
+});
+
 test("İçerikte ara: bütçe dolunca eşleşme olmasa da 'sonuçlar kısaltıldı' görünür", async () => {
   mockBackend(hview(), async () => ({ hits: [], truncated: true, cancelled: false }));
   render(<History onOpen={() => {}} />);

@@ -217,7 +217,7 @@ export default function App() {
     page = <Dashboard snapshot={snapshot} history={history} now={now}
       onOpen={openSession} onTerminal={(id) => setView({ terminal: id })} />;
   } else if (view === "history") {
-    page = <History onOpen={openSession} onResume={onResume}
+    page = <History onOpen={openSession} onResume={onResume} live={snapshot.sessions}
       onTerminal={(id) => setView({ terminal: id })} />;
   } else if (view === "settings") {
     page = <SettingsPage />;
