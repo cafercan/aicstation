@@ -163,19 +163,22 @@ fn strip_reminders(t: &str) -> String {
     out.trim_end().to_string()
 }
 
-/// `t` without `<pasted_content …>` / `</pasted_content>` wrappers (Claude
-/// Code keeps a long paste in them); what they wrap stays.
+/// `t` without `<pasted_content …>` / `</pasted_content …>` wrappers (Claude
+/// Code keeps a long paste in them, the closing tag also with the paste's
+/// id); what they wrap stays.
 fn strip_pasted(t: &str) -> String {
     const OPEN: &str = "<pasted_content";
-    const CLOSE: &str = "</pasted_content>";
+    const CLOSE: &str = "</pasted_content";
     let mut out = String::with_capacity(t.len());
     let mut rest = t;
     while let Some(at) = rest.find('<') {
         out.push_str(&rest[..at]);
         rest = &rest[at..];
-        if let Some(after) = rest.strip_prefix(CLOSE) {
-            rest = after;
-        } else if let Some(after) = rest.strip_prefix(OPEN).filter(|a| a.starts_with([' ', '>'])) {
+        let tag = rest
+            .strip_prefix(CLOSE)
+            .or_else(|| rest.strip_prefix(OPEN))
+            .filter(|a| a.starts_with([' ', '>']));
+        if let Some(after) = tag {
             match after.find('>') {
                 Some(end) => rest = &after[end + 1..],
                 None => {
@@ -208,7 +211,8 @@ fn shown_user_text(t: &str) -> String {
             return format!("! {}", cmd.trim());
         }
     }
-    strip_pasted(t)
+    // Blank lines left around a paste (its tags sit on lines of their own) go.
+    strip_pasted(t).trim_matches(['\n', '\r']).to_string()
 }
 
 /// Body of a system-written prompt: a background task's notice (its summary)

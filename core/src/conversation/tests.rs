@@ -623,6 +623,10 @@ fn bash_mode_lines_and_pasted_content() {
     assert_eq!(text_of(parse_node(0, &user(pasted, "")).unwrap()), "headers:\n\n\nA | B\n\nthanks");
     let two = r#""<pasted_content id=\"a\">x</pasted_content> and <pasted_content>y</pasted_content> <pasted_contentz>""#;
     assert_eq!(text_of(parse_node(0, &user(two, "")).unwrap()), "x and y <pasted_contentz>");
+    // As Claude Code writes a paste sent from the message box: the closing tag
+    // repeats the id, and blank lines surround the paste.
+    let sent = r#""\n\n<pasted_content id=\"229b\">\na\nline1\n</pasted_content id=\"229b\">\n""#;
+    assert_eq!(text_of(parse_node(0, &user(sent, "")).unwrap()), "a\nline1");
 }
 
 fn queued(prompt: Value, mode: &str, origin: Value) -> String {
