@@ -22,6 +22,17 @@ test("Ctrl+V ve Ctrl+Shift+V tarayıcının yerel paste olayına bırakılır", 
   expect(keyAction(k("V", { shiftKey: true }), true)).toBe("paste");
 });
 
+test("Ctrl+C/V/F work on a non-Latin layout (the physical key counts)", () => {
+  // Russian layout: the keys give Cyrillic letters.
+  expect(keyAction(k("с", { code: "KeyC" }), true)).toBe("copy");
+  expect(keyAction(k("с", { code: "KeyC" }), false)).toBe("pass");
+  expect(keyAction(k("м", { code: "KeyV" }), false)).toBe("paste");
+  expect(keyAction(k("а", { code: "KeyF" }), false)).toBe("search");
+  // A Latin layout that moves letters (AZERTY): the letter counts, not the key.
+  expect(keyAction(k("a", { code: "KeyQ" }), false)).toBe("pass");
+  expect(keyAction(k("c", { code: "KeyC" }), true)).toBe("copy");
+});
+
 test("Ctrl+F arama çubuğunu açar", () => {
   expect(keyAction(k("f"), false)).toBe("search");
   expect(keyAction(k("F", { shiftKey: true }), false)).toBe("search");

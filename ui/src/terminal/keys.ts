@@ -47,7 +47,11 @@ function comboOf(ev: KeyLike): Exclude<KeyActionKind, "pass" | "swallow"> | null
     case "NumpadSubtract": return "fontDown";
     case "Numpad0": return "fontReset";
   }
-  switch (ev.key.toLowerCase()) {
+  // The letter on a Latin layout (AZERTY moves keys); on another script
+  // (Cyrillic, Greek) the physical key, as Windows Terminal does.
+  const letter = /^[a-z]$/i.test(ev.key) ? ev.key.toLowerCase()
+    : /^Key[A-Z]$/.test(ev.code) && ev.key.length === 1 ? ev.code.slice(3).toLowerCase() : "";
+  switch (letter) {
     case "c": return "copy";
     case "v": return "paste";
     case "f": return "search";
