@@ -116,6 +116,7 @@ export const ru: Dict = {
   "detail.callRunning": "… выполняется",
   "detail.workflow": "Рабочий процесс {id}",
   "detail.phase": "Этап {name}",
+  "detail.noPhase": "Без этапа",
   "detail.agent": "агент",
   "detail.changedFiles": "ИЗМЕНЁННЫЕ ФАЙЛЫ · {n}",
   "detail.noChanges": "файлы не изменялись",

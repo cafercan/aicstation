@@ -104,6 +104,16 @@ test("ağaçta ajan seçilince sağdaki liste o ajanın tool çağrılarını g�
   expect(rows[0].textContent).toContain("ADC_CAL");
 });
 
+test("adsız aşama uygulamanın dilinde adlandırılır", async () => {
+  const d = detail();
+  const ph = (d.tree.roots as { children: { kind: { kind: string; name?: string } }[] }[])
+    .flatMap((r) => r.children).find((n) => n.kind.kind === "phase")!;
+  ph.kind = { kind: "phase", name: "" };
+  invoke.mockResolvedValue(d);
+  render(<SessionDetailPage sessionId="s1" onBack={() => {}} />);
+  expect((await screen.findByTestId("node-ph")).textContent).toContain("Aşamasız");
+});
+
 test("ağaç ve geri oku klavyeyle de kullanılır", async () => {
   invoke.mockResolvedValue(detail());
   const onBack = vi.fn();

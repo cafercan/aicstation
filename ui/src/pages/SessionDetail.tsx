@@ -30,7 +30,7 @@ function hhmmss(at: string): string {
 function nodeLabel(n: AgentNode): string {
   switch (n.kind.kind) {
     case "workflow": return t("detail.workflow", { id: n.kind.id });
-    case "phase": return t("detail.phase", { name: n.kind.name });
+    case "phase": return n.kind.name ? t("detail.phase", { name: n.kind.name }) : t("detail.noPhase");
     default: return n.agentType ?? t("detail.agent");
   }
 }

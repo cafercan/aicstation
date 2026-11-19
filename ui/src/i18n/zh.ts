@@ -110,6 +110,7 @@ export const zh: Dict = {
   "detail.callRunning": "… 运行中",
   "detail.workflow": "工作流 {id}",
   "detail.phase": "阶段 {name}",
+  "detail.noPhase": "无阶段",
   "detail.agent": "智能体",
   "detail.changedFiles": "已更改的文件 · {n}",
   "detail.noChanges": "没有文件更改",

@@ -110,6 +110,7 @@ export const az: Dict = {
   "detail.callRunning": "… işləyir",
   "detail.workflow": "Workflow {id}",
   "detail.phase": "Mərhələ {name}",
+  "detail.noPhase": "Mərhələsiz",
   "detail.agent": "agent",
   "detail.changedFiles": "DƏYİŞƏN FAYLLAR · {n}",
   "detail.noChanges": "fayl dəyişikliyi yoxdur",

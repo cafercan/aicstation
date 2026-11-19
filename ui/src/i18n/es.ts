@@ -110,6 +110,7 @@ export const es: Dict = {
   "detail.callRunning": "… en ejecución",
   "detail.workflow": "Flujo de trabajo {id}",
   "detail.phase": "Fase {name}",
+  "detail.noPhase": "Sin fase",
   "detail.agent": "agente",
   "detail.changedFiles": "ARCHIVOS MODIFICADOS · {n}",
   "detail.noChanges": "sin cambios en archivos",

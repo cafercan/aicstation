@@ -12,8 +12,6 @@ use std::time::{Duration, SystemTime};
 /// An agent whose transcript changed within this window counts as running.
 pub const RUNNING_WINDOW: Duration = Duration::from_secs(2 * 60);
 
-/// Label of the phase group for workflow agents without a `workflowPhase`.
-const NO_PHASE: &str = "Aşamasız";
 
 /// Deepest agent nesting kept; an agent below it is shown as a root.
 pub const MAX_DEPTH: usize = 256;
@@ -315,7 +313,8 @@ impl AgentCache {
         let mut phases: Vec<(String, Vec<AgentNode>)> = Vec::new();
         for (id, p) in agent_files(dir) {
             let l = self.load(&id, &p, session_live, now);
-            let name = l.phase.unwrap_or_else(|| NO_PHASE.to_string());
+            // No `workflowPhase`: an unnamed phase, which the UI names in its language.
+            let name = l.phase.unwrap_or_default();
             match phases.iter_mut().find(|(n, _)| *n == name) {
                 Some((_, v)) => v.push(l.node),
                 None => phases.push((name, vec![l.node])),
@@ -491,6 +490,16 @@ mod tests {
         assert_eq!(names, vec![AgentKind::Phase { name: "Verify".into() }, AgentKind::Phase { name: "Review".into() }]);
         assert_eq!(wf.children[0].children[0].id, "w2");
         assert_eq!(wf.children[1].children[0].id, "w1");
+    }
+
+    #[test]
+    fn workflow_agents_without_a_phase_get_an_unnamed_phase() {
+        let t = tempfile::tempdir().unwrap();
+        let w = t.path().join("workflows").join("wf_n");
+        agent(&w, "n1", Some(r#"{"finished":true}"#), &[call("t1", "2026-11-02T07:00:00Z"), result("t1", "2026-11-02T07:00:01Z")], 300);
+        let tree = build_tree(t.path(), true, now());
+        // The UI names it in its own language.
+        assert_eq!(tree.roots[0].children[0].kind, AgentKind::Phase { name: String::new() });
     }
 
     #[test]

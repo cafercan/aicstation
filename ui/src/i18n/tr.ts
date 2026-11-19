@@ -117,6 +117,7 @@ export const tr = {
   "detail.callRunning": "… çalışıyor",
   "detail.workflow": "Workflow {id}",
   "detail.phase": "Aşama {name}",
+  "detail.noPhase": "Aşamasız",
   "detail.agent": "ajan",
   "detail.changedFiles": "DEĞİŞEN DOSYALAR · {n}",
   "detail.noChanges": "dosya değişikliği yok",
