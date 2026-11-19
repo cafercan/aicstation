@@ -26,6 +26,8 @@ export interface TerminalEntry {
   search: SearchAddon;
   /** Name given at creation (resume terminals); else "PowerShell N". */
   title?: TerminalTitle;
+  /** Font size set for this terminal alone (Ctrl+= / Ctrl+wheel); null follows Settings. */
+  zoom?: number | null;
 }
 
 /**
@@ -174,10 +176,17 @@ async function startTerminal(spawn: Spawn, title?: TerminalTitle): Promise<Termi
 
 /** Open terminals take every appearance change at once (and are refit:
  *  font, spacing and padding change the cell grid). */
+let appliedFontSize = getAppearance().fontSize;
 function applyAppearance(): void {
-  const opts = xtermOptions(getAppearance());
+  const a = getAppearance();
+  // A new font size in Settings is for every terminal; any other change
+  // keeps a terminal's own zoom.
+  const sizeChanged = a.fontSize !== appliedFontSize;
+  appliedFontSize = a.fontSize;
+  const opts = xtermOptions(a);
   for (const t of terminals) {
-    Object.assign(t.term.options, opts);
+    if (sizeChanged) t.zoom = null;
+    Object.assign(t.term.options, opts, t.zoom ? { fontSize: t.zoom } : {});
     resizeTerminal(t);
   }
 }
@@ -194,6 +203,7 @@ export function resizeTerminal(t: TerminalEntry): void {
 export function setFontSize(t: TerminalEntry, size: number): number {
   const n = clampFontSize(size);
   t.term.options.fontSize = n;
+  t.zoom = n;
   resizeTerminal(t);
   return n;
 }

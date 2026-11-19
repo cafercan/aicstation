@@ -114,6 +114,18 @@ test("görünüm değişince açık terminaller anında güncellenir ve yeniden 
   expect(invoke).toHaveBeenCalledWith("pty_resize", { id: 7, cols: 80, rows: 24 });
 });
 
+test("bir terminalin yakınlaştırması başka görünüm değişikliğinde kalır; yazı boyutu ayarı hepsine uygulanır", async () => {
+  const t = await openTerminal();
+  const opts = (t.term as unknown as { options: Record<string, unknown> }).options;
+  setFontSize(t, 20);
+  updateAppearance({ cursorStyle: "underline", lineHeight: 1.3 });
+  expect(opts).toMatchObject({ fontSize: 20, cursorStyle: "underline", lineHeight: 1.3 });
+  updateAppearance({ fontSize: 15 });
+  expect(opts.fontSize).toBe(15);
+  updateAppearance({ cursorStyle: "bar" });
+  expect(opts.fontSize).toBe(15);
+});
+
 test("şema uygulama temasını izlerken tema değişince açık terminaller de değişir", async () => {
   const { applyTheme } = await import("../theme");
   const t = await openTerminal();
