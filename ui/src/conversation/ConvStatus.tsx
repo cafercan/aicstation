@@ -74,20 +74,25 @@ export default function ConvStatus({ card }: { card: SessionCard }) {
   const working = card.status === "busy";
   const now = useNow(card.status !== "idle");
 
+  // The mode rarely changes, so it leads; what changes follows it. The
+  // screen's mode row ("⏵⏵ auto mode on · 1 shell") is split the same way.
   const parts: string[] = [];
-  if (screen.spinner) parts.push(screen.spinner);
+  const footer = screen.mode ? screen.mode.split(" · ") : null;
+  if (footer) parts.push(footer[0]);
+  else {
+    const mode = card.permissionMode;
+    if (mode && mode !== "default") parts.push(MODES[mode] ? t(MODES[mode]) : `⏵⏵ ${mode}`);
+  }
+  // A spinner drawn with "·" would read "· ·" after the separator.
+  if (screen.spinner) parts.push(screen.spinner.replace(/^·\s+/, ""));
   else {
     let state = statusLabel(card.status, card.pid);
     if (card.status !== "idle" && card.statusSinceMs > 0) state += ` · ${fmtElapsed(now - card.statusSinceMs)}`;
     if (working && card.turnOutputTokens > 0) state += ` · ${t("conv.turnTokens", { n: fmtTokens(card.turnOutputTokens) })}`;
     parts.push(state);
   }
-  if (screen.mode) parts.push(screen.mode);
-  else {
-    const mode = card.permissionMode;
-    if (mode && mode !== "default") parts.push(MODES[mode] ? t(MODES[mode]) : `⏵⏵ ${mode}`);
-    if (card.backgroundShells > 0) parts.push(t("conv.bgShells", { n: card.backgroundShells }));
-  }
+  if (footer) parts.push(...footer.slice(1));
+  else if (card.backgroundShells > 0) parts.push(t("conv.bgShells", { n: card.backgroundShells }));
   if (card.queuedMessages > 0) parts.push(t("conv.queued", { n: card.queuedMessages }));
   if (card.agentsRunning > 0) parts.push(t("card.agentsRunning", { n: card.agentsRunning }));
   const text = parts.join(" · ");

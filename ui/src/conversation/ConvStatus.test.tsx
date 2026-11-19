@@ -53,7 +53,7 @@ test("busy from card data: label, elapsed, turn tokens, mode, shells, queue, age
   vi.setSystemTime(100_000);
   show(card({ status: "busy", statusSinceMs: 54_000, turnOutputTokens: 3900,
     permissionMode: "auto", backgroundShells: 1, queuedMessages: 2, agentsRunning: 1 }));
-  expect(line()).toBe("çalışıyor · 46 sn · ↓ 3,9K token · ⏵⏵ otomatik mod · 1 arka plan komutu · 2 mesaj kuyrukta · 1 ajan çalışıyor");
+  expect(line()).toBe("⏵⏵ otomatik mod · çalışıyor · 46 sn · ↓ 3,9K token · 1 arka plan komutu · 2 mesaj kuyrukta · 1 ajan çalışıyor");
   act(() => { vi.advanceTimersByTime(1000); });
   expect(line()).toContain("47 sn");
 });
@@ -72,9 +72,9 @@ test("idle: no elapsed, default mode and zero counts left out", () => {
 
 test("other modes and an unknown one", () => {
   show(card({ status: "idle", permissionMode: "plan" }));
-  expect(line()).toBe("hazır · ⏸ plan modu");
+  expect(line()).toBe("⏸ plan modu · hazır");
   show(card({ status: "idle", permissionMode: "dontAsk" }));
-  expect(line()).toBe("hazır · ⏵⏵ dontAsk");
+  expect(line()).toBe("⏵⏵ dontAsk · hazır");
 });
 
 test("app terminal: spinner and mode line from the screen replace card parts", () => {
@@ -82,7 +82,14 @@ test("app terminal: spinner and mode line from the screen replace card parts", (
   m.state.screen = ["* Fermenting… (33s · ↓ 2.8k tokens)", "─".repeat(40), "> ", "─".repeat(40),
     "⏵⏵ auto mode on · 1 shell · ↓ to manage"];
   show(card({ status: "busy", statusSinceMs: Date.now(), permissionMode: "plan", backgroundShells: 3, queuedMessages: 1 }));
-  expect(line()).toBe("* Fermenting… (33s · ↓ 2.8k tokens) · ⏵⏵ auto mode on · 1 shell · 1 mesaj kuyrukta");
+  expect(line()).toBe("⏵⏵ auto mode on · * Fermenting… (33s · ↓ 2.8k tokens) · 1 shell · 1 mesaj kuyrukta");
+});
+
+test("a spinner drawn with a middle dot gets no second dot before it", () => {
+  m.state.terminals = [{ id: 3, pid: 70, term: m.term }];
+  m.state.screen = ["· Pollinating… (5s · ↓ 130 tokens)", "─".repeat(40), "> ", "─".repeat(40), "⏵⏵ auto mode on"];
+  show(card({ status: "busy", statusSinceMs: Date.now() }));
+  expect(line()).toBe("⏵⏵ auto mode on · Pollinating… (5s · ↓ 130 tokens)");
 });
 
 test("falls_back_when_the_terminal_goes_away", () => {
