@@ -75,7 +75,9 @@ closed session in its own folder.
   conversation read from its transcript, in steps like claude.ai ("Ran a
   command, read a file"), for live and closed sessions. Images Claude showed
   appear as thumbnails on their step and open larger in a popup (close with
-  Esc, a click outside or the button). Only the current branch is shown:
+  Esc, a click outside or the button). In the popup Ctrl+mouse wheel (or +,
+  - and 0) zooms in and out around the pointer, up to 8x; drag a zoomed
+  image to move it. Only the current branch is shown:
   messages abandoned by a rewind or edit are hidden. History before a
   `/compact` stays, with a "Conversation compacted" divider. Messages typed
   while Claude works and `!` shell commands show as your messages; a finished
@@ -478,7 +480,9 @@ Claude ve Claude Code, Anthropic'in ticari markalarıdır.
   (gömülü terminal ya da Windows Terminal sekmesi), kapanmış oturumu sürdürme.
 - **Konuşma sekmesi:** oturumun konuşması transkriptten okunur (Terminal |
   Konuşma | Bilgi); Claude'un gösterdiği görseller küçük resim olarak görünür
-  ve açılır pencerede büyür. Yalnızca geçerli dal gösterilir (geri sarma ile
+  ve açılır pencerede büyür; orada Ctrl+fare tekerleği (ya da +, - ve 0)
+  imlecin olduğu yeri 8 kata kadar yakınlaştırır, uzaklaştırır; yakınlaşmış
+  resim sürüklenerek kaydırılır. Yalnızca geçerli dal gösterilir (geri sarma ile
   terk edilenler gizli); `/compact` öncesi geçmiş "Konuşma sıkıştırıldı"
   ayracıyla kalır. Uygulama terminalinde çalışan oturuma mesaj kutusundan
   metin gönderilir (Enter gönderir, Shift+Enter yeni satır; Claude onay

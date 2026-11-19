@@ -215,7 +215,13 @@ table.hist td .est { display: block; font-size: 11px; }
 /* Image popup over the whole app. */
 .conv-viewer { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, .78); display: flex; align-items: center; justify-content: center; }
 .conv-viewer-box { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
-.conv-viewer-box img { max-width: 90vw; max-height: 90vh; object-fit: contain; border-radius: 4px; box-shadow: 0 8px 40px rgba(0, 0, 0, .5); }
+.conv-viewer-box img { max-width: 90vw; max-height: 90vh; object-fit: contain; border-radius: 4px; box-shadow: 0 8px 40px rgba(0, 0, 0, .5); user-select: none; }
+.conv-viewer-box img.zoomed { cursor: grab; }
+.conv-viewer-box img.dragging { cursor: grabbing; }
+.conv-viewer-zoom {
+  position: absolute; top: 20px; right: 64px; padding: 3px 8px; border-radius: 4px;
+  background: rgba(0, 0, 0, .55); color: #fff; font-size: 12px; font-variant-numeric: tabular-nums; pointer-events: none;
+}
 .conv-viewer-close {
   position: absolute; top: 14px; right: 18px; width: 34px; height: 34px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .35);
   background: rgba(0, 0, 0, .45); color: #fff; font-size: 20px; line-height: 1; cursor: pointer;
