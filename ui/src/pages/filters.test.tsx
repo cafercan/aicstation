@@ -269,6 +269,16 @@ test("Kullanım: en pahalı projeler tam yol ipucuyla; model dağılımı; boş 
     expect([...document.querySelectorAll(".cost-top .lbl")].map((e) => e.textContent)).toEqual(["İstanbul"]));
 });
 
+test("Geçmiş satırı klavyeyle açılır", async () => {
+  mockBackend(hview());
+  const onOpen = vi.fn();
+  render(<History onOpen={onOpen} />);
+  const row = (await screen.findByText("ad-a")).closest("tr")!;
+  expect(row.tabIndex).toBe(0);
+  fireEvent.keyDown(row, { key: "Enter" });
+  expect(onOpen).toHaveBeenCalledTimes(1);
+});
+
 test("Kullanım: veri yoksa sıfır çubuklar ve 'kullanım yok' notları", async () => {
   mockBackend(hview({ rows: [], todayCost: 0, todayTokens: 0 }));
   render(<History onOpen={() => {}} />);

@@ -1,3 +1,4 @@
+import { pressable } from "../a11y";
 import { useEffect, useRef, useState } from "react";
 import { getSessionDetail, onSnapshot, openFolder, type AgentNode, type SessionDetail, type ToolCall } from "../api";
 import {
@@ -58,7 +59,7 @@ function TreeRows({ nodes, depth, sel, onSel }: {
       {nodes.map((n) => (
         <div key={n.id}>
           <div className={n.id === sel ? "node sel" : "node"} style={{ paddingLeft: depth * 14 }}
-            data-testid={`node-${n.id}`} onClick={() => onSel(n.id)}>
+            data-testid={`node-${n.id}`} {...pressable(() => onSel(n.id))}>
             {n.state === "running" ? <span className="g">●</span> : <span className="x">✓</span>}{" "}
             {nodeLabel(n)}
             {n.description ? ` · "${n.description}"` : ""}{" "}
@@ -155,7 +156,7 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal, live 
     <div>
       <div className="hd">
         <h3>
-          <span className="back" role="button" aria-label={tx("detail.backLabel")} onClick={onBack}>←</span>
+          <span className="back" aria-label={tx("detail.backLabel")} {...pressable(onBack)}>←</span>
           <SessionMark color={statusColor(kind)} size={16} />
           {card.name}{" "}
           <span className={`badge ${kind}`}>{statusLabel(card.status, card.pid)}</span>
@@ -217,7 +218,7 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal, live 
       <div className="cols">
         <div className="tree">
           <div className="cap">{tx("detail.agentTree")}</div>
-          <div className={sel === MAIN ? "node sel" : "node"} data-testid="node-main" onClick={() => setSel(MAIN)}>
+          <div className={sel === MAIN ? "node sel" : "node"} data-testid="node-main" {...pressable(() => setSel(MAIN))}>
             <span className="g">●</span> {tx("detail.mainSession")}
           </div>
           <TreeRows nodes={tree.roots} depth={1} sel={sel} onSel={setSel} />

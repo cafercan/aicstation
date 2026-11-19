@@ -104,6 +104,23 @@ test("ağaçta ajan seçilince sağdaki liste o ajanın tool çağrılarını g�
   expect(rows[0].textContent).toContain("ADC_CAL");
 });
 
+test("ağaç ve geri oku klavyeyle de kullanılır", async () => {
+  invoke.mockResolvedValue(detail());
+  const onBack = vi.fn();
+  render(<SessionDetailPage sessionId="s1" onBack={onBack} />);
+  const ag = await screen.findByTestId("node-ag");
+  expect(ag.tabIndex).toBe(0);
+  fireEvent.keyDown(ag, { key: "Enter" });
+  expect(screen.getAllByTestId("tool-row")).toHaveLength(1);
+  const main = screen.getByTestId("node-main");
+  fireEvent.keyDown(main, { key: " " });
+  expect(screen.getAllByTestId("tool-row")).toHaveLength(3);
+  const back = screen.getByLabelText("Geri");
+  expect(back.tabIndex).toBe(0);
+  fireEvent.keyDown(back, { key: "Enter" });
+  expect(onBack).toHaveBeenCalledTimes(1);
+});
+
 test('tool satırı: en yeni en üstte; Ok "✓", Error "✗", Running "… çalışıyor"', async () => {
   invoke.mockResolvedValue(detail());
   render(<SessionDetailPage sessionId="s1" onBack={() => {}} />);

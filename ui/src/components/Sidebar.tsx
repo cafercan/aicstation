@@ -1,3 +1,4 @@
+import { pressable } from "../a11y";
 import { useState } from "react";
 import { statusColor, statusLabel, type StatusKind } from "../format";
 import { errorText, useT } from "../i18n";
@@ -133,13 +134,13 @@ export default function Sidebar({ view, terminals, onSelect, onNew, onClose, onO
         <button type="button" className="side-btn" aria-label={t("nav.hideSidebar")}
           title={`${t("nav.hideSidebar")} (Ctrl+Shift+B)`} onClick={() => setSidebarOpen(false)}><PanelIcon /></button>
       </div>
-      <div className={isDash ? "item nav on" : "item nav"} onClick={() => onSelect("dashboard")}>{t("nav.dashboard")}</div>
-      <div className={view === "history" ? "item nav on" : "item nav"} onClick={() => onSelect("history")}>{t("nav.history")}</div>
+      <div className={isDash ? "item nav on" : "item nav"} {...pressable(() => onSelect("dashboard"))}>{t("nav.dashboard")}</div>
+      <div className={view === "history" ? "item nav on" : "item nav"} {...pressable(() => onSelect("history"))}>{t("nav.history")}</div>
       <div className="head">{t("nav.terminals")}</div>
       {terminals.map((term) => (
         <div key={term.id}
           className={viewTerm === term.id ? "item sub on" : "item sub"}
-          onClick={() => onSelect({ terminal: term.id })}>
+          {...pressable(() => onSelect({ terminal: term.id }))}>
           {term.status
             ? <SessionMark color={statusColor(term.status)} size={12}
               label={t("nav.claudeStatus", { status: statusLabel(term.status) })} />
@@ -151,12 +152,12 @@ export default function Sidebar({ view, terminals, onSelect, onNew, onClose, onO
               {term.split === "left" ? "◧" : "◨"}
             </span>
           )}
-          <span className="close" title={t("nav.closeTerminal")}
-            onClick={(e) => { e.stopPropagation(); onClose(term.id); }}>×</span>
+          <span className="close" title={t("nav.closeTerminal")} aria-label={t("nav.closeTerminal")}
+            {...pressable(() => onClose(term.id))}>×</span>
         </div>
       ))}
-      <div className="item sub new" onClick={onNew}>{t("nav.newTerminal")}</div>
-      <div className="item sub new" onClick={openWt} title={t(isWindows() ? "nav.openWtTitle" : "nav.openTermTitle")}>
+      <div className="item sub new" {...pressable(onNew)}>{t("nav.newTerminal")}</div>
+      <div className="item sub new" {...pressable(openWt)} title={t(isWindows() ? "nav.openWtTitle" : "nav.openTermTitle")}>
         {t(isWindows() ? "nav.openWt" : "nav.openTerm")}
       </div>
       {wtError && <div className="side-err" role="alert">{wtError}</div>}

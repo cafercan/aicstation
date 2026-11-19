@@ -1,3 +1,4 @@
+import { pressable } from "../a11y";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { cancelSearch, getHistory, searchHistory, type HistorySummary, type HistoryView, type SearchOutcome } from "../api";
 import CostCharts from "../components/CostCharts";
@@ -189,7 +190,7 @@ export default function History({ onOpen, onResume, onTerminal }: Props) {
               const s = r.summary;
               const name = s?.name ?? r.name;
               return (
-                <tr key={r.sessionId} onClick={() => onOpen(r.sessionId)}>
+                <tr key={r.sessionId} {...pressable(() => onOpen(r.sessionId), null)}>
                   <td>{new Date(r.modifiedMs).toLocaleString(locale())}</td>
                   <td>
                     {name}

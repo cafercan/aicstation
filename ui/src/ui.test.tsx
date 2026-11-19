@@ -287,6 +287,24 @@ test("kenar çubuğu: terminalli oturum görünümü o terminal satırını vurg
   expect(screen.getByText("▦ Dashboard").className).toBe("item nav on");
 });
 
+test("kenar çubuğu klavyeyle kullanılır: öğeler odak alır, Enter çalıştırır", () => {
+  const onSelect = vi.fn();
+  const onClose = vi.fn();
+  const onNew = vi.fn();
+  const onOpenWt = vi.fn(async () => {});
+  render(sidebar({ onSelect, onClose, onNew, onOpenWt }));
+  const press = (el: HTMLElement) => { expect(el.tabIndex).toBe(0); fireEvent.keyDown(el, { key: "Enter" }); };
+  press(screen.getByText("▦ Dashboard"));
+  press(screen.getByText("projem").closest(".item") as HTMLElement);
+  press(screen.getByTitle("Terminali kapat"));
+  press(screen.getByText(/Yeni terminal/));
+  press(screen.getByText(/Windows Terminal'de aç|Terminalde aç/));
+  expect(onSelect.mock.calls).toEqual([["dashboard"], [{ terminal: 1 }]]);
+  expect(onClose).toHaveBeenCalledWith(1);
+  expect(onNew).toHaveBeenCalledTimes(1);
+  expect(onOpenWt).toHaveBeenCalledTimes(1);
+});
+
 test("dil seçici: sekiz dil, seçim anında uygulanır ve kalıcıdır", () => {
   render(<>{sidebar()}<GeneralPrefs /></>);
   expect(screen.getByText("Geçmiş")).toBeTruthy();
