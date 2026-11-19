@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useT } from "../i18n";
 
 /** Width the menu is kept inside the window with. */
@@ -39,9 +39,16 @@ export default function QuoteMenu({ x, y, onQuote, onCopy, onClose }: {
     };
   }, []);
 
+  // Opened near the bottom, it opens upward enough to stay inside the window.
+  const [top, setTop] = useState(y);
+  useLayoutEffect(() => {
+    const h = ref.current?.offsetHeight ?? 0;
+    setTop(Math.max(0, Math.min(y, window.innerHeight - h)));
+  }, [y]);
+
   const left = Math.max(0, Math.min(x, window.innerWidth - MENU_W));
   return (
-    <div ref={ref} className="conv-menu" role="menu" style={{ left, top: y }}>
+    <div ref={ref} className="conv-menu" role="menu" style={{ left, top }}>
       {onQuote && <button type="button" role="menuitem" onClick={onQuote}>{t("conv.quote")}</button>}
       <button type="button" role="menuitem" onClick={onCopy}>{t("conv.copy")}</button>
     </div>

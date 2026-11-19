@@ -42,6 +42,9 @@ export default function ImageViewer({ src, onClose }: { src: string; onClose: ()
   /** The press that just ended moved the image: its click is not a backdrop click. */
   const dragged = useRef(false);
   const [dragging, setDragging] = useState(false);
+  /** Ends the drag in progress: its window listeners go, also when the viewer closes mid-drag. */
+  const endDrag = useRef<(() => void) | null>(null);
+  useEffect(() => () => endDrag.current?.(), []);
 
   useEffect(() => {
     const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -99,16 +102,22 @@ export default function ImageViewer({ src, onClose }: { src: string; onClose: ()
       if (Math.abs(dx) > DRAG_PX || Math.abs(dy) > DRAG_PX) moved = true;
       setView((v) => ({ ...v, x: from.x + dx, y: from.y + dy }));
     };
-    const up = () => {
+    const detach = () => {
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
+      endDrag.current = null;
+    };
+    const up = () => {
+      detach();
       setDragging(false);
       // The click that follows this mouseup is part of the drag.
       dragged.current = moved;
       window.setTimeout(() => { dragged.current = false; }, 0);
     };
+    endDrag.current?.();
     window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", up);
+    endDrag.current = detach;
   };
 
   const outside = (e: MouseEvent) => {

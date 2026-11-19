@@ -69,6 +69,21 @@ test("at the fitted size the image is not dragged and a backdrop click closes", 
   expect(onClose).toHaveBeenCalledTimes(1);
 });
 
+test("closing the viewer in the middle of a drag leaves no window listeners", () => {
+  const onClose = vi.fn();
+  const r = render(<ImageViewer src="data:image/png;base64,QUJD" onClose={onClose} />);
+  const img = screen.getByRole("dialog").querySelector("img")!;
+  fireEvent.wheel(img, { deltaY: -100, ctrlKey: true });
+  const remove = vi.spyOn(window, "removeEventListener");
+  fireEvent.mouseDown(img, { button: 0, clientX: 10, clientY: 10 });
+  fireEvent.mouseMove(window, { clientX: 40, clientY: 30 });
+  r.unmount();
+  const gone = remove.mock.calls.map((c) => c[0]);
+  remove.mockRestore();
+  expect(gone).toContain("mousemove");
+  expect(gone).toContain("mouseup");
+});
+
 test("+, - and 0 zoom from the keyboard", () => {
   const { img, onClose } = view();
   fireEvent.keyDown(document.body, { key: "+" });
