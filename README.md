@@ -17,6 +17,17 @@ context usage and token usage (with an estimated cost). It also runs real
 terminals (PowerShell, bash, zsh, fish, ...) right next to them.
 It is built with Tauri 2, a Rust core and a React/TypeScript UI.
 
+**Ultra light, no ads.**
+
+- **Small:** a 4 MB installer, about 15 MB installed. The window is drawn by
+  the system's WebView2, so the app does not ship a browser engine of its own.
+- **Low memory:** the app process itself uses about 16 MB of RAM; together
+  with the WebView2 processes that draw its window, about 200 MB when idle
+  (private bytes, measured on Windows 11 with v1.10.2).
+- **No ads, no account, no telemetry:** the app makes no network requests at
+  all (see [Privacy and security](#privacy-and-security)). Free and open
+  source under the MIT license.
+
 | Dashboard | Terminal | History |
 |---|---|---|
 | ![Dashboard](docs/images/dashboard.png) | ![Embedded terminal](docs/images/terminal.png) | ![History](docs/images/history.png) |
@@ -120,10 +131,11 @@ closed session in its own folder.
   path (quoted when it has spaces, as Claude Code writes it), a folder goes
   on listing inside it, Esc closes. The files a sent message named show
   under it, as the terminal's "Read" line does.
-- **Images**: paste an image into the message box (Ctrl+V) or press Alt+V, as
-  in the terminal: Claude Code takes the clipboard's image into its input,
-  the box shows the `[Image #n]` waiting there (× drops them), and the next
-  message (also an empty one) sends them along.
+- **Images**: paste an image into the message box (Ctrl+V, Ctrl+Shift+V) or
+  press Alt+V, as in the terminal: Claude Code takes the clipboard's image
+  into its input. Each image waiting there shows above the box as a card with
+  a small preview and its `[Image #n]`; the × in its corner drops only that
+  image. The next message (also an empty one) sends them along.
 - **Quote**: select text in the conversation and right-click it: Quote adds it
   to the message box as a Markdown quote (`> ...`) with the caret below it, to
   answer under; Copy copies it. Without a selection the usual menu stays.
@@ -508,6 +520,16 @@ tek pencerede gösteren bir Windows ve Linux masaüstü uygulamasıdır. Resmî 
 Anthropic ile bağlantılı değildir ve Anthropic tarafından onaylanmamıştır.
 Claude ve Claude Code, Anthropic'in ticari markalarıdır.
 
+**Çok hafif, reklamsız.**
+
+- **Küçük:** 4 MB kurulum dosyası, kurulunca yaklaşık 15 MB. Pencereyi
+  sistemin WebView2'si çizer; uygulama kendi tarayıcı motorunu taşımaz.
+- **Az bellek:** uygulamanın kendi süreci yaklaşık 16 MB RAM kullanır;
+  penceresini çizen WebView2 süreçleriyle birlikte boştayken yaklaşık 200 MB
+  (özel bellek, Windows 11'de v1.10.2 ile ölçüldü).
+- **Reklam yok, hesap yok, telemetri yok:** uygulama hiçbir ağ isteği yapmaz.
+  Ücretsiz ve açık kaynaktır (MIT lisansı).
+
 - **Canlı pano:** her oturum için durum (çalışıyor, hazır, onay bekliyor,
   kapandı), alt ajan halkası, bağlam yüzdesi ve token kullanımı (tahmini maliyet ikincil), git
   branch rozeti; arama (branch dahil) ve durum filtresi.
@@ -545,9 +567,10 @@ Claude ve Claude Code, Anthropic'in ticari markalarıdır.
   da Enter yolu yazar (boşluklu yol Claude Code'daki gibi tırnak içinde),
   klasör seçilince içi listelenir, Esc kapatır. Gönderilen mesajın eklediği
   dosyalar mesajın altında görünür. Mesaj kutusuna resim yapıştırınca
-  (Ctrl+V) ya da Alt+V'ye basınca resim terminaldeki gibi Claude'un girişine
-  eklenir; kutunun üstünde `[Image #n]` görünür (× kaldırır), sonraki
-  mesajla (boş da olsa) gider. Sohbetin yazı boyutu Ayarlar → Sohbet görünümü'nden değişir (10–24 px). Remote
+  (Ctrl+V, Ctrl+Shift+V) ya da Alt+V'ye basınca resim terminaldeki gibi
+  Claude'un girişine eklenir; her resim kutunun üstünde küçük önizlemeli bir
+  kart olarak `[Image #n]` ile görünür, köşesindeki × yalnız o resmi kaldırır;
+  sonraki mesajla (boş da olsa) gider. Sohbetin yazı boyutu Ayarlar → Sohbet görünümü'nden değişir (10–24 px). Remote
   Control açık canlı oturumlarda
   kart ve sekme satırında küçük bir işaret, tıklayınca claude.ai'de açar.
 - **Geçmiş:** önbellekli dizin, kullanım grafikleri (token, tahmini $; 7/30/90 gün, projeler,
