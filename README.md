@@ -122,8 +122,8 @@ closed session in its own folder.
   under it, as the terminal's "Read" line does.
 - **Images**: paste an image into the message box (Ctrl+V) or press Alt+V, as
   in the terminal: Claude Code takes the clipboard's image into its input,
-  the box shows the `[Image #n]` waiting there, and the next message (also an
-  empty one) sends them along.
+  the box shows the `[Image #n]` waiting there (× drops them), and the next
+  message (also an empty one) sends them along.
 - **Quote**: select text in the conversation and right-click it: Quote adds it
   to the message box as a Markdown quote (`> ...`) with the caret below it, to
   answer under; Copy copies it. Without a selection the usual menu stays.
@@ -546,8 +546,8 @@ Claude ve Claude Code, Anthropic'in ticari markalarıdır.
   klasör seçilince içi listelenir, Esc kapatır. Gönderilen mesajın eklediği
   dosyalar mesajın altında görünür. Mesaj kutusuna resim yapıştırınca
   (Ctrl+V) ya da Alt+V'ye basınca resim terminaldeki gibi Claude'un girişine
-  eklenir; kutunun üstünde `[Image #n]` görünür, sonraki mesajla (boş da
-  olsa) gider. Sohbetin yazı boyutu Ayarlar → Sohbet görünümü'nden değişir (10–24 px). Remote
+  eklenir; kutunun üstünde `[Image #n]` görünür (× kaldırır), sonraki
+  mesajla (boş da olsa) gider. Sohbetin yazı boyutu Ayarlar → Sohbet görünümü'nden değişir (10–24 px). Remote
   Control açık canlı oturumlarda
   kart ve sekme satırında küçük bir işaret, tıklayınca claude.ai'de açar.
 - **Geçmiş:** önbellekli dizin, kullanım grafikleri (token, tahmini $; 7/30/90 gün, projeler,

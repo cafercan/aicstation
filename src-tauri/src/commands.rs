@@ -1963,7 +1963,11 @@ mod tests {
         assert_eq!(terms.writes(), [(7, IMAGE_PASTE_KEY.to_string())]);
         write_registry(&reg, &w, "waiting");
         assert_eq!(paste_image(&state, &terms, ADOPT_ID).unwrap_err(), errors::SEND_WAITING);
+        assert_eq!(clear_input(&state, &terms, ADOPT_ID).unwrap_err(), errors::SEND_WAITING);
         assert_eq!(terms.writes().len(), 1);
+        write_registry(&reg, &w, "idle");
+        clear_input(&state, &terms, ADOPT_ID).unwrap();
+        assert_eq!(terms.writes()[1], (7, "".to_string()), "Ctrl+U empties Claude's input line");
     }
 
     #[test]
@@ -2253,15 +2257,32 @@ const IMAGE_PASTE_KEY: &str = "";
 /// (checked as in `send_text`); it puts `[Image #n]` into its input, which
 /// the next message sends along.
 pub fn paste_image(app: &AppState, terms: &dyn Terminals, session_id: &str) -> Result<(), String> {
+    input_key(app, terms, session_id, IMAGE_PASTE_KEY)
+}
+
+/// Message box: the images waiting in Claude's input are dropped. Ctrl+U
+/// empties Claude Code's input line (the box keeps its own text apart).
+pub fn clear_input(app: &AppState, terms: &dyn Terminals, session_id: &str) -> Result<(), String> {
+    input_key(app, terms, session_id, "")
+}
+
+/// One key to the session's app terminal, checked as in `send_text`.
+fn input_key(app: &AppState, terms: &dyn Terminals, session_id: &str, key: &str) -> Result<(), String> {
     let shell = app.send_target(session_id)?;
     let id = terms.id_for_pid(shell).ok_or(errors::SEND_NOT_EMBEDDED)?;
-    terms.write(id, IMAGE_PASTE_KEY)
+    terms.write(id, key)
 }
 
 #[tauri::command(async)]
 pub fn paste_image_to_session(app: tauri::AppHandle, session_id: String) -> Result<(), String> {
     use tauri::Manager;
     paste_image(&app.state::<AppState>(), app.state::<PtyManager>().inner(), &session_id)
+}
+
+#[tauri::command(async)]
+pub fn clear_session_input(app: tauri::AppHandle, session_id: String) -> Result<(), String> {
+    use tauri::Manager;
+    clear_input(&app.state::<AppState>(), app.state::<PtyManager>().inner(), &session_id)
 }
 
 /// `send_text` on the blocking pool (it sleeps between the two writes).

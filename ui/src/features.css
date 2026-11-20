@@ -241,7 +241,13 @@ table.hist td .est { display: block; font-size: 11px; }
 .conv-status-line .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; }
 .conv-status-line .text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .conv-composer-row { display: flex; align-items: flex-end; gap: 8px; }
-.conv-images { color: var(--muted); font-size: .923em; margin: 0 0 4px 2px; }
+.conv-images { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: .923em; margin: 0 0 4px 2px; }
+.conv-images-x {
+  padding: 0 6px; font: inherit; font-size: 1.15em; line-height: 1.2; color: var(--muted); background: transparent;
+  border: 1px solid transparent; border-radius: 4px; cursor: pointer;
+}
+.conv-images-x:hover { color: var(--strong); border-color: var(--border); }
+.conv-images-x:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .conv-composer textarea {
   /* border-box: the grown height set from code includes padding and border. */
   flex: 1; box-sizing: border-box; min-height: 38px; resize: none; padding: 8px 10px; background: var(--bg); color: var(--text);

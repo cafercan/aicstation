@@ -346,6 +346,7 @@ fn main() {
             commands::get_session_commands,
             commands::get_session_files,
             commands::paste_image_to_session,
+            commands::clear_session_input,
             commands::get_conversation_image,
             commands::get_history,
             commands::open_folder,

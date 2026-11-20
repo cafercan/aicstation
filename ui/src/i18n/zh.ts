@@ -365,6 +365,7 @@ export const zh: Dict = {
   "conv.files": "附加的文件",
   "conv.fileMenu": "文件",
   "conv.images": "{list} 将随消息发送",
+  "conv.imagesRemove": "移除图片",
   "conv.pasteFailed": "无法粘贴图片：{err}",
   "conv.lookTitle": "对话外观",
   "conv.fontSize": "字号",

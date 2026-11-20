@@ -368,6 +368,7 @@ export const fr: Dict = {
   "conv.files": "Fichiers joints",
   "conv.fileMenu": "Fichiers",
   "conv.images": "{list} part avec le message",
+  "conv.imagesRemove": "Retirer les images",
   "conv.pasteFailed": "Impossible de coller l'image : {err}",
   "conv.lookTitle": "Apparence de la conversation",
   "conv.fontSize": "Taille du texte",

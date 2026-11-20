@@ -368,6 +368,7 @@ export const de: Dict = {
   "conv.files": "Angehängte Dateien",
   "conv.fileMenu": "Dateien",
   "conv.images": "{list} wird mit der Nachricht gesendet",
+  "conv.imagesRemove": "Bilder entfernen",
   "conv.pasteFailed": "Bild konnte nicht eingefügt werden: {err}",
   "conv.lookTitle": "Darstellung des Chats",
   "conv.fontSize": "Schriftgröße",

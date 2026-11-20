@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import { getSessionCommands, getSessionFiles, pasteImageToSession, sendToSession, type FileHint, type SessionSkill } from "../api";
+import { clearSessionInput, getSessionCommands, getSessionFiles, pasteImageToSession, sendToSession, type FileHint, type SessionSkill } from "../api";
 import { errorText, useT } from "../i18n";
 import { getDraft, setDraft } from "./drafts";
 import { appendQuote } from "./quote";
@@ -183,9 +183,11 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
 
   /** Starts sending `value`; false when nothing was sent (waiting, a send in flight, empty). */
   const send = (value = text): boolean => {
-    // Only images: the empty text sends Claude's input as it is.
+    // Only images: the empty text sends Claude's input as it is. Text goes
+    // after the [Image #n] already there, set off by a space.
     if (value.trim() === "" && images.length > 0) value = "";
     else if (value.trim() === "") return false;
+    else if (images.length > 0 && !/^\s/.test(value)) value = ` ${value}`;
     if (waiting || sendingRef.current) return false;
     sendingRef.current = true;
     setSending(true);
@@ -299,8 +301,13 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
       {menuOpen && <SlashMenu id={listId} entries={entries} active={Math.min(active, entries.length - 1)} onPick={pick} onHover={setActive} />}
       {filesOpen && <FileMenu id={listId} hints={hints} active={Math.min(hintActive, hints.length - 1)} onPick={complete} onHover={setHintActive} />}
       {images.length > 0 && (
-        <div className="conv-images" role="status">
-          {t("conv.images", { list: images.map((n) => `[Image #${n}]`).join(" ") })}
+        <div className="conv-images">
+          <span role="status">{t("conv.images", { list: images.map((n) => `[Image #${n}]`).join(" ") })}</span>
+          <button type="button" className="conv-images-x" aria-label={t("conv.imagesRemove")} title={t("conv.imagesRemove")}
+            disabled={waiting} onClick={() => {
+              setErr(null);
+              clearSessionInput(sessionId).catch((e: unknown) => setErr(errorText(e)));
+            }}>×</button>
         </div>
       )}
       <div className="conv-composer-row">

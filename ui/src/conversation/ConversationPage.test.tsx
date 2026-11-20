@@ -1008,7 +1008,10 @@ test("@ menu: not while the session waits for an answer", async () => {
 // Images
 
 function imageBox(images: number[] = []) {
-  serve({ send_to_session: () => undefined, paste_image_to_session: () => undefined, get_session_commands: () => [] });
+  serve({
+    send_to_session: () => undefined, paste_image_to_session: () => undefined, clear_session_input: () => undefined,
+    get_session_commands: () => [],
+  });
   render(<Composer sessionId="s1" status="idle" onShowTerminal={noop} images={images} />);
   return screen.getByRole("textbox") as HTMLTextAreaElement;
 }
@@ -1070,4 +1073,17 @@ test("image: the [Image #n] in the app terminal's input box show above the messa
     (NO_TERMINALS as unknown as object[]).length = 0;
     terminalForPid.mockImplementation(() => undefined);
   }
+});
+
+test("image: × drops the waiting images from Claude's input", () => {
+  imageBox([2, 3]);
+  fireEvent.click(screen.getByRole("button", { name: "Resimleri kaldır" }));
+  expect(invoke.mock.calls.filter(([c]) => c === "clear_session_input")).toEqual([["clear_session_input", { sessionId: "s1" }]]);
+});
+
+test("image: text sent after images is set off by a space", async () => {
+  const box = imageBox([1]);
+  fireEvent.change(box, { target: { value: "resimde ne var" } });
+  fireEvent.keyDown(box, { key: "Enter" });
+  await waitFor(() => expect(sent()).toEqual([" resimde ne var"]));
 });

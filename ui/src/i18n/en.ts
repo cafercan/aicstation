@@ -365,6 +365,7 @@ export const en: Dict = {
   "conv.files": "Attached files",
   "conv.fileMenu": "Files",
   "conv.images": "{list} goes with the message",
+  "conv.imagesRemove": "Remove the images",
   "conv.pasteFailed": "Could not paste the image: {err}",
   "conv.lookTitle": "Conversation appearance",
   "conv.fontSize": "Font size",

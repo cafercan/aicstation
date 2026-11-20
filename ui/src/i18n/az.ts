@@ -365,6 +365,7 @@ export const az: Dict = {
   "conv.files": "Əlavə edilən fayllar",
   "conv.fileMenu": "Fayllar",
   "conv.images": "{list} mesajla birlikdə gedir",
+  "conv.imagesRemove": "Şəkilləri sil",
   "conv.pasteFailed": "Şəkil yapışdırıla bilmədi: {err}",
   "conv.lookTitle": "Söhbət görünüşü",
   "conv.fontSize": "Yazı ölçüsü",

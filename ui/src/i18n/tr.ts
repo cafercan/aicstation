@@ -375,6 +375,7 @@ export const tr = {
   "conv.files": "Eklenen dosyalar",
   "conv.fileMenu": "Dosyalar",
   "conv.images": "{list} mesajla birlikte gider",
+  "conv.imagesRemove": "Resimleri kaldır",
   "conv.pasteFailed": "Resim yapıştırılamadı: {err}",
   "conv.lookTitle": "Sohbet görünümü",
   "conv.fontSize": "Yazı boyutu",

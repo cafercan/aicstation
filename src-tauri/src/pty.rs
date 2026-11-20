@@ -617,12 +617,17 @@ impl PtyManager {
 /// Text from the message box as one bracketed paste (`ESC[200~` .. `ESC[201~`)
 /// for Claude Code. Line ends become `\n`; every other control character,
 /// ESC included, is dropped, so the text can never end the paste early or
-/// carry a terminal escape. Trimmed; `send_empty` when nothing is left,
-/// `send_too_large` above [`MAX_PASTE`] bytes.
+/// carry a terminal escape. White space at the end and blank lines at the
+/// start go; spaces leading the first line stay (the indentation of pasted
+/// code, the space after an `[Image #n]` already in the input). `send_empty`
+/// when nothing is left, `send_too_large` above [`MAX_PASTE`] bytes.
 pub fn paste_payload(text: &str) -> Result<String, &'static str> {
     let text = text.replace("\r\n", "\n").replace('\r', "\n");
     let clean: String = text.chars().filter(|&c| c == '\n' || c == '\t' || !c.is_control()).collect();
-    let clean = clean.trim();
+    let clean = clean.trim_end();
+    // From the start of the first line with text.
+    let first = clean.find(|c: char| !c.is_whitespace()).unwrap_or(clean.len());
+    let clean = &clean[clean[..first].rfind('\n').map_or(0, |i| i + 1)..];
     if clean.is_empty() {
         return Err(crate::errors::SEND_EMPTY);
     }
@@ -1277,7 +1282,9 @@ mod tests {
     #[test]
     fn paste_payload_strips_escapes() {
         assert_eq!(paste_payload("a\x1b[201~b").unwrap(), "\x1b[200~a[201~b\x1b[201~");
-        assert_eq!(paste_payload("  bir\r\niki\rüç\n\tdört \n").unwrap(), "\x1b[200~bir\niki\nüç\n\tdört\x1b[201~");
+        assert_eq!(paste_payload("  bir\r\niki\rüç\n\tdört \n").unwrap(), "\x1b[200~  bir\niki\nüç\n\tdört\x1b[201~");
+        assert_eq!(paste_payload("\n \n    kod();\n").unwrap(), "\x1b[200~    kod();\x1b[201~", "blank lines before go, indentation stays");
+        assert_eq!(paste_payload(" bak").unwrap(), "\x1b[200~ bak\x1b[201~");
         assert_eq!(paste_payload("x\u{7f}\u{9b}31m\u{0}\u{7}y").unwrap(), "\x1b[200~x31my\x1b[201~", "DEL, C1 CSI, NUL, BEL dropped");
         assert_eq!(paste_payload("\x1b[201~\r").unwrap(), "\x1b[200~[201~\x1b[201~");
     }

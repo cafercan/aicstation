@@ -383,6 +383,7 @@ export const ru: Dict = {
   "conv.files": "Прикреплённые файлы",
   "conv.fileMenu": "Файлы",
   "conv.images": "{list} отправится с сообщением",
+  "conv.imagesRemove": "Убрать изображения",
   "conv.pasteFailed": "Не удалось вставить изображение: {err}",
   "conv.lookTitle": "Вид беседы",
   "conv.fontSize": "Размер шрифта",
