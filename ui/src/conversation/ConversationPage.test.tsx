@@ -1098,26 +1098,17 @@ test("image: an image on a later line of the input has no ×", () => {
   expect(screen.queryByRole("button", { name: "Resmi kaldır: [Image #5]" })).toBeNull();
 });
 
-test("image: a picture pasted here previews on its [Image #n]", () => {
-  const urls: string[] = [];
-  const create = vi.spyOn(URL, "createObjectURL").mockImplementation(() => { urls.push(`blob:${urls.length}`); return urls[urls.length - 1]; });
-  const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
-  try {
-    const { box, rerender } = imageBox(imgs(7));
-    // #7 was there before: no preview of its own.
-    fireEvent.paste(box, { clipboardData: clip(["Files"], ["image/png"]) });
-    expect(create).toHaveBeenCalledTimes(1);
-    rerender(imgs(7, 8));
-    const li = screen.getAllByRole("listitem");
-    expect(li[0].querySelector("img")).toBeNull();
-    expect(li[1].querySelector("img")!.getAttribute("src")).toBe("blob:0");
-    // Gone from the input: its preview is freed.
-    rerender(imgs(7));
-    expect(revoke).toHaveBeenCalledWith("blob:0");
-  } finally {
-    create.mockRestore();
-    revoke.mockRestore();
-  }
+test("image: a picture pasted here previews on its [Image #n]", async () => {
+  const { box, rerender } = imageBox(imgs(7));
+  // #7 was there before: no preview of its own.
+  fireEvent.paste(box, { clipboardData: clip(["Files"], ["image/png"]) });
+  rerender(imgs(7, 8));
+  await waitFor(() => expect(screen.getAllByRole("listitem")[1].querySelector("img")).not.toBeNull());
+  const li = screen.getAllByRole("listitem");
+  expect(li[0].querySelector("img")).toBeNull();
+  expect(li[1].querySelector("img")!.getAttribute("src")).toMatch(/^data:image\/png;base64,/);
+  rerender(imgs(7));
+  expect(screen.getAllByRole("listitem")).toHaveLength(1);
 });
 
 test("image: text sent after images is set off by a space", async () => {

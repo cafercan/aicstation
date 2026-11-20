@@ -15,6 +15,9 @@ import type { InputImage } from "./statusLine";
 /** A preview waits this long for its [Image #n]; then the paste is taken as failed. */
 const PREVIEW_WAIT_MS = 30_000;
 
+/** The preview of a pasted picture: its data: URL once read (null without one). */
+type Preview = { url: string | null; at: number };
+
 /**
  * Message box under the conversation of a session in an app terminal. Enter
  * sends the text to that terminal (the backend re-checks everything), Shift+Enter
@@ -220,9 +223,10 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
 
   // Previews: a picture pasted here waits in `queued` for the next new
   // [Image #n] in Claude's input and is shown on it; a paste without the
-  // picture's data (Alt+V, Ctrl+Shift+V) queues none. Freed when its image leaves.
-  const queued = useRef<{ url: string | null; at: number }[]>([]);
-  const previews = useRef(new Map<number, string | null>());
+  // picture's data (Alt+V, Ctrl+Shift+V) has none. A data: URL (the content
+  // security policy allows no blob: images), filled in once read.
+  const queued = useRef<Preview[]>([]);
+  const previews = useRef(new Map<number, Preview>());
   const [, setPreviewTick] = useState(0);
   const imageKey = images.map((i) => i.n).join(",");
   useEffect(() => {
@@ -232,34 +236,35 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
     for (const { n } of images) {
       if (map.has(n)) continue;
       // A queued preview whose paste never arrived is dropped.
-      while (queued.current.length > 0 && now - queued.current[0].at > PREVIEW_WAIT_MS) {
-        const old = queued.current.shift()!;
-        if (old.url) URL.revokeObjectURL(old.url);
-      }
-      map.set(n, queued.current.shift()?.url ?? null);
+      while (queued.current.length > 0 && now - queued.current[0].at > PREVIEW_WAIT_MS) queued.current.shift();
+      map.set(n, queued.current.shift() ?? { url: null, at: now });
       changed = true;
     }
-    for (const [n, url] of map) {
+    for (const n of map.keys()) {
       if (images.some((i) => i.n === n)) continue;
-      if (url) URL.revokeObjectURL(url);
       map.delete(n);
       changed = true;
     }
     if (changed) setPreviewTick((x) => x + 1);
   }, [imageKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => () => {
-    for (const url of previews.current.values()) if (url) URL.revokeObjectURL(url);
-    for (const q of queued.current) if (q.url) URL.revokeObjectURL(q.url);
-  }, []);
 
   /** The clipboard's image into Claude's input; it shows above the box once there. */
   const pasteImage = (picture: Blob | null) => {
     if (waiting) return;
     setErr(null);
-    queued.current.push({ url: picture ? URL.createObjectURL(picture) : null, at: Date.now() });
+    const preview: Preview = { url: null, at: Date.now() };
+    queued.current.push(preview);
+    if (picture) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result !== "string") return;
+        preview.url = reader.result;
+        setPreviewTick((x) => x + 1);
+      };
+      reader.readAsDataURL(picture);
+    }
     pasteImageToSession(sessionId).catch((e: unknown) => {
-      const q = queued.current.pop();
-      if (q?.url) URL.revokeObjectURL(q.url);
+      queued.current = queued.current.filter((q) => q !== preview);
       setErr(t("conv.pasteFailed", { err: errorText(e) }));
     });
   };
@@ -354,7 +359,7 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
         <div className="conv-images">
           <ul aria-label={t("conv.imagesLabel")}>
             {images.map(({ n, at }) => {
-              const url = previews.current.get(n);
+              const url = previews.current.get(n)?.url;
               const name = `[Image #${n}]`;
               return (
                 <li key={n} title={name}>
