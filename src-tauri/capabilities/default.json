@@ -21,6 +21,8 @@
     "allow-adopt-session",
     "allow-send-to-session",
     "allow-paste-image-to-session",
+    "allow-open-system-terminal-in",
+    "allow-delete-session",
     "allow-remove-session-image",
     "allow-open-remote-control",
     "allow-pty-write",

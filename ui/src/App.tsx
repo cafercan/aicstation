@@ -154,6 +154,9 @@ export default function App() {
   const onNew = useCallback(() => {
     openTerminal().then((t) => setView({ terminal: t.id })).catch(() => {});
   }, []);
+  /** "Open in terminal" on a session: a new app terminal in its folder; rejections reach the page. */
+  const onOpenTerminalAt = useCallback((cwd: string) =>
+    openTerminal(cwd).then((t) => setView({ terminal: t.id })), []);
   /** Rejections reach the page, which shows them inline. */
   const onResume = useCallback((sessionId: string, name: string) =>
     openResumeTerminal(sessionId, name).then((t) => { addPending(t.id, sessionId); setView({ terminal: t.id }); }), [addPending]);
@@ -221,7 +224,7 @@ export default function App() {
       onOpen={openSession} onTerminal={(id) => setView({ terminal: id })} />;
   } else if (view === "history") {
     page = <History onOpen={openSession} onResume={onResume} live={snapshot.sessions}
-      onTerminal={(id) => setView({ terminal: id })} />;
+      onTerminal={(id) => setView({ terminal: id })} onOpenTerminalAt={onOpenTerminalAt} />;
   } else if (view === "settings") {
     page = <SettingsPage />;
   } else if ("session" in view && view.tab === "terminal" && view.terminal === undefined) {
@@ -235,7 +238,8 @@ export default function App() {
   } else if ("session" in view) {
     page = <SessionDetailPage key={view.session} sessionId={view.session}
       live={snapshot.sessions.some((s) => s.sessionId === view.session)} onResume={onResume}
-      onBack={() => setView("dashboard")} onTerminal={(id) => setView({ terminal: id })} />;
+      onBack={() => setView("dashboard")} onTerminal={(id) => setView({ terminal: id })}
+      onOpenTerminalAt={onOpenTerminalAt} onDeleted={() => setView("history")} />;
   } else if (!terminals.some((t) => t.id === termId)) {
     page = (
       <div className="empty">

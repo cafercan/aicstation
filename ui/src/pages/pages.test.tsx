@@ -643,3 +643,78 @@ test("pid 0 kartı kapalı sayılır: ▶ Devam et adıyla çağrılır", () => 
   fireEvent.click(screen.getByRole("button", { name: "▶ Devam et" }));
   expect(onResume).toHaveBeenCalledWith("s1", "demo");
 });
+
+// Folder and conversation actions
+
+test("oturum sayfası: klasör uygulama terminalinde ya da dış terminalde açılır; hata satır içinde", async () => {
+  invoke.mockImplementation(async (cmd: string) =>
+    cmd === "open_system_terminal_in" ? Promise.reject("wt_not_found") : detail());
+  const onOpenTerminalAt = vi.fn(async () => {});
+  render(<SessionDetailPage sessionId="s1" onBack={() => {}} onOpenTerminalAt={onOpenTerminalAt} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Terminalde aç" }));
+  expect(onOpenTerminalAt).toHaveBeenCalledWith("C:/x/demo");
+  fireEvent.click(screen.getByRole("button", { name: "Dış terminalde aç" }));
+  expect(invoke).toHaveBeenCalledWith("open_system_terminal_in", { cwd: "C:/x/demo" });
+  expect(await screen.findByText("Terminal açılamadı: Windows Terminal bulunamadı")).toBeTruthy();
+  // A running session's conversation is not deleted from here.
+  expect(screen.queryByRole("button", { name: "Sohbeti sil" })).toBeNull();
+});
+
+test("oturum sayfası: kapanmış oturumun sohbeti onaydan sonra silinir, vazgeçince dokunulmaz", async () => {
+  invoke.mockImplementation(async (cmd: string) => (cmd === "delete_session" ? undefined : closed()));
+  const onDeleted = vi.fn();
+  render(<><SessionDetailPage sessionId="s1" onBack={() => {}} onDeleted={onDeleted} /><ConfirmHost /></>);
+  fireEvent.click(await screen.findByRole("button", { name: "Sohbeti sil" }));
+  expect(await answerConfirm(false)).toContain("“demo”");
+  expect(invoke.mock.calls.some((c) => c[0] === "delete_session")).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Sohbeti sil" }));
+  await answerConfirm(true);
+  await waitFor(() => expect(onDeleted).toHaveBeenCalled());
+  expect(invoke).toHaveBeenCalledWith("delete_session", { sessionId: "s1" });
+});
+
+test("Geçmiş: sağ tık menüsü devam ettirir, klasörü ve terminalleri açar, sohbeti siler", async () => {
+  let rows = [row("a", "C:/a", true), row("b", "C:/b", true)];
+  invoke.mockImplementation(async (cmd: string, args: { sessionId?: string }) => {
+    if (cmd === "get_history") return { rows, todayCost: 0, todayTokens: 0, todayComplete: true, indexing: false };
+    if (cmd === "delete_session") { rows = rows.filter((r) => r.sessionId !== args.sessionId); return undefined; }
+    return undefined;
+  });
+  const onResume = vi.fn(async () => {});
+  const onOpenTerminalAt = vi.fn(async () => {});
+  render(<><History onOpen={() => {}} onResume={onResume} onOpenTerminalAt={onOpenTerminalAt} /><ConfirmHost /></>);
+  const rowOf = async (name: string) => (await screen.findByText(name)).closest("tr")!;
+  const open = async () => {
+    fireEvent.contextMenu(await rowOf("ad-a"), { clientX: 30, clientY: 40 });
+    return screen.getByRole("menu", { name: "Oturum işlemleri" });
+  };
+  const items = (await open()).querySelectorAll("button");
+  expect([...items].map((b) => b.textContent)).toEqual(
+    ["▶ Devam et", "Klasörü aç", "Terminalde aç", "Dış terminalde aç", "Sohbeti sil"]);
+  fireEvent.click(items[0]);
+  expect(onResume).toHaveBeenCalledWith("a", "ad-a");
+  fireEvent.click(within(await open()).getByText("Klasörü aç"));
+  expect(invoke).toHaveBeenCalledWith("open_folder", { path: "C:/a" });
+  fireEvent.click(within(await open()).getByText("Terminalde aç"));
+  expect(onOpenTerminalAt).toHaveBeenCalledWith("C:/a");
+  fireEvent.click(within(await open()).getByText("Dış terminalde aç"));
+  expect(invoke).toHaveBeenCalledWith("open_system_terminal_in", { cwd: "C:/a" });
+  fireEvent.click(within(await open()).getByText("Sohbeti sil"));
+  await answerConfirm(true);
+  await waitFor(() => expect(screen.queryByText("ad-a")).toBeNull());
+  expect(invoke).toHaveBeenCalledWith("delete_session", { sessionId: "a" });
+  expect(screen.getByText("ad-b")).toBeTruthy();
+});
+
+test("Geçmiş: satır menüsü klavyeyle de açılır (Menü tuşu, Shift+F10)", async () => {
+  invoke.mockResolvedValue({ rows: [row("a", "C:/a", true)], todayCost: 0, todayTokens: 0, todayComplete: true, indexing: false });
+  render(<History onOpen={() => {}} />);
+  const tr = (await screen.findByText("ad-a")).closest("tr")!;
+  fireEvent.keyDown(tr, { key: "F10", shiftKey: true });
+  const menu = screen.getByRole("menu");
+  expect(document.activeElement).toBe(within(menu).getByText("Klasörü aç"));
+  fireEvent.keyDown(window, { key: "Escape" });
+  expect(screen.queryByRole("menu")).toBeNull();
+  fireEvent.keyDown(tr, { key: "ContextMenu" });
+  expect(screen.getByRole("menu")).toBeTruthy();
+});

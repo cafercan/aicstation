@@ -1,7 +1,8 @@
 //! "Windows Terminal'de aç": starts a new PowerShell tab in the most recent
-//! Windows Terminal window, in the user's home directory. Nothing comes from
-//! the UI: the program is resolved from `%LOCALAPPDATA%` (fallback PATH) and
-//! the arguments are fixed. No shell is involved, so nothing is interpolated.
+//! Windows Terminal window, in the user's home directory or in a session's
+//! folder the caller checked. The program is resolved from `%LOCALAPPDATA%`
+//! (fallback PATH) and the arguments are fixed. No shell is involved, so
+//! nothing is interpolated.
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
@@ -41,7 +42,12 @@ pub fn wt_program(local_app_data: Option<&OsStr>, exists: impl Fn(&Path) -> bool
 /// Spawns Windows Terminal with the fixed arguments; takes no input.
 pub fn open() -> Result<(), String> {
     let home = std::env::var_os("USERPROFILE").ok_or(errors::WT_HOME_MISSING)?;
-    let args = wt_args(Path::new(&home), &crate::pty::powershell_exe())?;
+    open_in(Path::new(&home))
+}
+
+/// A new PowerShell tab in `dir` (absolute; checked by the caller).
+pub fn open_in(dir: &Path) -> Result<(), String> {
+    let args = wt_args(dir, &crate::pty::powershell_exe())?;
     // The alias is a reparse point that `metadata` may fail to follow.
     let program = wt_program(std::env::var_os("LOCALAPPDATA").as_deref(), |p| {
         std::fs::symlink_metadata(p).is_ok()

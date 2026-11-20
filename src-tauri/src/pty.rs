@@ -306,9 +306,11 @@ impl PtyManager {
     }
 
     /// A shell (see `integration::launch`) in the home dir.
+    /// The shell in `cwd` (a folder the caller checked), else the home folder.
     pub fn spawn_shell(
         &self,
         launch: &crate::integration::Launch,
+        cwd: Option<&Path>,
         cols: u16,
         rows: u16,
         on_output: impl Fn(&[u8]) -> bool + Send + 'static,
@@ -316,8 +318,8 @@ impl PtyManager {
     ) -> Result<PtyInfo, String> {
         let mut cmd = CommandBuilder::new(&launch.program);
         cmd.args(&launch.args);
-        if let Some(home) = crate::shell::home_dir() {
-            cmd.cwd(home);
+        if let Some(dir) = cwd.map(Path::to_path_buf).or_else(crate::shell::home_dir) {
+            cmd.cwd(dir);
         }
         self.spawn_builder(cmd, &launch.env, cols, rows, on_output, on_exit)
     }

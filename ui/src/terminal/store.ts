@@ -1,4 +1,5 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { folderName } from "../format";
 import { askConfirm } from "../components/ConfirmDialog";
 import { ClipboardAddon } from "@xterm/addon-clipboard";
 import { FitAddon } from "@xterm/addon-fit";
@@ -95,9 +96,13 @@ let spawning = 0;
 type Spawn = (cols: number, rows: number, onOutput: Channel<number[]>, onExit: Channel<number>) => Promise<PtyInfo>;
 
 /** Starts a shell PTY; the xterm instance lives here so it survives tab switches. */
-export function openTerminal(): Promise<TerminalEntry> {
-  return startTerminal((cols, rows, onOutput, onExit) =>
-    invoke<PtyInfo>("pty_spawn", { cols, rows, onOutput, onExit }));
+/** New terminal with the chosen shell, in the home folder or in `cwd` (a known session's folder, named after it). */
+export function openTerminal(cwd?: string): Promise<TerminalEntry> {
+  return startTerminal(
+    (cols, rows, onOutput, onExit) =>
+      invoke<PtyInfo>("pty_spawn", { cols, rows, onOutput, onExit, ...(cwd ? { cwd } : {}) }),
+    cwd ? { text: folderName(cwd) || cwd } : undefined,
+  );
 }
 
 /**

@@ -121,6 +121,9 @@ pub const SEND_NOT_SUBMITTED: &str = "send_not_submitted";
 pub const REMOTE_OFF: &str = "remote_off";
 /// `url_open_failed:<OS message>`: the browser could not be started.
 pub const URL_OPEN_FAILED: &str = "url_open_failed";
+/// `session_delete_failed:<OS message>`: a closed session's files could not
+/// be moved to the recycle bin.
+pub const SESSION_DELETE_FAILED: &str = "session_delete_failed";
 
 #[cfg(test)]
 pub const ALL: &[&str] = &[
@@ -135,6 +138,7 @@ pub const ALL: &[&str] = &[
     ADOPT_KILL_FAILED, ADOPT_RESUME_FAILED,
     CONV_UNAVAILABLE, CONV_IMAGE_GONE,
     SEND_EMPTY, SEND_TOO_LARGE, SEND_WAITING, SEND_NOT_EMBEDDED, SEND_NOT_SUBMITTED, REMOTE_OFF, URL_OPEN_FAILED,
+    SESSION_DELETE_FAILED,
 ];
 
 #[cfg(test)]

@@ -218,7 +218,15 @@ closed session in its own folder.
   On Linux, **Open system terminal** opens `$TERMINAL` or the first known
   terminal emulator installed.
 - **Open folder** opens a session's project folder in Explorer (the file
-  manager on Linux).
+  manager on Linux). Next to it, **Open in terminal** opens the folder in a new
+  app terminal tab and **Open in system terminal** in Windows Terminal (your
+  terminal emulator on Linux).
+- **Delete conversation** (a closed session's page) moves its transcript, with
+  its subagent transcripts and tool results, to the Recycle Bin (Trash on
+  Linux) after asking, and returns to History; it can be restored from there.
+- **Right-click a History row** (or press the Menu key / Shift+F10 on it) for
+  the same actions: Resume, Open folder, Open in terminal, Open in system
+  terminal and Delete conversation.
 
 <p align="center"><img src="docs/images/terminal-settings.png" alt="Settings: shell, butaglyph prompt and terminal appearance with a live preview" width="560"></p>
 
@@ -298,8 +306,10 @@ These are guarantees of the code in this repository:
 
 - **Read-only access to Claude Code's files.** AI C-Station reads
   `~/.claude` (or `CLAUDE_CONFIG_DIR` if it is set) and never writes there,
-  except for one setting, Show Claude usage limits (below). It never opens
-  `sessions/*.key` files.
+  except for one setting, Show Claude usage limits (below), and Delete
+  conversation, which you start and confirm yourself: it moves a closed
+  session's files to the Recycle Bin, never deletes them outright. It never
+  opens `sessions/*.key` files.
 - **The app makes no network requests.** It has no telemetry, no analytics, no
   auto-updater and no listening ports. The WebView2 runtime and Windows may
   make their own connections, outside the app's control. Programs you run in
@@ -535,7 +545,10 @@ Claude ve Claude Code, Anthropic'in ticari markalarıdır.
   branch rozeti; arama (branch dahil) ve durum filtresi.
 - **Oturum ayrıntısı:** alt ajan ağacı, son tool çağrıları, oturumun ve alt
   ajanlarının değiştirdiği dosyalar, "Sekmeye git"
-  (gömülü terminal ya da Windows Terminal sekmesi), kapanmış oturumu sürdürme.
+  (gömülü terminal ya da Windows Terminal sekmesi), kapanmış oturumu sürdürme;
+  "Klasörü aç", "Terminalde aç" (uygulamada yeni terminal sekmesi), "Dış
+  terminalde aç" (Windows Terminal) ve kapanmış oturumda "Sohbeti sil" (onay
+  sorulur; dosyalar Geri Dönüşüm Kutusu'na taşınır, oradan geri alınabilir).
 - **Konuşma sekmesi:** oturumun konuşması transkriptten okunur (Terminal |
   Konuşma | Bilgi); Claude'un gösterdiği görseller küçük resim olarak görünür
   ve açılır pencerede büyür; orada Ctrl+fare tekerleği (ya da +, - ve 0)
@@ -576,7 +589,8 @@ Claude ve Claude Code, Anthropic'in ticari markalarıdır.
 - **Geçmiş:** önbellekli dizin, kullanım grafikleri (token, tahmini $; 7/30/90 gün, projeler,
   modeller; çalışan oturumlar dahil), canlı ve geçmiş oturumlarda içerikte
   arama (50 sonuç, 8 sn, 2 GiB ya da iptalde durur), "Devam et" ile
-  `claude --resume`.
+  `claude --resume`. Satıra sağ tıklayınca (ya da Menü tuşu / Shift+F10) aynı
+  işlemler: Devam et, Klasörü aç, Terminalde aç, Dış terminalde aç, Sohbeti sil.
 - **Gömülü terminal:** gerçek kabuk (Windows'ta PowerShell, Linux'ta `$SHELL`;
   ayarlardan bash, zsh, fish, pwsh...), WebGL ile çizim, 18 renk şeması,
   yazı tipi ve imleç ayarları (canlı önizlemeli), isteğe bağlı [butaglyph]
@@ -595,7 +609,9 @@ Claude ve Claude Code, Anthropic'in ticari markalarıdır.
 - **Klavye kısayolları** (fiziksel tuş konumları; her klavye düzeninde
   çalışır), 8 arayüz dili ve 6 tema.
 
-**Gizlilik:** `~/.claude` yalnızca okunur (`sessions/*.key` hiç açılmaz).
+**Gizlilik:** `~/.claude` yalnızca okunur (`sessions/*.key` hiç açılmaz); tek
+istisnalar "Claude kullanım limitlerini göster" ayarı ve sizin başlatıp
+onayladığınız "Sohbeti sil" (dosyalar silinmez, Geri Dönüşüm Kutusu'na taşınır).
 Uygulamanın kendisi ağ isteği yapmaz; telemetri ve otomatik güncelleme yoktur.
 Yalnızca bir oturumun Remote Control işaretine tıklayınca `claude.ai/code/<oturum>`
 sistem tarayıcısında açılır; uygulama yine kendisi istek yapmaz.

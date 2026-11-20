@@ -1,6 +1,9 @@
 import { pressable } from "../a11y";
 import { useEffect, useRef, useState } from "react";
-import { getSessionDetail, onSnapshot, openFolder, type AgentNode, type SessionDetail, type ToolCall } from "../api";
+import {
+  deleteSession, getSessionDetail, onSnapshot, openFolder, openSystemTerminalIn, type AgentNode, type SessionDetail, type ToolCall,
+} from "../api";
+import { askConfirm } from "../components/ConfirmDialog";
 import {
   fmtBreakdown, fmtContext, fmtElapsed, fmtEstCost, fmtTokens, relPath, statusColor, statusKind, statusLabel, usageSum,
 } from "../format";
@@ -17,6 +20,10 @@ interface Props {
   live?: boolean;
   /** "▶ Resume" on a closed session; a rejection is shown inline. */
   onResume?: (sessionId: string, name: string) => Promise<unknown>;
+  /** "Open in terminal": a new app terminal in the folder; a rejection is shown inline. */
+  onOpenTerminalAt?: (cwd: string) => Promise<unknown>;
+  /** A closed session's conversation was deleted (its page is gone). */
+  onDeleted?: () => void;
 }
 
 const MAIN = "__main__";
@@ -88,13 +95,14 @@ function ToolResult({ state }: { state: ToolCall["state"] }) {
   return <span className="y">{t("detail.callRunning")}</span>;
 }
 
-export default function SessionDetailPage({ sessionId, onBack, onTerminal, live = false, onResume }: Props) {
+export default function SessionDetailPage({ sessionId, onBack, onTerminal, live = false, onResume, onOpenTerminalAt, onDeleted }: Props) {
   const tx = useT();
   const [detail, setDetail] = useState<SessionDetail | null | undefined>(undefined);
   const [sel, setSel] = useState(MAIN);
   const [folderErr, setFolderErr] = useState<string | null>(null);
   const [resumeErr, setResumeErr] = useState<{ text: string; terminal: number | null } | null>(null);
   const [resuming, setResuming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [gotoErr, setGotoErr] = useState<string | null>(null);
   const [gotoNote, setGotoNote] = useState<string | null>(null);
   const liveRef = useRef(live);
@@ -197,6 +205,26 @@ export default function SessionDetailPage({ sessionId, onBack, onTerminal, live 
             setFolderErr(null);
             openFolder(card.cwd).catch((e) => setFolderErr(tx("detail.folderFailed", { err: errorText(e) })));
           }}>{tx("detail.openFolder")}</button>
+          {onOpenTerminalAt && (
+            <button className="btn" title={tx("detail.openTerminalHint")} onClick={() => {
+              setFolderErr(null);
+              onOpenTerminalAt(card.cwd).catch((e) => setFolderErr(tx("detail.terminalFailed", { err: errorText(e) })));
+            }}>{tx("detail.openTerminal")}</button>
+          )}
+          <button className="btn" title={tx("detail.openSystemTerminalHint")} onClick={() => {
+            setFolderErr(null);
+            openSystemTerminalIn(card.cwd).catch((e) => setFolderErr(tx("detail.terminalFailed", { err: errorText(e) })));
+          }}>{tx("detail.openSystemTerminal")}</button>
+          {kind === "closed" && !live && onDeleted && (
+            <button className="btn danger" disabled={deleting} onClick={async () => {
+              if (deleting || !(await askConfirm(tx("detail.deleteConfirm", { name: card.name })))) return;
+              setFolderErr(null);
+              setDeleting(true);
+              deleteSession(card.sessionId)
+                .then(onDeleted, (e) => setFolderErr(tx("detail.deleteFailed", { err: errorText(e) })))
+                .finally(() => setDeleting(false));
+            }}>{tx("detail.delete")}</button>
+          )}
         </div>
       </div>
       {folderErr && <div className="meta r" role="alert">{folderErr}</div>}

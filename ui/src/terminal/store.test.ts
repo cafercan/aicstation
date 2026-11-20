@@ -307,3 +307,12 @@ test("openAdoptTerminal_invokes_adopt_session", async () => {
   expect(terminalName(t, [])).toBe("projem");
   expect(getTerminals().map((x) => x.id)).toEqual([21]);
 });
+
+test("a terminal opened in a session's folder sends the folder and is named after it", async () => {
+  const t = await openTerminal("C:/isler/pusula");
+  expect(invoke).toHaveBeenCalledWith("pty_spawn", expect.objectContaining({ cwd: "C:/isler/pusula" }));
+  expect(terminalName(t, [])).toBe("pusula");
+  await openTerminal();
+  const spawns = invoke.mock.calls.filter(([c]) => c === "pty_spawn");
+  expect("cwd" in (spawns[spawns.length - 1][1] as Record<string, unknown>)).toBe(false);
+});

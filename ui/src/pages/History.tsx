@@ -1,6 +1,11 @@
 import { pressable } from "../a11y";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { cancelSearch, getHistory, searchHistory, type HistorySummary, type HistoryView, type SearchOutcome, type SessionCard } from "../api";
+import {
+  cancelSearch, deleteSession, getHistory, openFolder, openSystemTerminalIn, searchHistory,
+  type HistoryRow, type HistorySummary, type HistoryView, type SearchOutcome, type SessionCard,
+} from "../api";
+import { askConfirm } from "../components/ConfirmDialog";
+import ContextMenu, { type MenuItem } from "../components/ContextMenu";
 import CostCharts from "../components/CostCharts";
 import { filterHistory, rowCwd, type HistoryFilter, type HistorySort } from "../filter";
 import { fmtBreakdown, fmtElapsed, fmtEstCost, fmtTokens, usageSum } from "../format";
@@ -17,7 +22,12 @@ interface Props {
   onTerminal?: (id: number) => void;
   /** The running sessions: a content-search hit in one shows its name. */
   live?: SessionCard[];
+  /** "Open in terminal" from a row's menu: a new app terminal in the folder. */
+  onOpenTerminalAt?: (cwd: string) => Promise<unknown>;
 }
+
+/** The keyboard's way to a row's menu: the Menu key or Shift+F10. */
+const menuKey = (e: React.KeyboardEvent) => e.key === "ContextMenu" || (e.shiftKey && e.key === "F10");
 
 const NO_LIVE: SessionCard[] = [];
 
@@ -130,12 +140,14 @@ function HistoryTokens({ s }: { s: HistorySummary }) {
   );
 }
 
-export default function History({ onOpen, onResume, onTerminal, live = NO_LIVE }: Props) {
+export default function History({ onOpen, onResume, onTerminal, live = NO_LIVE, onOpenTerminalAt }: Props) {
   const t = useT();
   const [view, setView] = useState<HistoryView | null>(null);
   const [rowErr, setRowErr] = useState<{ id: string; msg: string; terminal: number | null } | null>(null);
   /** Rows whose resume call is still pending (button disabled). */
   const [pending, setPending] = useState<Set<string>>(() => new Set());
+  /** A row's right-click menu: where, and the row it acts on. */
+  const [menu, setMenu] = useState<{ x: number; y: number; row: HistoryRow } | null>(null);
   const f = filterStore.use();
   const set = (p: Partial<typeof f>) => filterStore.set({ ...filterStore.get(), ...p });
   const searchRef = useRef<HTMLInputElement>(null);
@@ -152,6 +164,49 @@ export default function History({ onOpen, onResume, onTerminal, live = NO_LIVE }
   }, [indexing]);
 
   if (!view) return <div className="empty"><p>{t("common.loading")}</p></div>;
+
+  const rowError = (r: HistoryRow, msg: string) => setRowErr({ id: r.sessionId, msg, terminal: null });
+  const resume = (r: HistoryRow, name: string) => {
+    if (!onResume || pending.has(r.sessionId)) return;
+    setRowErr(null);
+    setPending((p) => new Set(p).add(r.sessionId));
+    onResume(r.sessionId, name)
+      .catch((err) => {
+        const e = resumeError(err);
+        setRowErr({ id: r.sessionId, msg: e.text, terminal: e.terminal });
+      })
+      .finally(() => setPending((p) => { const n = new Set(p); n.delete(r.sessionId); return n; }));
+  };
+  /** Moves the conversation to the recycle bin after asking; the list reloads without it. */
+  const remove = async (r: HistoryRow, name: string) => {
+    if (!(await askConfirm(t("detail.deleteConfirm", { name })))) return;
+    setRowErr(null);
+    deleteSession(r.sessionId)
+      .then(() => getHistory().then(setView), (e) => rowError(r, t("detail.deleteFailed", { err: errorText(e) })))
+      .catch(() => {});
+  };
+  const menuItems = (r: HistoryRow): MenuItem[] => {
+    const name = r.summary?.name ?? r.name;
+    const cwd = rowCwd(r);
+    const items: MenuItem[] = [];
+    if (onResume) items.push({ label: t("hist.resume"), disabled: pending.has(r.sessionId), onSelect: () => resume(r, name) });
+    items.push({
+      label: t("detail.openFolder"), disabled: !cwd,
+      onSelect: () => { openFolder(cwd).catch((e) => rowError(r, t("detail.folderFailed", { err: errorText(e) }))); },
+    });
+    if (onOpenTerminalAt) {
+      items.push({
+        label: t("detail.openTerminal"), disabled: !cwd,
+        onSelect: () => { onOpenTerminalAt(cwd).catch((e) => rowError(r, t("detail.terminalFailed", { err: errorText(e) }))); },
+      });
+    }
+    items.push({
+      label: t("detail.openSystemTerminal"), disabled: !cwd,
+      onSelect: () => { openSystemTerminalIn(cwd).catch((e) => rowError(r, t("detail.terminalFailed", { err: errorText(e) }))); },
+    });
+    items.push({ label: t("detail.delete"), danger: true, separated: true, onSelect: () => { void remove(r, name); } });
+    return items;
+  };
 
   const folders = [...new Set(view.rows.map(rowCwd).filter((c) => c))].sort();
   const rows = filterHistory(view.rows.filter((r) => !f.folder || rowCwd(r) === f.folder), f);
@@ -195,8 +250,19 @@ export default function History({ onOpen, onResume, onTerminal, live = NO_LIVE }
             {rows.map((r) => {
               const s = r.summary;
               const name = s?.name ?? r.name;
+              const press = pressable(() => onOpen(r.sessionId), null);
               return (
-                <tr key={r.sessionId} {...pressable(() => onOpen(r.sessionId), null)}>
+                <tr key={r.sessionId} {...press}
+                  onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, row: r }); }}
+                  onKeyDown={(e) => {
+                    if (e.target === e.currentTarget && menuKey(e)) {
+                      e.preventDefault();
+                      const box = e.currentTarget.getBoundingClientRect();
+                      setMenu({ x: box.left + 24, y: box.bottom, row: r });
+                      return;
+                    }
+                    press.onKeyDown(e);
+                  }}>
                   <td>{new Date(r.modifiedMs).toLocaleString(locale())}</td>
                   <td>
                     {name}
@@ -211,15 +277,7 @@ export default function History({ onOpen, onResume, onTerminal, live = NO_LIVE }
                     {onResume && (
                       <button className="btn" disabled={pending.has(r.sessionId)} onClick={(e) => {
                         e.stopPropagation();
-                        if (pending.has(r.sessionId)) return;
-                        setRowErr(null);
-                        setPending((p) => new Set(p).add(r.sessionId));
-                        onResume(r.sessionId, name)
-                          .catch((err) => {
-                            const e = resumeError(err);
-                            setRowErr({ id: r.sessionId, msg: e.text, terminal: e.terminal });
-                          })
-                          .finally(() => setPending((p) => { const n = new Set(p); n.delete(r.sessionId); return n; }));
+                        resume(r, name);
                       }}>{t("hist.resume")}</button>
                     )}
                     {rowErr?.id === r.sessionId && (
@@ -239,6 +297,9 @@ export default function History({ onOpen, onResume, onTerminal, live = NO_LIVE }
             })}
           </tbody>
         </table>
+      )}
+      {menu && (
+        <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.row)} label={t("hist.menu")} onClose={() => setMenu(null)} />
       )}
     </div>
   );

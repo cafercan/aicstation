@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-open-system-terminal-in"
+description = "Enables the open_system_terminal_in command without any pre-configured scope."
+commands.allow = ["open_system_terminal_in"]
+
+[[permission]]
+identifier = "deny-open-system-terminal-in"
+description = "Denies the open_system_terminal_in command without any pre-configured scope."
+commands.deny = ["open_system_terminal_in"]

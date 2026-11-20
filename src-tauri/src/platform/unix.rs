@@ -110,11 +110,17 @@ pub(crate) fn terminal_program(terminal_env: Option<&OsStr>, path: Option<&OsStr
 /// Opens the user's terminal emulator in the home folder. Takes nothing from
 /// the UI. Every listed emulator starts in its own working directory.
 pub fn open_external_terminal() -> Result<(), String> {
+    let home = std::env::var_os("HOME").map(PathBuf::from).filter(|h| h.is_absolute() && h.is_dir());
+    open_external_terminal_at(home.as_deref())
+}
+
+/// The terminal emulator started in `dir` (a session folder the caller
+/// checked); the emulators start in their own working directory.
+pub fn open_external_terminal_at(dir: Option<&Path>) -> Result<(), String> {
     let path: Option<OsString> = std::env::var_os("PATH");
     let program = terminal_program(std::env::var_os("TERMINAL").as_deref(), path.as_deref())
         .ok_or(crate::errors::TERMINAL_NOT_FOUND)?;
-    let home = std::env::var_os("HOME").map(PathBuf::from).filter(|h| h.is_absolute() && h.is_dir());
-    spawn_detached(&program, &[], home.as_deref())
+    spawn_detached(&program, &[], dir)
         .map_err(|e| crate::errors::with(crate::errors::TERMINAL_OPEN_FAILED, e))
 }
 

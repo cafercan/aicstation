@@ -282,6 +282,9 @@ table.hist td .est { display: block; font-size: 11px; }
   text-align: left; background: none; border: 0; border-radius: 4px; color: var(--text); padding: 6px 10px; font: inherit; font-size: 1em; cursor: pointer;
 }
 .conv-menu button:hover, .conv-menu button:focus-visible { background: var(--selected); color: var(--strong); outline: none; }
+.conv-menu button.danger { color: var(--danger); }
+.conv-menu button:disabled { opacity: .45; cursor: default; background: none; }
+.conv-menu .menu-sep { height: 1px; margin: 4px 6px; background: var(--border); }
 .conv-viewer-zoom {
   position: absolute; top: 20px; right: 64px; padding: 3px 8px; border-radius: 4px;
   background: rgba(0, 0, 0, .55); color: #fff; font-size: 12px; font-variant-numeric: tabular-nums; pointer-events: none;

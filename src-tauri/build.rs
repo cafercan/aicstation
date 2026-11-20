@@ -17,6 +17,8 @@ const COMMANDS: &[&str] = &[
     "adopt_session",
     "send_to_session",
     "paste_image_to_session",
+    "open_system_terminal_in",
+    "delete_session",
     "remove_session_image",
     "open_remote_control",
     "pty_write",

@@ -282,6 +282,10 @@ export const butaglyphPreview = (preset: string) => invoke<string[]>("butaglyph_
 /** butaglyph's own config editor in the browser; rejects with an error code. */
 export const openButaglyphEditor = () => invoke<void>("open_butaglyph_editor");
 export const openSystemTerminal = () => invoke<void>("open_system_terminal");
+/** The system terminal (Windows Terminal on Windows) in a known session's folder. */
+export const openSystemTerminalIn = (cwd: string) => invoke<void>("open_system_terminal_in", { cwd });
+/** "Delete conversation": a closed session's files go to the recycle bin. */
+export const deleteSession = (sessionId: string) => invoke<void>("delete_session", { sessionId });
 
 export async function onSnapshot(cb: (s: Snapshot) => void): Promise<Unlisten> {
   return listen<Snapshot>("snapshot", (e) => cb(e.payload));

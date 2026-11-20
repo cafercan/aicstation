@@ -52,7 +52,7 @@ mod linux;
 #[cfg(unix)]
 mod unix;
 #[cfg(unix)]
-pub use unix::{open_external_terminal, open_folder, open_url};
+pub use unix::{open_external_terminal, open_external_terminal_at, open_folder, open_url};
 #[cfg(unix)]
 pub(crate) use unix::find_program;
 

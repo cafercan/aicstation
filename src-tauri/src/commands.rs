@@ -660,6 +660,54 @@ impl AppState {
         known
     }
 
+    /// A known session's folder to start a terminal in, checked like
+    /// `open_folder` (no network path, no link on the way), without the
+    /// trailing separator `open_folder` adds for explorer.
+    pub fn terminal_dir(&self, cwd: &str) -> Result<PathBuf, String> {
+        let dir = validate_open_folder(cwd, &self.known_cwds())?;
+        let s = dir.to_string_lossy();
+        // Keep a drive root's separator: "C:" alone is the drive's current folder.
+        let trimmed = s.trim_end_matches(['\\', '/']);
+        Ok(if trimmed.len() < s.len() && !trimmed.is_empty() && !trimmed.ends_with(':') {
+            PathBuf::from(trimmed)
+        } else {
+            dir
+        })
+    }
+
+    /// "Delete conversation": moves a closed session's transcript and its
+    /// folder of subagent transcripts and tool results (`<id>/` next to it)
+    /// to the recycle bin with `remove`, then drops it from History. Refused
+    /// for a running session and one an app terminal is resuming.
+    pub fn delete_session_with(
+        &self,
+        id: &str,
+        resuming: bool,
+        remove: impl FnOnce(&[PathBuf]) -> Result<(), String>,
+    ) -> Result<(), String> {
+        if !is_session_id(id) {
+            return Err(errors::SESSION_INVALID.into());
+        }
+        if resuming || self.fresh_live(id).is_ok() || self.live_ids().contains(id) {
+            return Err(errors::SESSION_LIVE.into());
+        }
+        let path = Locator::new(self.projects_dir.clone()).transcript(id).ok_or(errors::SESSION_UNKNOWN)?;
+        if !path.starts_with(&self.projects_dir) {
+            return Err(errors::SESSION_UNKNOWN.into());
+        }
+        let mut targets = vec![path.clone()];
+        if let Some(dir) = path.parent().map(|p| p.join(id)).filter(|d| d.is_dir()) {
+            targets.push(dir);
+        }
+        remove(&targets).map_err(|e| errors::with(errors::SESSION_DELETE_FAILED, e))?;
+        if lock(&self.closed_cache).as_ref().is_some_and(|((p, _, _), _)| *p == path) {
+            *lock(&self.closed_cache) = None;
+        }
+        lock(&self.history_rows).retain(|r| r.session_id != id);
+        self.rescan_history();
+        Ok(())
+    }
+
     /// Whether a session folder has modified tracked files. Only a known
     /// session's local folder is looked at, checked like `open_folder`: a UNC
     /// path or network drive would make an outbound SMB request.
@@ -1098,6 +1146,68 @@ mod tests {
         assert_eq!(state.session_files(CLOSED_ID, "x").unwrap_err(), errors::SESSION_NOT_LIVE);
         assert_eq!(state.session_files("../x", "x").unwrap_err(), errors::SESSION_INVALID);
         assert!(state.session_files(LIVE_ID, "a\nb").unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_terminal_starts_only_in_a_known_local_session_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, probe) = two_sessions(tmp.path(), 1);
+        let work = tmp.path().join("work");
+        fs::create_dir_all(&work).unwrap();
+        let reg = serde_json::json!({"pid":4242,"sessionId":LIVE_ID,"cwd":work.to_string_lossy(),"procStart":"777","status":"idle"});
+        fs::write(claude.join("sessions").join("4242.json"), reg.to_string()).unwrap();
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(probe));
+        state.get_snapshot();
+        let w = work.to_string_lossy().into_owned();
+        assert_eq!(state.terminal_dir(&w).unwrap(), work, "no trailing separator");
+        let other = tmp.path().to_string_lossy().into_owned();
+        assert_eq!(state.terminal_dir(&other).unwrap_err(), errors::FOLDER_UNKNOWN);
+        assert_eq!(state.terminal_dir(r"\\host\share").unwrap_err(), errors::FOLDER_UNKNOWN);
+    }
+
+    #[test]
+    fn deleting_a_closed_session_moves_its_files_and_drops_its_row() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, probe) = two_sessions(tmp.path(), 1);
+        let proj = claude.join("projects").join("C--demo");
+        fs::create_dir_all(proj.join(CLOSED_ID).join("subagents")).unwrap();
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(probe));
+        state.get_snapshot();
+        state.rescan_history();
+        while state.index_step(Duration::from_secs(5)) {}
+        assert!(state.get_history().rows.iter().any(|r| r.session_id == CLOSED_ID));
+
+        // A failed move changes nothing.
+        let e = state.delete_session_with(CLOSED_ID, false, |_| Err("in use".into())).unwrap_err();
+        assert_eq!(e, "session_delete_failed:in use");
+        assert!(state.get_history().rows.iter().any(|r| r.session_id == CLOSED_ID));
+
+        let mut moved = Vec::new();
+        state
+            .delete_session_with(CLOSED_ID, false, |paths| {
+                moved = paths.to_vec();
+                for p in paths {
+                    if p.is_dir() { fs::remove_dir_all(p) } else { fs::remove_file(p) }.map_err(|e| e.to_string())?;
+                }
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(moved, [proj.join(format!("{CLOSED_ID}.jsonl")), proj.join(CLOSED_ID)]);
+        assert!(!state.get_history().rows.iter().any(|r| r.session_id == CLOSED_ID));
+        assert!(proj.join(format!("{LIVE_ID}.jsonl")).is_file(), "other sessions stay");
+        assert_eq!(state.delete_session_with(CLOSED_ID, false, |_| Ok(())).unwrap_err(), errors::SESSION_UNKNOWN);
+    }
+
+    #[test]
+    fn a_running_or_resuming_session_is_not_deleted() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, probe) = two_sessions(tmp.path(), 1);
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(probe));
+        state.get_snapshot();
+        let never = |_: &[PathBuf]| -> Result<(), String> { panic!("nothing may be moved") };
+        assert_eq!(state.delete_session_with(LIVE_ID, false, never).unwrap_err(), errors::SESSION_LIVE);
+        assert_eq!(state.delete_session_with(CLOSED_ID, true, never).unwrap_err(), errors::SESSION_LIVE);
+        assert_eq!(state.delete_session_with("../x", false, never).unwrap_err(), errors::SESSION_INVALID);
     }
 
     #[test]
@@ -2086,17 +2196,25 @@ fn after_kill(e: String) -> String {
     }
 }
 
+/// New terminal with the chosen shell, in the home folder or in `cwd`, a
+/// known session's folder (checked like `open_folder`).
 #[tauri::command(async)]
+// Tauri states and the call's own arguments are all parameters.
+#[allow(clippy::too_many_arguments)]
 pub fn pty_spawn(
     settings: tauri::State<'_, SettingsStore>,
+    app: tauri::State<'_, AppState>,
     state: tauri::State<'_, PtyManager>,
     cols: u16,
     rows: u16,
     on_output: Channel<Vec<u8>>,
     on_exit: Channel<i32>,
+    cwd: Option<String>,
 ) -> Result<PtyInfo, String> {
+    let dir = cwd.map(|c| app.terminal_dir(&c)).transpose()?;
     state.spawn_shell(
         &chosen_launch(&settings, None)?,
+        dir.as_deref(),
         cols,
         rows,
         // A failed send means the webview side is gone (e.g. reload); the
@@ -2374,6 +2492,32 @@ pub fn open_system_terminal() -> Result<(), String> {
     return crate::wt::open();
     #[cfg(unix)]
     return crate::platform::open_external_terminal();
+}
+
+/// The system terminal (Windows Terminal; on Linux the user's emulator)
+/// opened in a known session's folder, checked like `open_folder`.
+#[tauri::command(async)]
+pub fn open_system_terminal_in(app: tauri::State<'_, AppState>, cwd: String) -> Result<(), String> {
+    let dir = app.terminal_dir(&cwd)?;
+    #[cfg(windows)]
+    return crate::wt::open_in(&dir);
+    #[cfg(unix)]
+    return crate::platform::open_external_terminal_at(Some(&dir));
+}
+
+/// "Delete conversation" of a closed session: its files go to the recycle
+/// bin (see `AppState::delete_session_with`). Only the id comes from the UI.
+#[tauri::command]
+pub async fn delete_session(app: tauri::AppHandle, session_id: String) -> Result<(), String> {
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || {
+        let resuming = app.state::<PtyManager>().check_resume_terminal(&session_id).is_err();
+        app.state::<AppState>().delete_session_with(&session_id, resuming, |paths| {
+            trash::delete_all(paths).map_err(|e| e.to_string())
+        })
+    })
+    .await
+    .map_err(|e| errors::with(errors::TASK_FAILED, e))?
 }
 
 #[cfg(test)]
