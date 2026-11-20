@@ -83,6 +83,16 @@ function ConvItemView({ sessionId, item, onOpen }: { sessionId: string; item: Co
             <Thumbs sessionId={sessionId} images={item.images} onOpen={onOpen} />
             {item.truncated && <div className="conv-note">{t("conv.truncated")}</div>}
           </div>
+          {item.files.length > 0 && (
+            // Like the terminal's "Read gizli.txt" under a message naming @gizli.txt.
+            <ul className="conv-files" aria-label={t("conv.files")}>
+              {item.files.map((f) => (
+                <li key={f.path} title={f.path}>
+                  <span aria-hidden="true">{f.dir ? "▸ " : "≡ "}</span>{f.dir && !/[\\/]$/.test(f.path) ? `${f.path}/` : f.path}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       );
     case "assistant":

@@ -361,6 +361,7 @@ export const az: Dict = {
   "conv.thought": "Düşündü",
   "conv.worked": "{dur} işlədi · {time}",
   "conv.toBottom": "Ən yeni mesaja en",
+  "conv.files": "Əlavə edilən fayllar",
   "conv.lookTitle": "Söhbət görünüşü",
   "conv.fontSize": "Yazı ölçüsü",
   "conv.cmdTerminal": "Terminal sekmesində açılır",

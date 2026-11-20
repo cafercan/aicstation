@@ -189,8 +189,12 @@ export interface ConvStep {
   images: ConvImageRef[];
 }
 
+/** A file or folder named with `@` in a message (as Claude Code shows its path). */
+export interface ConvFile { path: string; dir: boolean }
+
 export type ConvItem =
-  | { kind: "user"; text: string; truncated: boolean; images: ConvImageRef[]; atMs: number }
+  /** `files`: what the message named with `@`. */
+  | { kind: "user"; text: string; truncated: boolean; images: ConvImageRef[]; files: ConvFile[]; atMs: number }
   | { kind: "assistant"; text: string; truncated: boolean; atMs: number }
   /** Claude's thinking that was kept with its text. */
   | { kind: "thinking"; text: string; truncated: boolean; atMs: number }

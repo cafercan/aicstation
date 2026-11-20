@@ -296,6 +296,30 @@ fn a_finished_turn_shows_its_duration() {
     assert_eq!(items[2], ConvItem::TurnDone { duration_ms: 90_000, at_ms: at_td });
 }
 
+fn att(uuid: &str, parent: &str, a: Value) -> Value {
+    serde_json::json!({"type":"attachment","uuid":uuid,"parentUuid":parent,"timestamp":"2026-01-01T00:00:00Z","attachment":a})
+}
+
+#[test]
+fn files_named_with_at_show_under_the_message() {
+    let mut t = Tx::new();
+    t.push(u("u1", None, "bak @gizli.txt @alt"));
+    let full = r"C:\p\gizli.txt";
+    t.push(att("f1", "u1", serde_json::json!({"type":"file","filename":full,"displayPath":"gizli.txt","content":{}})));
+    t.push(att("f2", "f1", serde_json::json!({"type":"directory","path":r"C:\p\alt","displayPath":"alt","content":"x"})));
+    t.push(att("f3", "f2", serde_json::json!({"type":"already_read_file","filename":r"C:\p\b.rs","content":{}})));
+    t.push(att("f4", "f3", serde_json::json!({"type":"file","filename":full,"displayPath":"gizli.txt"})));
+    // Not named by the user: files Claude Code brings back after a compaction.
+    t.push(att("f5", "f4", serde_json::json!({"type":"compact_file_reference","filename":r"C:\p\c.rs"})));
+    t.push(a("a1", "f5", "tamam"));
+    t.push(att("f6", "a1", serde_json::json!({"type":"file","filename":r"C:\p\d.rs","displayPath":"d.rs"})));
+    let items = all(&t.conv());
+    assert_eq!(kinds(&items), ["U:bak @gizli.txt @alt", "A:tamam"]);
+    let ConvItem::User { files, .. } = &items[0] else { panic!() };
+    let got: Vec<(&str, bool)> = files.iter().map(|f| (f.path.as_str(), f.dir)).collect();
+    assert_eq!(got, [("gizli.txt", false), ("alt", true), (r"C:\p\b.rs", false)]);
+}
+
 fn all(c: &Conversation) -> Vec<ConvItem> {
     c.page(None).items
 }

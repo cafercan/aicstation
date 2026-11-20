@@ -12,6 +12,6 @@ mod store;
 mod tests;
 
 pub use image::{read_image, ImageError};
-pub use items::{ConvItem, ConvPage, Step};
+pub use items::{ConvItem, ConvPage, MentionedFile, Step};
 pub use parse::{parse_node, ImageRef, Node, NodeBody};
 pub use store::{Conversation, PAGE};

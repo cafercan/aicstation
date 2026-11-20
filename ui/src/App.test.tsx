@@ -14,7 +14,7 @@ const invoke = vi.hoisted(() => vi.fn(async (cmd: string, _args?: unknown): Prom
   if (cmd === "get_session_detail") return null;
   if (cmd === "set_focus_context") return null;
   if (cmd === "open_remote_control") throw "no_browser";
-  if (cmd === "get_conversation_page") return { epoch: 1, total: 1, start: 0, items: [{ kind: "user", text: "sohbet metni", truncated: false, images: [], atMs: 1 }] };
+  if (cmd === "get_conversation_page") return { epoch: 1, total: 1, start: 0, items: [{ kind: "user", text: "sohbet metni", truncated: false, images: [], files: [], atMs: 1 }] };
   return { rows: [], todayCost: 0, todayTokens: 0, todayComplete: true, indexing: false };
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke, Channel: class {} }));

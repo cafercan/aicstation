@@ -32,7 +32,7 @@ const page = (items: ConvItem[], over: Partial<ConvPage> = {}): ConvPage =>
   ({ epoch: 1, total: items.length, start: 0, items, ...over });
 
 const ITEMS: ConvItem[] = [
-  { kind: "user", text: "merhaba", truncated: false, images: [], atMs: 1 },
+  { kind: "user", text: "merhaba", truncated: false, images: [], files: [], atMs: 1 },
   { kind: "assistant", text: "**kalın** yanıt", truncated: true, atMs: 2 },
   {
     kind: "steps", atMs: 3, steps: [
@@ -91,7 +91,7 @@ test("empty conversation shows the empty note", async () => {
 
 test("thumb opens viewer and Esc closes it", async () => {
   serve({
-    get_conversation_page: () => page([{ kind: "user", text: "bak", truncated: false, images: [img(200, 1)], atMs: 1 }]),
+    get_conversation_page: () => page([{ kind: "user", text: "bak", truncated: false, images: [img(200, 1)], files: [], atMs: 1 }]),
     get_conversation_image: () => ({ mediaType: "image/png", data: "QUJD" }),
   });
   render(<ConversationPage sessionId="s-view" card={card()} {...props} />);
@@ -116,7 +116,7 @@ test("thumb opens viewer and Esc closes it", async () => {
 
 test("viewer is a modal dialog that keeps focus and gives it back", async () => {
   serve({
-    get_conversation_page: () => page([{ kind: "user", text: "bak", truncated: false, images: [img(210)], atMs: 1 }]),
+    get_conversation_page: () => page([{ kind: "user", text: "bak", truncated: false, images: [img(210)], files: [], atMs: 1 }]),
     get_conversation_image: () => ({ mediaType: "image/png", data: "QUJE" }),
   });
   render(<ConversationPage sessionId="s-focus" card={card()} {...props} />);
@@ -164,7 +164,7 @@ test("a thumb drops its image out of view and gets it back from the cache", asyn
   vi.stubGlobal("IntersectionObserver", FakeIO);
   try {
     serve({
-      get_conversation_page: () => page([{ kind: "user", text: "bak", truncated: false, images: [img(400)], atMs: 1 }]),
+      get_conversation_page: () => page([{ kind: "user", text: "bak", truncated: false, images: [img(400)], files: [], atMs: 1 }]),
       get_conversation_image: () => ({ mediaType: "image/png", data: "VklT" }),
     });
     const { container } = render(<ConversationPage sessionId="s-io" card={card()} {...props} />);
@@ -263,7 +263,7 @@ test("other first-load errors on a live session stay visible", async () => {
 
 test("thumb shows placeholder on error", async () => {
   serve({
-    get_conversation_page: () => page([{ kind: "user", text: "bak", truncated: false, images: [img(300)], atMs: 1 }]),
+    get_conversation_page: () => page([{ kind: "user", text: "bak", truncated: false, images: [img(300)], files: [], atMs: 1 }]),
     get_conversation_image: () => { throw "image_unavailable"; },
   });
   render(<ConversationPage sessionId="s-err" card={card()} {...props} />);
@@ -398,7 +398,7 @@ test("a message sent just before leaving the tab does not come back as a draft",
 
 test("one more ↑ at the oldest message leaves the caret where it is", async () => {
   serve({
-    get_conversation_page: () => page([{ kind: "user", text: "tek", truncated: false, images: [], atMs: 1 }]),
+    get_conversation_page: () => page([{ kind: "user", text: "tek", truncated: false, images: [], files: [], atMs: 1 }]),
   });
   render(<ConversationPage sessionId="s1" card={card()} {...props} />);
   await screen.findByText("tek");
@@ -413,9 +413,9 @@ test("one more ↑ at the oldest message leaves the caret where it is", async ()
 test("up and down in the empty box go through the messages sent before", async () => {
   serve({
     get_conversation_page: () => page([
-      { kind: "user", text: "ilk", truncated: false, images: [], atMs: 1 },
+      { kind: "user", text: "ilk", truncated: false, images: [], files: [], atMs: 1 },
       { kind: "assistant", text: "tamam", truncated: false, atMs: 2 },
-      { kind: "user", text: "ikinci\nsatır", truncated: false, images: [], atMs: 3 },
+      { kind: "user", text: "ikinci\nsatır", truncated: false, images: [], files: [], atMs: 3 },
     ]),
   });
   render(<ConversationPage sessionId="s1" card={card()} {...props} />);
@@ -470,7 +470,7 @@ test("sent message is picked up by a since call shortly after", async () => {
   serve({
     get_conversation_page: () => page(ITEMS.slice(0, 1)),
     send_to_session: () => undefined,
-    get_conversation_since: () => page([ITEMS[0], { kind: "user", text: "gönderilen", truncated: false, images: [], atMs: 5 }],
+    get_conversation_since: () => page([ITEMS[0], { kind: "user", text: "gönderilen", truncated: false, images: [], files: [], atMs: 5 }],
       { total: 2 }),
   });
   render(<ConversationPage sessionId="s1" card={card()} {...props} />);
@@ -484,7 +484,7 @@ test("sent message is picked up by a since call shortly after", async () => {
 test("thinking shows open under its Düşündü line, which closes it", async () => {
   serve({
     get_conversation_page: () => page([
-      { kind: "user", text: "soru", truncated: false, images: [], atMs: 1 },
+      { kind: "user", text: "soru", truncated: false, images: [], files: [], atMs: 1 },
       { kind: "thinking", text: "önce ızgaraya bakayım", truncated: false, atMs: 2 },
       { kind: "assistant", text: "cevap", truncated: false, atMs: 3 },
     ]),

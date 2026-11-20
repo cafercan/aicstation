@@ -15,11 +15,24 @@ pub struct Step {
     pub images: Vec<ImageRef>,
 }
 
+/// A file or folder the user named with `@` in a message.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MentionedFile {
+    /// As Claude Code shows it: relative to the session folder when inside it.
+    pub path: String,
+    pub dir: bool,
+}
+
+/// Most files listed under one message.
+const MAX_FILES: usize = 50;
+
 /// One displayed entry of the current conversation branch.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ConvItem {
-    User { text: String, truncated: bool, images: Vec<ImageRef>, at_ms: i64 },
+    /// `files`: what the message named with `@`.
+    User { text: String, truncated: bool, images: Vec<ImageRef>, files: Vec<MentionedFile>, at_ms: i64 },
     Assistant { text: String, truncated: bool, at_ms: i64 },
     /// Claude's thinking with its text; a run of it is one item.
     Thinking { text: String, truncated: bool, at_ms: i64 },
@@ -158,6 +171,7 @@ pub(super) fn group(chain: &[Link]) -> Vec<ConvItem> {
                 text: text.clone(),
                 truncated: *truncated,
                 images: images.clone(),
+                files: Vec::new(),
                 at_ms: n.at_ms,
             }),
             NodeBody::AssistantText { text, truncated } => match items.last_mut() {
@@ -203,6 +217,14 @@ pub(super) fn group(chain: &[Link]) -> Vec<ConvItem> {
             NodeBody::Notice { text } => items.push(ConvItem::Notice { text: text.clone(), at_ms: n.at_ms }),
             NodeBody::TurnDone { duration_ms } => {
                 items.push(ConvItem::TurnDone { duration_ms: *duration_ms, at_ms: n.at_ms })
+            }
+            NodeBody::Mentioned { path, dir } => {
+                // Only right after the message that named it.
+                if let Some(ConvItem::User { files, .. }) = items.last_mut() {
+                    if files.len() < MAX_FILES && !files.iter().any(|f| &f.path == path) {
+                        files.push(MentionedFile { path: path.clone(), dir: *dir });
+                    }
+                }
             }
             NodeBody::Other => {}
         }

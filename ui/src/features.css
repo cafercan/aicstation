@@ -143,7 +143,12 @@ table.hist td .est { display: block; font-size: 11px; }
 .conv-items { max-width: 880px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px; }
 .conv-status { color: var(--muted); text-align: center; padding: 28px 0; }
 .conv-note { color: var(--muted); font-size: .846em; margin-top: 4px; }
-.conv-user { display: flex; justify-content: flex-end; }
+.conv-user { display: flex; flex-direction: column; align-items: flex-end; }
+.conv-files {
+  list-style: none; margin: 4px 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 12px;
+  max-width: 78%; color: var(--muted); font-size: 0.85em;
+}
+.conv-files li { overflow-wrap: anywhere; }
 .conv-bubble {
   max-width: 78%; background: var(--raised); border: 1px solid var(--border); border-radius: 14px 14px 4px 14px;
   padding: 8px 12px; color: var(--text); line-height: 1.5;

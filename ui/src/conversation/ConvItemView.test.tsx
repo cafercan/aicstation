@@ -30,7 +30,7 @@ const noop = () => {};
 const props = { onShowTerminal: noop, onTerminal: noop, onAdopted: noop, onResume: async () => {} };
 
 test("a since merge does not render the unchanged items again", async () => {
-  const first: ConvPage = { epoch: 3, total: 3, start: 0, items: [a("eski", 1), { kind: "user", text: "u", truncated: false, images: [], atMs: 2 }, a("son", 3)] };
+  const first: ConvPage = { epoch: 3, total: 3, start: 0, items: [a("eski", 1), { kind: "user", text: "u", truncated: false, images: [], files: [], atMs: 2 }, a("son", 3)] };
   invoke.mockImplementation(async (cmd: string) => {
     if (cmd === "get_conversation_page") return first;
     if (cmd === "get_conversation_since") return { epoch: 3, total: 4, start: 2, items: [a("son", 3), a("yeni", 4)] };
@@ -42,4 +42,20 @@ test("a since merge does not render the unchanged items again", async () => {
   rerender(<ConversationPage sessionId="s1" card={card(2)} {...props} />);
   await screen.findByText("yeni");
   expect(rendered.filter((t) => t === "eski").length).toBe(before);
+});
+
+test("files named with @ show under the message", async () => {
+  const user: ConvItem = {
+    kind: "user", text: "bak @gizli.txt @alt", truncated: false, images: [],
+    files: [{ path: "gizli.txt", dir: false }, { path: "alt", dir: true }], atMs: 1,
+  };
+  invoke.mockImplementation(async (cmd: string) => {
+    if (cmd === "get_conversation_page") return { epoch: 1, total: 1, start: 0, items: [user] };
+    throw new Error(cmd);
+  });
+  render(<ConversationPage sessionId="s1" card={card(1)} {...props} />);
+  const list = await screen.findByRole("list", { name: "Eklenen dosyalar" });
+  expect(list.textContent).toContain("gizli.txt");
+  expect(list.textContent).toContain("alt/");
+  expect(screen.getByTitle("gizli.txt")).toBeTruthy();
 });

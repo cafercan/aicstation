@@ -34,6 +34,9 @@ pub enum NodeBody {
     Notice { text: String },
     /// Claude Code's note at the end of a turn: how long the turn took.
     TurnDone { duration_ms: u64 },
+    /// A file or folder the user named with `@` in a message; Claude Code
+    /// attaches it on the line after the message.
+    Mentioned { path: String, dir: bool },
     Other,
 }
 
@@ -307,12 +310,26 @@ fn user_line_body(offset: u64, v: &Value, content: &Value) -> NodeBody {
     body
 }
 
-/// An attachment line. Only `queued_command` shows: a prompt typed while
-/// Claude was busy (recorded only here) or a background task's notice.
+/// Longest path shown for a file named with `@`.
+const MAX_MENTION: usize = 1024;
+
+/// An attachment line. Shown: `queued_command` (a prompt typed while Claude
+/// was busy, recorded only here, or a background task's notice) and a file
+/// or folder named with `@`.
 fn attachment_body(offset: u64, v: &Value) -> NodeBody {
-    let Some(att) = v.get("attachment").filter(|a| s(a, "type") == Some("queued_command")) else {
-        return NodeBody::Other;
+    let Some(att) = v.get("attachment") else { return NodeBody::Other };
+    let (key, dir) = match s(att, "type") {
+        Some("queued_command") => ("", false),
+        Some("file" | "already_read_file" | "pdf_reference") => ("filename", false),
+        Some("directory") => ("path", true),
+        _ => return NodeBody::Other,
     };
+    if !key.is_empty() {
+        return match s(att, "displayPath").or_else(|| s(att, key)).filter(|p| !p.is_empty()) {
+            Some(p) => NodeBody::Mentioned { path: prefix(p, MAX_MENTION).to_string(), dir },
+            None => NodeBody::Other,
+        };
+    }
     let Some(prompt) = att.get("prompt") else { return NodeBody::Other };
     let kind = att.get("origin").and_then(|o| s(o, "kind"));
     let mode = s(att, "commandMode");
