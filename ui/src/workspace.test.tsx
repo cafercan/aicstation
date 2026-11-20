@@ -130,6 +130,15 @@ test("Ctrl+Shift+T yeni terminal; Ctrl+Alt+N ve Ctrl+Tab geçiş; Ctrl+Shift+W k
   expect(vis(1).visible).toBe("true");
   // Ctrl+Alt+9 with no ninth terminal is not consumed.
   expect(key({ key: "9", code: "Digit9", ctrlKey: true, altKey: true }).defaultPrevented).toBe(false);
+  // Turkish Q: AltGr (the right Alt) + 2 types "£" and switches nothing;
+  // the left Ctrl+Alt+2 switches, though Windows reports "£" as its key too.
+  key({ key: "AltGraph", code: "AltRight", ctrlKey: true, altKey: true });
+  expect(key({ key: "£", code: "Digit2", ctrlKey: true, altKey: true }).defaultPrevented).toBe(false);
+  expect(vis(1).visible).toBe("true");
+  fireEvent.keyUp(window, { key: "AltGraph", code: "AltRight" });
+  expect(key({ key: "£", code: "Digit2", ctrlKey: true, altKey: true }).defaultPrevented).toBe(true);
+  expect(vis(2).visible).toBe("true");
+  key({ key: "1", code: "Digit1", ctrlKey: true, altKey: true });
   key({ key: "Tab", code: "Tab", ctrlKey: true });
   expect(vis(2).visible).toBe("true");
   key({ key: "Tab", code: "Tab", ctrlKey: true });

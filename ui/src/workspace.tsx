@@ -170,17 +170,29 @@ export function useShortcuts(ctx: ShortcutCtx): void {
   const ref = useRef(ctx);
   ref.current = ctx;
   useEffect(() => {
+    // AltGr is the right Alt, held: Windows reports both AltGr and the left
+    // Ctrl+Alt as Ctrl+Alt, with the same character.
+    let rightAlt = false;
     const onKey = (e: KeyboardEvent) => {
+      if (e.code === "AltRight") { rightAlt = true; return; }
       const b = matchChord({
         type: e.type, key: e.key, code: e.code, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey,
-        metaKey: e.metaKey, altGraph: typeof e.getModifierState === "function" && e.getModifierState("AltGraph"),
+        metaKey: e.metaKey, altGraph: rightAlt,
       });
       if (!b || !runBinding(b, ref.current)) return;
       e.preventDefault();
       e.stopPropagation();
     };
+    const onUp = (e: KeyboardEvent) => { if (e.code === "AltRight") rightAlt = false; };
+    const onBlur = () => { rightAlt = false; };
     window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
+    window.addEventListener("keyup", onUp, true);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("keyup", onUp, true);
+      window.removeEventListener("blur", onBlur);
+    };
   }, []);
 }
 

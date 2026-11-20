@@ -272,7 +272,7 @@ has there, for example `.` and `,` on Turkish Q.
 |---|---|
 | Ctrl+Shift+T | New terminal |
 | Ctrl+Shift+W | Close the current terminal (asks first if needed) |
-| Ctrl+Alt+1 … 9 | Switch to terminal 1 … 9 |
+| Ctrl+Alt+1 … 9 | Switch to terminal 1 … 9 (the left Ctrl and Alt; AltGr still types its character, as in Windows Terminal) |
 | Ctrl+Tab / Ctrl+Shift+Tab | Next / previous terminal |
 | Ctrl+Shift+\\ | Toggle split view |
 | Ctrl+Shift+D | Dashboard |

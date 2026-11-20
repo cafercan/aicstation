@@ -66,11 +66,17 @@ test("yalnız keydown; başka akorlar ve kabuk tuşları geçer (null)", () => {
 });
 
 test("AltGr ile yazılan karakterler çalınmaz (Türkçe Q: AltGr+7 = '{')", () => {
-  // AltGr arrives as Ctrl+Alt; the key is the character it types.
-  expect(matchChord(ev("Ctrl+Alt+7", { key: "{" }))).toBeNull();
-  expect(matchChord(ev("Ctrl+Alt+2", { key: "£" }))).toBeNull();
+  // AltGr (the right Alt) arrives as Ctrl+Alt; the key is the character it types.
+  expect(matchChord(ev("Ctrl+Alt+7", { key: "{", altGraph: true }))).toBeNull();
+  expect(matchChord(ev("Ctrl+Alt+2", { key: "£", altGraph: true }))).toBeNull();
   expect(matchChord(ev("Ctrl+Alt+1", { altGraph: true }))).toBeNull();
   expect(matchChord(ev("Ctrl+Shift+T", { altGraph: true }))).toBeNull();
+});
+
+test("sol Ctrl+Alt+rakam AltGr düzeninde de terminale geçer (Türkçe Q: tuş '>' yazsa bile)", () => {
+  // Windows reports the character AltGr would type even for the left keys.
+  expect(matchChord(ev("Ctrl+Alt+1", { key: ">" }))).toEqual({ id: "switchTerminal", chord: "Ctrl+Alt+1", n: 1 });
+  expect(matchChord(ev("Ctrl+Alt+7", { key: "{" }))).toEqual({ id: "switchTerminal", chord: "Ctrl+Alt+7", n: 7 });
 });
 
 test("terminalin kendi tuşlarıyla çakışma yok: uygulama akorlarını xterm işleyicisi 'pass' sayar", () => {

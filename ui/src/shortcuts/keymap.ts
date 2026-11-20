@@ -6,8 +6,10 @@
  * embedded terminal's own keys (terminal/keys.ts: Ctrl+C/V/F, Ctrl+=/-/0).
  * Anything that is not one of these chords returns null and must reach xterm
  * untouched. Ctrl+Alt is also how Windows reports AltGr, which types
- * characters on many layouts (Turkish Q: AltGr+7 = "{"), so a Ctrl+Alt+digit
- * only counts when the key really is that digit and AltGraph is not down.
+ * characters on many layouts (Turkish Q: AltGr+7 = "{"). As in Windows
+ * Terminal, the right Alt (AltGr, `altGraph`) types the character and no
+ * chord counts; the left Ctrl+Alt+digit switches terminals even though
+ * Windows reports the character AltGr would type as its key.
  *
  * Keys are physical: letters match by `ev.code` (KeyT...), so the chords work
  * the same on Cyrillic, Turkish and other layouts; `ev.key` is only a
@@ -39,7 +41,7 @@ export interface KeyEventLike {
   shiftKey: boolean;
   altKey: boolean;
   metaKey: boolean;
-  /** `getModifierState("AltGraph")`. */
+  /** The right Alt (AltGr) is held. */
   altGraph?: boolean;
 }
 
@@ -83,7 +85,8 @@ export const BACKSLASH_CODES = ["Backslash", "IntlBackslash"] as const;
 /** Normalized key of an event: a letter, a digit, "/", "\\", "tab", or null. */
 export function eventKey(ev: KeyEventLike): string | null {
   const digit = /^(?:Digit|Numpad)([0-9])$/.exec(ev.code)?.[1];
-  if (digit !== undefined) return ev.key === digit ? digit : null;
+  // The key's character may be what AltGr types there ("{" on Turkish Q's 7).
+  if (digit !== undefined) return ev.key === digit || (ev.ctrlKey && ev.altKey) ? digit : null;
   const letter = /^Key([A-Z])$/.exec(ev.code)?.[1];
   if (letter !== undefined) return letter.toLowerCase();
   if ((SLASH_CODES as readonly string[]).includes(ev.code)) return "/";
