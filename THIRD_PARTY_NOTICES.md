@@ -13,7 +13,7 @@ license(s) named in the "Used" column.
 
 | License | Packages |
 |---|---|
-| MIT | 222 |
+| MIT | 225 |
 | Apache-2.0 | 4 |
 | BSD-3-Clause | 4 |
 | Zlib | 2 |
@@ -21,7 +21,7 @@ license(s) named in the "Used" column.
 | CC0-1.0 | 1 |
 | MPL-2.0 | 5 |
 
-## Rust crates (242)
+## Rust crates (243)
 
 | Package | Version | Declared license | Used |
 |---|---|---|---|
@@ -222,6 +222,7 @@ license(s) named in the "Used" column.
 | tracing | 0.1.44 | MIT | MIT |
 | tracing-attributes | 0.1.31 | MIT | MIT |
 | tracing-core | 0.1.36 | MIT | MIT |
+| trash | 5.4.0 | MIT | MIT |
 | tray-icon | 0.25.1 | MIT OR Apache-2.0 | MIT |
 | typeid | 1.0.3 | MIT OR Apache-2.0 | MIT |
 | typenum | 1.20.1 | MIT OR Apache-2.0 | MIT |
@@ -268,7 +269,7 @@ license(s) named in the "Used" column.
 | zlib-rs | 0.6.8 | Zlib | Zlib |
 | zmij | 1.0.23 | MIT | MIT |
 
-## UI packages (npm) (11)
+## UI packages (npm) (13)
 
 | Package | Version | Declared license | Used |
 |---|---|---|---|
@@ -280,9 +281,11 @@ license(s) named in the "Used" column.
 | @xterm/addon-webgl | 0.19.0 | MIT | MIT |
 | @xterm/xterm | 6.0.0 | MIT | MIT |
 | js-base64 | 3.9.6 | BSD-3-Clause | BSD-3-Clause |
-| react | 19.3.1 | MIT | MIT |
-| react-dom | 19.3.1 | MIT | MIT |
-| scheduler | 0.28.0 | MIT | MIT |
+| js-tokens | 4.0.0 | MIT | MIT |
+| loose-envify | 1.4.0 | MIT | MIT |
+| react | 18.3.1 | MIT | MIT |
+| react-dom | 18.3.1 | MIT | MIT |
+| scheduler | 0.23.2 | MIT | MIT |
 
 ## Bundled programs (1)
 
@@ -482,6 +485,7 @@ Packages:
 - tracing 0.1.44 — Copyright (c) 2019 Tokio Contributors
 - tracing-attributes 0.1.31 — Copyright (c) 2019 Tokio Contributors
 - tracing-core 0.1.36 — Copyright (c) 2019 Tokio Contributors
+- trash 5.4.0 — Copyright 2019 Artúr Barnabás Kovács
 - tray-icon 0.25.1 — Copyright (c) 2022-2022 Tauri Programme within The Commons Conservancy
 - typeid 1.0.3 — Authors: David Tolnay <dtolnay@gmail.com>
 - typenum 1.20.1 — Copyright 2014 Paho Lurie-Gregg; Copyright (c) 2014 Paho Lurie-Gregg
@@ -525,9 +529,11 @@ Packages:
 - @xterm/addon-unicode11 0.9.0 — Copyright (c) 2019, The xterm.js authors (https://github.com/xtermjs/xterm.js)
 - @xterm/addon-webgl 0.19.0 — Copyright (c) 2018, The xterm.js authors (https://github.com/xtermjs/xterm.js)
 - @xterm/xterm 6.0.0 — Copyright (c) 2017-2019, The xterm.js authors (https://github.com/xtermjs/xterm.js); Copyright (c) 2014-2016, SourceLair Private Company (https://www.sourcelair.com); Copyright (c) 2012-2013, Christopher Jeffrey (https://github.com/chjj/)
-- react 19.3.1 — Copyright (c) Meta Platforms, Inc. and affiliates.
-- react-dom 19.3.1 — Copyright (c) Meta Platforms, Inc. and affiliates.
-- scheduler 0.28.0 — Copyright (c) Meta Platforms, Inc. and affiliates.
+- js-tokens 4.0.0 — Copyright (c) 2014, 2015, 2016, 2017, 2018 Simon Lydell
+- loose-envify 1.4.0 — Copyright (c) 2015 Andres Suarez <zertosh@gmail.com>
+- react 18.3.1 — Copyright (c) Facebook, Inc. and its affiliates.
+- react-dom 18.3.1 — Copyright (c) Facebook, Inc. and its affiliates.
+- scheduler 0.23.2 — Copyright (c) Facebook, Inc. and its affiliates.
 - butaglyph 0.5.0 — Copyright (c) 2026 flear (https://github.com/Huseynteymurzade28)
 
 ```text
