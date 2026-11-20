@@ -1967,8 +1967,8 @@ mod tests {
         assert_eq!(terms.writes().len(), 1);
         write_registry(&reg, &w, "idle");
         remove_image(&state, &terms, ADOPT_ID, 2).unwrap();
-        let rm = "\x1b[H\x1b[C\x1b[C\x7f";
-        assert_eq!(terms.writes()[1], (7, rm.to_string()), "to the line start, right to the tag's end, Backspace");
+        let rm = "\x1b[H\x1b[C\x1b[C\x7f\x1b[F";
+        assert_eq!(terms.writes()[1], (7, rm.to_string()), "line start, right to the tag's end, Backspace, back to the end");
         assert_eq!(remove_image(&state, &terms, ADOPT_ID, MAX_INPUT_AT + 1).unwrap_err(), errors::SEND_TOO_LARGE);
         assert_eq!(terms.writes().len(), 2);
     }
@@ -2269,12 +2269,13 @@ const MAX_INPUT_AT: u32 = 4096;
 /// Message box: one image waiting in Claude's input is dropped. `at` is
 /// where its `[Image #n]` tag ends on the input's first line (characters
 /// from the line's start): Home, `at` times Right, then one Backspace, which
-/// removes a whole image tag in Claude Code.
+/// removes a whole image tag in Claude Code, and End, so text sent next goes
+/// after the images left, not between them.
 pub fn remove_image(app: &AppState, terms: &dyn Terminals, session_id: &str, at: u32) -> Result<(), String> {
     if at > MAX_INPUT_AT {
         return Err(errors::SEND_TOO_LARGE.into());
     }
-    input_key(app, terms, session_id, &format!("\x1b[H{}\x7f", "\x1b[C".repeat(at as usize)))
+    input_key(app, terms, session_id, &format!("\x1b[H{}\x7f\x1b[F", "\x1b[C".repeat(at as usize)))
 }
 
 /// One key to the session's app terminal, checked as in `send_text`.
