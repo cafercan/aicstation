@@ -563,6 +563,26 @@ impl AppState {
         Ok(lock(&self.monitor).session_skills(id))
     }
 
+    /// Files of a live session's folder matching `query`, for the message
+    /// box's `@` suggestions. The folder is checked like `open_folder`.
+    pub fn session_files(&self, id: &str, query: &str) -> Result<Vec<station_core::files::FileHint>, String> {
+        if !is_session_id(id) {
+            return Err(errors::SESSION_INVALID.into());
+        }
+        if query.len() > MAX_FILE_QUERY || query.chars().any(char::is_control) {
+            return Ok(Vec::new());
+        }
+        let cwd = self
+            .get_snapshot()
+            .sessions
+            .iter()
+            .find(|c| c.session_id == id)
+            .map(|c| c.cwd.clone())
+            .ok_or(errors::SESSION_NOT_LIVE)?;
+        let dir = validate_open_folder(&cwd, &self.known_cwds())?;
+        Ok(station_core::files::rank(&crate::sessionfiles::list(&dir), query, MAX_FILE_HINTS))
+    }
+
     /// The registry entry of a live session, read fresh; `session_invalid`
     /// for a malformed id, `session_not_live` when it is not live.
     fn fresh_live(&self, id: &str) -> Result<LiveSession, String> {
@@ -785,6 +805,24 @@ pub async fn get_conversation_since(
 ) -> Result<ConvPage, String> {
     use tauri::Manager;
     tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().conversation_since(&session_id, epoch, from))
+        .await
+        .map_err(|e| errors::with(errors::TASK_FAILED, e))?
+}
+
+/// Most `@` suggestions sent; longest query looked at.
+const MAX_FILE_HINTS: usize = 50;
+const MAX_FILE_QUERY: usize = 512;
+
+/// `@` suggestions: files of a live session's folder (walks the folder, so
+/// on the blocking pool).
+#[tauri::command]
+pub async fn get_session_files(
+    app: tauri::AppHandle,
+    session_id: String,
+    query: String,
+) -> Result<Vec<station_core::files::FileHint>, String> {
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().session_files(&session_id, &query))
         .await
         .map_err(|e| errors::with(errors::TASK_FAILED, e))?
 }
@@ -1040,6 +1078,26 @@ mod tests {
         // Not the folder of any session: the UI has no business asking.
         assert_eq!(state.git_dirty(&repo), None);
         assert_eq!(state.git_dirty(r"\\host\share"), None);
+    }
+
+    #[test]
+    fn at_suggestions_list_the_live_session_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (claude, probe) = two_sessions(tmp.path(), 1);
+        let work = tmp.path().join("work");
+        fs::create_dir_all(work.join("alt")).unwrap();
+        fs::write(work.join("gizli.txt"), "x").unwrap();
+        fs::write(work.join("alt").join("not.md"), "x").unwrap();
+        let reg = serde_json::json!({"pid":4242,"sessionId":LIVE_ID,"cwd":work.to_string_lossy(),"procStart":"777","status":"idle"});
+        fs::write(claude.join("sessions").join("4242.json"), reg.to_string()).unwrap();
+        let state = AppState::new(claude, tmp.path().join("c.json"), Box::new(probe));
+        let got: Vec<(String, bool)> =
+            state.session_files(LIVE_ID, "no").unwrap().into_iter().map(|h| (h.path, h.dir)).collect();
+        assert_eq!(got, [("alt/not.md".to_string(), false)]);
+        assert_eq!(state.session_files(LIVE_ID, "").unwrap().len(), 2, "the top level");
+        assert_eq!(state.session_files(CLOSED_ID, "x").unwrap_err(), errors::SESSION_NOT_LIVE);
+        assert_eq!(state.session_files("../x", "x").unwrap_err(), errors::SESSION_INVALID);
+        assert!(state.session_files(LIVE_ID, "a\nb").unwrap().is_empty());
     }
 
     #[test]

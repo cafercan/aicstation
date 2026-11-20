@@ -935,3 +935,72 @@ test("composer: text pasted but not submitted says so", async () => {
       + "Neden: Oturum terminalinde bir yanıt bekliyor; önce orada yanıtlanmalı.",
   );
 });
+
+// @ file suggestions
+
+const FILES = [{ path: "alt", dir: true }, { path: "gizli.txt", dir: false }, { path: "alt/not.md", dir: false }];
+
+function atBox(status = "idle") {
+  serve({
+    send_to_session: () => undefined,
+    get_session_commands: () => [],
+    get_session_files: ({ query }) => FILES.filter((f) => f.path.includes(String(query))),
+  });
+  render(<Composer sessionId="s1" status={status} onShowTerminal={noop} />);
+  return screen.getByRole("textbox") as HTMLTextAreaElement;
+}
+const fileCalls = () => invoke.mock.calls.filter(([c]) => c === "get_session_files").map(([, a]) => (a as { query: string }).query);
+
+test("@ menu: typing @ lists the session's files; Tab writes the picked one", async () => {
+  const box = atBox();
+  fireEvent.change(box, { target: { value: "bak @gi" } });
+  const list = await screen.findByRole("listbox", { name: "Dosyalar" });
+  expect(list.textContent).toContain("gizli.txt");
+  expect(box.getAttribute("aria-controls")).toBe(list.id);
+  fireEvent.keyDown(box, { key: "Tab" });
+  expect(box.value).toBe("bak @gizli.txt ");
+  expect(box.selectionStart).toBe(15);
+  await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
+  expect(sent()).toEqual([]);
+});
+
+test("@ menu: Enter picks instead of sending; a folder goes on inside it", async () => {
+  const box = atBox();
+  fireEvent.change(box, { target: { value: "@" } });
+  await screen.findByRole("listbox");
+  expect(options().map((o) => o.textContent)).toEqual(["▸alt/", "≡gizli.txt", "≡alt/not.md"]);
+  fireEvent.keyDown(box, { key: "Enter" });
+  expect(box.value).toBe("@alt/");
+  expect(sent()).toEqual([]);
+  await waitFor(() => expect(options().map((o) => o.textContent)).toEqual(["≡alt/not.md"]));
+  expect(fileCalls()[fileCalls().length - 1]).toBe("alt/");
+  fireEvent.keyDown(box, { key: "ArrowDown" });
+  fireEvent.keyDown(box, { key: "Enter" });
+  expect(box.value).toBe("@alt/not.md ");
+  // Out of the @ word: Enter sends.
+  await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
+  fireEvent.keyDown(box, { key: "Enter" });
+  expect(sent()).toEqual(["@alt/not.md "]);
+});
+
+test("@ menu: Esc closes it, an address is no @ word, a mouse press picks", async () => {
+  const box = atBox();
+  fireEvent.change(box, { target: { value: "@gi" } });
+  await screen.findByRole("listbox");
+  fireEvent.keyDown(box, { key: "Escape" });
+  expect(screen.queryByRole("listbox")).toBeNull();
+  fireEvent.change(box, { target: { value: "a@gi" } });
+  await new Promise((r) => setTimeout(r, 150));
+  expect(screen.queryByRole("listbox")).toBeNull();
+  fireEvent.change(box, { target: { value: "x @gi" } });
+  await screen.findByRole("listbox");
+  fireEvent.mouseDown(options()[0]);
+  expect(box.value).toBe("x @gizli.txt ");
+});
+
+test("@ menu: not while the session waits for an answer", async () => {
+  const box = atBox("waiting");
+  fireEvent.change(box, { target: { value: "@gi" } });
+  await new Promise((r) => setTimeout(r, 150));
+  expect(fileCalls()).toEqual([]);
+});

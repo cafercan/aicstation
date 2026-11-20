@@ -114,6 +114,11 @@ closed session in its own folder.
   the list. ↑/↓ choose, Enter runs, Tab puts the name in the box to add
   arguments, Esc closes. Commands that open a picker in the terminal
   (`/model`, `/config`, `/usage`…) switch to the Terminal tab.
+- **Files**: typing `@` in the message box lists the session folder's files
+  and folders (git's tracked and untracked, not ignored, files in a
+  repository); typing narrows the list. ↑/↓ choose, Tab or Enter writes the
+  path, a folder goes on listing inside it, Esc closes. The files a sent
+  message named show under it, as the terminal's "Read" line does.
 - **Quote**: select text in the conversation and right-click it: Quote adds it
   to the message box as a Markdown quote (`> ...`) with the caret below it, to
   answer under; Copy copies it. Without a selection the usual menu stays.
@@ -529,7 +534,11 @@ Claude ve Claude Code, Anthropic'in ticari markalarıdır.
   ajanlar da sayılır. Mesaj kutusuna `/` yazınca Claude Code'un yerleşik
   komutları ve oturumun skill'leri (bu bilgisayardakiler, eklentiler dahil)
   listelenir; ↑/↓ seçer, Enter çalıştırır, Tab argüman için ada yazar, Esc
-  kapatır; terminalde seçici açan komutlar Terminal sekmesine geçer. Sohbetin yazı boyutu Ayarlar → Sohbet görünümü'nden değişir (10–24 px). Remote
+  kapatır; terminalde seçici açan komutlar Terminal sekmesine geçer. `@` yazınca
+  oturum klasörünün dosya ve klasörleri listelenir (git deposunda git'in
+  izlediği ve yok sayılmayan dosyalar); yazdıkça daralır, ↑/↓ seçer, Tab ya
+  da Enter yolu yazar, klasör seçilince içi listelenir, Esc kapatır.
+  Gönderilen mesajın eklediği dosyalar mesajın altında görünür. Sohbetin yazı boyutu Ayarlar → Sohbet görünümü'nden değişir (10–24 px). Remote
   Control açık canlı oturumlarda
   kart ve sekme satırında küçük bir işaret, tıklayınca claude.ai'de açar.
 - **Geçmiş:** önbellekli dizin, kullanım grafikleri (token, tahmini $; 7/30/90 gün, projeler,

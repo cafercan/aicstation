@@ -225,6 +225,9 @@ table.hist td .est { display: block; font-size: 11px; }
 .conv-slash .name { flex: none; color: var(--strong); font-family: "Cascadia Mono", Consolas, monospace; font-size: .923em; }
 .conv-slash .desc { flex: 1; min-width: 0; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conv-slash .term { flex: none; color: var(--muted); }
+.conv-filemenu li { gap: 8px; }
+.conv-filemenu .kind { flex: none; width: 1em; color: var(--muted); text-align: center; }
+.conv-filemenu .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* What the session is doing, one line above the message box; keeps its height. */
 .conv-status-line {
   max-width: 880px; margin: 0 auto 6px; display: flex; align-items: center; gap: 7px; min-height: 18px;

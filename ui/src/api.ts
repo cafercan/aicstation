@@ -233,6 +233,11 @@ export interface SessionSkill { name: string; description: string }
 /** Skills a live session listed; empty for a closed one. */
 export const getSessionCommands = (sessionId: string) =>
   invoke<SessionSkill[]>("get_session_commands", { sessionId });
+/** A file or folder of a session folder: `path` relative to it, with `/`. */
+export interface FileHint { path: string; dir: boolean }
+/** `@` suggestions: the live session's files matching `query`, best first. */
+export const getSessionFiles = (sessionId: string, query: string) =>
+  invoke<FileHint[]>("get_session_files", { sessionId, query });
 export const getConversationImage = (sessionId: string, offset: number, ordinal: number) =>
   invoke<ConvImage>("get_conversation_image", { sessionId, offset, ordinal });
 export const openFolder = (path: string) => invoke<void>("open_folder", { path });

@@ -9,6 +9,7 @@ mod native_text;
 mod notifier;
 mod platform;
 mod pty;
+mod sessionfiles;
 mod settings;
 mod shell;
 mod statusline;
@@ -343,6 +344,7 @@ fn main() {
             commands::get_conversation_page,
             commands::get_conversation_since,
             commands::get_session_commands,
+            commands::get_session_files,
             commands::get_conversation_image,
             commands::get_history,
             commands::open_folder,

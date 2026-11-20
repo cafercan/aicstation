@@ -8,6 +8,7 @@ const COMMANDS: &[&str] = &[
     "get_conversation_page",
     "get_conversation_since",
     "get_session_commands",
+    "get_session_files",
     "get_conversation_image",
     "get_history",
     "open_folder",

@@ -365,6 +365,7 @@ export const de: Dict = {
   "conv.worked": "{dur} gearbeitet · {time}",
   "conv.toBottom": "Zur neuesten Nachricht",
   "conv.files": "Angehängte Dateien",
+  "conv.fileMenu": "Dateien",
   "conv.lookTitle": "Darstellung des Chats",
   "conv.fontSize": "Schriftgröße",
   "conv.cmdTerminal": "Öffnet sich im Terminal-Tab",

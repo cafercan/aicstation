@@ -380,6 +380,7 @@ export const ru: Dict = {
   "conv.worked": "Работал {dur} · {time}",
   "conv.toBottom": "К последнему сообщению",
   "conv.files": "Прикреплённые файлы",
+  "conv.fileMenu": "Файлы",
   "conv.lookTitle": "Вид беседы",
   "conv.fontSize": "Размер шрифта",
   "conv.cmdTerminal": "Открывается во вкладке «Терминал»",

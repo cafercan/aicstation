@@ -365,6 +365,7 @@ export const fr: Dict = {
   "conv.worked": "A travaillé {dur} · {time}",
   "conv.toBottom": "Aller au message le plus récent",
   "conv.files": "Fichiers joints",
+  "conv.fileMenu": "Fichiers",
   "conv.lookTitle": "Apparence de la conversation",
   "conv.fontSize": "Taille du texte",
   "conv.cmdTerminal": "S'ouvre dans l'onglet Terminal",

@@ -1,11 +1,13 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import { getSessionCommands, sendToSession, type SessionSkill } from "../api";
+import { getSessionCommands, getSessionFiles, sendToSession, type FileHint, type SessionSkill } from "../api";
 import { errorText, useT } from "../i18n";
 import { getDraft, setDraft } from "./drafts";
 import { appendQuote } from "./quote";
 import { useConvFontSize } from "./convAppearance";
 import { matchCommands, slashQuery, type SlashEntry } from "./slashCommands";
 import SlashMenu, { slashOptionId } from "./SlashMenu";
+import FileMenu from "./FileMenu";
+import { atQuery, completeAt } from "./atMention";
 
 /**
  * Message box under the conversation of a session in an app terminal. Enter
@@ -14,8 +16,9 @@ import SlashMenu, { slashOptionId } from "./SlashMenu";
  * typing would answer the prompt. Each new `quote` (a new `seq`) is added
  * to the text, with the caret after it, to answer under. Typing `/name`
  * opens the command menu (built-ins and the session's skills); the skills
- * are asked for again when the menu opens after `skillsKey` changed. Unsent
- * text survives leaving the tab (see `drafts`).
+ * are asked for again when the menu opens after `skillsKey` changed. Typing
+ * `@path` lists the session folder's matching files: Tab or Enter writes the
+ * picked one. Unsent text survives leaving the tab (see `drafts`).
  */
 export default function Composer({ sessionId, status, onShowTerminal, onSent, quote, skillsKey, sent = [] }: {
   sessionId: string; status: string; onShowTerminal: () => void; onSent?: () => void;
@@ -75,14 +78,17 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
   // History: `browse` is how far back the shown sent message is (0 = the
   // newest), null while the text is the user's own.
   const [browse, setBrowse] = useState<number | null>(null);
-  const caretTo = useRef<"start" | "end" | null>(null);
+  const caretTo = useRef<"start" | "end" | number | null>(null);
+  /** Where the caret is: the `@` suggestions follow the word it is in. */
+  const [caret, setCaret] = useState(text.length);
   useLayoutEffect(() => {
     const el = box.current;
     const to = caretTo.current;
-    if (!to || !el) return;
+    if (to === null || !el) return;
     caretTo.current = null;
-    const at = to === "start" ? 0 : el.value.length;
+    const at = to === "start" ? 0 : to === "end" ? el.value.length : to;
     el.setSelectionRange(at, at);
+    setCaret(at);
   }, [text]);
   /** A recalled "/command" does not open the menu: ↑/↓ keep going through the history. */
   const show = (v: string) => { setText(v); setClosedFor(v); setErr(null); };
@@ -143,6 +149,33 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
   const prefix = query !== null && entries.some((e) => e.name.toLowerCase().startsWith(query.toLowerCase()));
   useEffect(() => { setActive(prefix ? 0 : -1); }, [query, prefix]);
 
+  // File suggestions: while the caret is in an `@` word (and no command menu shows).
+  const at = menuOpen || waiting ? null : atQuery(text, caret);
+  const atKey = at ? `${at.start}:${at.query}` : null;
+  const [hints, setHints] = useState<FileHint[]>([]);
+  const [hintActive, setHintActive] = useState(0);
+  /** Number of the last files request: an older reply arriving later is dropped. */
+  const filesReq = useRef(0);
+  useEffect(() => {
+    const n = ++filesReq.current;
+    if (at === null) { setHints([]); return; }
+    const q = at.query;
+    // A short pause: a fast typist asks once, not per key.
+    const timer = setTimeout(() => {
+      getSessionFiles(sessionId, q).then((h) => { if (n === filesReq.current) { setHints(h); setHintActive(0); } }, () => {});
+    }, 80);
+    return () => clearTimeout(timer);
+  }, [atKey, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const filesOpen = at !== null && hints.length > 0 && closedFor !== text;
+  const complete = (h: FileHint) => {
+    if (!at) return;
+    const done = completeAt(text, at, h);
+    caretTo.current = done.caret;
+    setText(done.text);
+    setErr(null);
+    setBrowse(null);
+  };
+
   /** Starts sending `value`; false when nothing was sent (waiting, a send in flight, empty). */
   const send = (value = text): boolean => {
     if (waiting || sendingRef.current || value.trim() === "") return false;
@@ -177,6 +210,26 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // keyCode 229: WebKitGTK can send the Enter that commits an IME word with isComposing false.
     const ime = e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229;
+    if (filesOpen && !ime) {
+      const n = hints.length;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const down = e.key === "ArrowDown";
+        setHintActive((i) => (i + (down ? 1 : n - 1)) % n);
+        return;
+      }
+      if ((e.key === "Enter" || e.key === "Tab") && !e.shiftKey) {
+        e.preventDefault();
+        complete(hints[Math.min(hintActive, n - 1)]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setClosedFor(text);
+        return;
+      }
+    }
     if (menuOpen && !ime) {
       const n = entries.length;
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -215,11 +268,16 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
   return (
     <div className="conv-composer">
       {menuOpen && <SlashMenu id={listId} entries={entries} active={Math.min(active, entries.length - 1)} onPick={pick} onHover={setActive} />}
+      {filesOpen && <FileMenu id={listId} hints={hints} active={Math.min(hintActive, hints.length - 1)} onPick={complete} onHover={setHintActive} />}
       <div className="conv-composer-row">
         <textarea ref={box} value={text} rows={2} disabled={waiting} placeholder={t("conv.placeholder")}
-          aria-autocomplete="list" aria-controls={menuOpen ? listId : undefined}
-          aria-activedescendant={menuOpen && active >= 0 ? slashOptionId(listId, Math.min(active, entries.length - 1)) : undefined}
-          onChange={(e) => { setText(e.target.value); setErr(null); setClosedFor(null); setBrowse(null); }}
+          aria-autocomplete="list" aria-controls={menuOpen || filesOpen ? listId : undefined}
+          aria-activedescendant={menuOpen && active >= 0 ? slashOptionId(listId, Math.min(active, entries.length - 1))
+            : filesOpen ? slashOptionId(listId, Math.min(hintActive, hints.length - 1)) : undefined}
+          onChange={(e) => {
+            setText(e.target.value); setCaret(e.target.selectionStart); setErr(null); setClosedFor(null); setBrowse(null);
+          }}
+          onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
           onKeyDown={onKeyDown} />
         <button type="button" className="btn" disabled={waiting || sending || text.trim() === ""} onClick={() => send()}>
           {t("conv.send")}

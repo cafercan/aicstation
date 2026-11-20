@@ -362,6 +362,7 @@ export const zh: Dict = {
   "conv.worked": "工作了 {dur} · {time}",
   "conv.toBottom": "跳到最新消息",
   "conv.files": "附加的文件",
+  "conv.fileMenu": "文件",
   "conv.lookTitle": "对话外观",
   "conv.fontSize": "字号",
   "conv.cmdTerminal": "在终端标签页中打开",

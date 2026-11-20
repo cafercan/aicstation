@@ -372,6 +372,7 @@ export const tr = {
   "conv.worked": "{dur} çalıştı · {time}",
   "conv.toBottom": "En yeni mesaja in",
   "conv.files": "Eklenen dosyalar",
+  "conv.fileMenu": "Dosyalar",
   "conv.lookTitle": "Sohbet görünümü",
   "conv.fontSize": "Yazı boyutu",
   "conv.cmdTerminal": "Terminal sekmesinde açılır",

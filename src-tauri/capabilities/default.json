@@ -12,6 +12,7 @@
     "allow-get-conversation-page",
     "allow-get-conversation-since",
     "allow-get-session-commands",
+    "allow-get-session-files",
     "allow-get-conversation-image",
     "allow-get-history",
     "allow-open-folder",
