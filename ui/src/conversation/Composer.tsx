@@ -358,8 +358,8 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
               const name = `[Image #${n}]`;
               return (
                 <li key={n} title={name}>
-                  {url ? <img src={url} alt="" /> : <span className="ph" aria-hidden="true" />}
-                  <span>#{n}</span>
+                  {url ? <img src={url} alt="" /> : <span className="ph" aria-hidden="true">▣</span>}
+                  <span className="tag">#{n}</span>
                   {at !== null && (
                     <button type="button" className="conv-images-x" disabled={waiting}
                       aria-label={t("conv.imageRemove", { name })} title={t("conv.imageRemove", { name })}

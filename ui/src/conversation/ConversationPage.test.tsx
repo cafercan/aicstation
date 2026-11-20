@@ -1049,7 +1049,7 @@ test("image: Alt+V pastes the clipboard's image as in the terminal; AltGr+V does
 test("image: waiting images show above the box, each with its own ×, and send without text", async () => {
   const { box } = imageBox(imgs(1, 2));
   const list = screen.getByRole("list", { name: "Yapıştırılan resimler" });
-  expect([...list.querySelectorAll("li")].map((li) => li.textContent)).toEqual(["#1×", "#2×"]);
+  expect([...list.querySelectorAll("li .tag")].map((li) => li.textContent)).toEqual(["#1", "#2"]);
   expect(screen.getByRole("status").textContent).toBe("mesajla birlikte gider");
   const btn = screen.getByRole("button", { name: "Gönder" }) as HTMLButtonElement;
   expect(btn.disabled).toBe(false);
@@ -1078,7 +1078,7 @@ test("image: the [Image #n] in the app terminal's input box show above the messa
     serve({ get_conversation_page: () => page(ITEMS), get_session_commands: () => [] });
     render(<ConversationPage sessionId="s1" card={card()} onShowTerminal={noop} onTerminal={noop} onAdopted={noop} onResume={async () => {}} />);
     const list = await screen.findByRole("list", { name: "Yapıştırılan resimler" });
-    expect(list.textContent).toBe("#1×");
+    expect(list.querySelector(".tag")!.textContent).toBe("#1");
   } finally {
     (NO_TERMINALS as unknown as object[]).length = 0;
     terminalForPid.mockImplementation(() => undefined);
