@@ -68,10 +68,14 @@ function inputBox(rows: string[]): { top: number; bottom: number } {
 
 /**
  * An image pasted into Claude's input: its `[Image #n]` number, and on the
- * input's first line `at`, the characters from the line's start to the end
- * of its tag (where Backspace removes it); `null` on a later line.
+ * input's first line `at`, the cursor steps (Right arrows) from the line's
+ * start to the end of its tag, where one Backspace removes it; `null` on a
+ * later line. A tag is one step: Claude Code's cursor crosses it whole.
  */
 export interface InputImage { n: number; at: number | null }
+
+/** A tag Claude Code puts in its input for a paste: an image (number captured) or pasted text. */
+const TAG = /\[(?:Image #(\d+)|Pasted text #\d+[^\]]*)\]/g;
 
 /**
  * The `[Image #n]` placeholders inside the input box (images pasted into the
@@ -84,12 +88,17 @@ export function inputImages(rows: string[]): InputImage[] {
   const out: InputImage[] = [];
   rows.slice(top + 1, bottom).forEach((row, i) => {
     // The first line starts with the prompt glyph.
-    const line = i === 0 ? row.replace(/^\s*[❯>][  ]?/, "") : row;
-    for (const m of line.matchAll(/\[Image #(\d+)\]/g)) {
+    const line = i === 0 ? row.replace(/^\s*[❯>][ \u00a0]?/, "") : row;
+    let steps = 0;
+    let from = 0;
+    for (const m of line.matchAll(TAG)) {
+      // Characters (not UTF-16 units) between tags; a tag itself is one step.
+      steps += [...line.slice(from, m.index)].length + 1;
+      from = m.index! + m[0].length;
+      if (m[1] === undefined) continue;
       const n = Number(m[1]);
       if (out.some((o) => o.n === n)) continue;
-      // Characters, not UTF-16 units: the arrow keys move by characters.
-      out.push({ n, at: i === 0 ? [...line.slice(0, m.index! + m[0].length)].length : null });
+      out.push({ n, at: i === 0 ? steps : null });
     }
   });
   return out;

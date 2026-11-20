@@ -97,7 +97,7 @@ test("a full-width rule does not swallow the row xterm marks as wrapped after it
   const rule = "─".repeat(244);
   const lines = [
     { text: rule, wrapped: false },
-    { text: "❯ [Image #1]", wrapped: true },
+    { text: "❯\u00a0[Image #1]", wrapped: true },
     { text: rule, wrapped: false },
     { text: "  ⏵⏵ auto mode on", wrapped: false },
   ];
@@ -106,14 +106,15 @@ test("a full-width rule does not swallow the row xterm marks as wrapped after it
     buffer: { active: { baseY: 0, getLine: (i: number) => ({ isWrapped: lines[i].wrapped, translateToString: () => lines[i].text }) } },
   };
   const rows = screenRows(term as never);
-  expect(rows).toEqual([rule, "❯ [Image #1]", rule, "  ⏵⏵ auto mode on"]);
+  expect(rows).toEqual([rule, "❯\u00a0[Image #1]", rule, "  ⏵⏵ auto mode on"]);
   expect(inputImages(rows).map((i) => i.n)).toEqual([1]);
 });
 
-test("each image's place: characters from the input's start to the end of its tag, on the first line only", () => {
+test("each image's place: cursor steps from the input's start to the end of its tag, on the first line only", () => {
+  // Claude Code's cursor crosses a whole [Image #n] or [Pasted text #n ...] tag in one step.
   const rule = "─".repeat(40);
-  const rows = [rule, "❯ [Image #5] [Image #6] ğüş [Image #7]", "  [Image #8]", rule];
+  const rows = [rule, "❯\u00a0[Image #5] [Image #6] ğüş [Pasted text #1 +12 lines] [Image #7]", "  [Image #8]", rule];
   expect(inputImages(rows)).toEqual([
-    { n: 5, at: 10 }, { n: 6, at: 21 }, { n: 7, at: 36 }, { n: 8, at: null },
+    { n: 5, at: 1 }, { n: 6, at: 3 }, { n: 7, at: 11 }, { n: 8, at: null },
   ]);
 });
