@@ -23,7 +23,7 @@ It is built with Tauri 2, a Rust core and a React/TypeScript UI.
   the system's WebView2, so the app does not ship a browser engine of its own.
 - **Low memory:** the app process itself uses about 16 MB of RAM; together
   with the WebView2 processes that draw its window, about 200 MB when idle
-  (private bytes, measured on Windows 11 with v1.10.2).
+  (private bytes, measured on Windows 11 with v1.11.0).
 - **No ads, no account, no telemetry:** the app makes no network requests at
   all (see [Privacy and security](#privacy-and-security)). Free and open
   source under the MIT license.
@@ -526,7 +526,7 @@ Claude ve Claude Code, Anthropic'in ticari markalarıdır.
   sistemin WebView2'si çizer; uygulama kendi tarayıcı motorunu taşımaz.
 - **Az bellek:** uygulamanın kendi süreci yaklaşık 16 MB RAM kullanır;
   penceresini çizen WebView2 süreçleriyle birlikte boştayken yaklaşık 200 MB
-  (özel bellek, Windows 11'de v1.10.2 ile ölçüldü).
+  (özel bellek, Windows 11'de v1.11.0 ile ölçüldü).
 - **Reklam yok, hesap yok, telemetri yok:** uygulama hiçbir ağ isteği yapmaz.
   Ücretsiz ve açık kaynaktır (MIT lisansı).
 
