@@ -1,12 +1,9 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import type { SessionCard } from "../api";
 import { fmtElapsed, fmtTokens, statusColor, statusKind, statusLabel } from "../format";
 import { useT, type Key } from "../i18n";
-import { getTerminals, subscribe, terminalForPid } from "../terminal/store";
-import { findModeLine, findSpinner, screenRows } from "./statusLine";
-
-/** The app terminal's screen is read at most this often. */
-const SCREEN_MS = 250;
+import { findModeLine, findSpinner } from "./statusLine";
+import { useTerminalScreen } from "./useTerminalScreen";
 
 const MODES: Record<string, Key> = {
   auto: "conv.mode.auto",
@@ -17,40 +14,11 @@ const MODES: Record<string, Key> = {
 
 type Screen = { spinner: string | null; mode: string | null };
 const NONE: Screen = { spinner: null, mode: null };
+const readScreen = (rows: string[]): Screen => ({ spinner: findSpinner(rows), mode: findModeLine(rows) });
+const sameScreen = (a: Screen, b: Screen) => a.spinner === b.spinner && a.mode === b.mode;
 
-/**
- * Claude's spinner and footer mode line on the screen of the app terminal
- * the session runs in; nothing for a session outside the app. Re-read as the
- * terminal writes, throttled, with a trailing read so the last state shows.
- */
-function useScreen(parentPid: number | null): Screen {
-  const terminals = useSyncExternalStore(subscribe, getTerminals);
-  const id = terminalForPid(parentPid);
-  const term = terminals.find((t) => t.id === id)?.term;
-  const [screen, setScreen] = useState<Screen>(NONE);
-  useEffect(() => {
-    if (!term) { setScreen(NONE); return; }
-    let shown: Screen | null = null;
-    const read = () => {
-      const rows = screenRows(term);
-      const next = { spinner: findSpinner(rows), mode: findModeLine(rows) };
-      // The same lines again: no state change, no redraw.
-      if (shown && shown.spinner === next.spinner && shown.mode === next.mode) return;
-      shown = next;
-      setScreen(next);
-    };
-    read();
-    let timer: number | undefined;
-    let last = Date.now();
-    const sub = term.onWriteParsed(() => {
-      if (timer !== undefined) return;
-      const wait = Math.max(0, SCREEN_MS - (Date.now() - last));
-      timer = window.setTimeout(() => { timer = undefined; last = Date.now(); read(); }, wait);
-    });
-    return () => { sub.dispose(); if (timer !== undefined) window.clearTimeout(timer); };
-  }, [term]);
-  return screen;
-}
+/** Claude's spinner and footer mode line on the screen of the session's app terminal. */
+const useScreen = (parentPid: number | null): Screen => useTerminalScreen(parentPid, readScreen, sameScreen, NONE);
 
 /** Wall clock, ticking every second while `on`. */
 function useNow(on: boolean): number {

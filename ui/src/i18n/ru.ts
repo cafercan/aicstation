@@ -17,7 +17,6 @@ export const ru: Dict = {
   "nav.claudeStatus": "Claude: {status}",
   "nav.language": "Язык",
   "nav.theme": "Тема",
-  "nav.footerToggle": "Настройки и о программе",
 
   "status.busy": "работает",
   "status.shell": "выполняет команду",
@@ -381,6 +380,8 @@ export const ru: Dict = {
   "conv.toBottom": "К последнему сообщению",
   "conv.files": "Прикреплённые файлы",
   "conv.fileMenu": "Файлы",
+  "conv.images": "{list} отправится с сообщением",
+  "conv.pasteFailed": "Не удалось вставить изображение: {err}",
   "conv.lookTitle": "Вид беседы",
   "conv.fontSize": "Размер шрифта",
   "conv.cmdTerminal": "Открывается во вкладке «Терминал»",

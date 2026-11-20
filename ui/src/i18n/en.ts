@@ -14,7 +14,6 @@ export const en: Dict = {
   "nav.claudeStatus": "Claude: {status}",
   "nav.language": "Language",
   "nav.theme": "Theme",
-  "nav.footerToggle": "Settings & about",
 
   "status.busy": "working",
   "status.shell": "running command",
@@ -363,6 +362,8 @@ export const en: Dict = {
   "conv.toBottom": "Jump to the newest message",
   "conv.files": "Attached files",
   "conv.fileMenu": "Files",
+  "conv.images": "{list} goes with the message",
+  "conv.pasteFailed": "Could not paste the image: {err}",
   "conv.lookTitle": "Conversation appearance",
   "conv.fontSize": "Font size",
   "conv.cmdTerminal": "Opens in the Terminal tab",

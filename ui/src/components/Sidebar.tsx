@@ -39,11 +39,6 @@ interface Props {
   onOpenWt: () => Promise<void>;
 }
 
-const FOOTER_KEY = "station.footerOpen";
-/** Whether the bottom block (settings, about) is open; closed until opened, then remembered per viewer. */
-const footerOpen = createStore<boolean>(readPref(FOOTER_KEY) === "1");
-const setFooterOpen = (open: boolean) => { footerOpen.set(open); writePref(FOOTER_KEY, open ? "1" : "0"); };
-
 const SIDEBAR_KEY = "station.sidebarOpen";
 /** Whether the sidebar is shown (hidden: a slim rail with a show button); remembered per viewer. */
 export const sidebarOpen = createStore<boolean>(readPref(SIDEBAR_KEY) !== "0");
@@ -72,47 +67,15 @@ export function SideRail() {
   );
 }
 
-/** Collapsible bottom block: a chevron toggle row above the prefs and the about text. */
+/** The sidebar's bottom row: the settings gear and the app version (the about text is on the settings page). */
 function Footer({ settingsOn, onSettings }: { settingsOn: boolean; onSettings: () => void }) {
   const t = useT();
-  const open = footerOpen.use();
   return (
-    <div className="foot">
-      <button type="button" className="foot-toggle" aria-expanded={open} aria-controls="side-foot-body"
-        onClick={() => setFooterOpen(!open)}>
-        <span className="chev" aria-hidden="true">{open ? "▾" : "▸"}</span> {t("nav.footerToggle")}
-        <span className="ver">v{__APP_VERSION__}</span>
-      </button>
-      <div id="side-foot-body" hidden={!open}>
-        <Prefs settingsOn={settingsOn} onSettings={onSettings} />
-        <About />
-      </div>
-    </div>
-  );
-}
-
-/** The settings gear at the bottom of the sidebar (language and theme are on the settings page). */
-function Prefs({ settingsOn, onSettings }: { settingsOn: boolean; onSettings: () => void }) {
-  const t = useT();
-  return (
-    <div className="prefs">
+    <div className="foot prefs">
       <button type="button" className={settingsOn ? "gear on" : "gear"} aria-pressed={settingsOn}
         title={t("nav.settings")} onClick={onSettings}>⚙ {t("nav.settings")}</button>
+      <span className="ver">v{__APP_VERSION__}</span>
     </div>
-  );
-}
-
-/** Product name, tagline and the non-affiliation note (also the tooltip). */
-function About() {
-  const t = useT();
-  const note = t("about.disclaimer");
-  return (
-    <footer className="about" title={note}>
-      <div className="about-name">AI C-Station</div>
-      <div className="about-ver">{t("about.version", { v: __APP_VERSION__ })}</div>
-      <div className="about-tag">{t("about.tagline")}</div>
-      <div className="about-note">{note}</div>
-    </footer>
   );
 }
 

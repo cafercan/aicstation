@@ -17,7 +17,6 @@ export const az: Dict = {
   "nav.claudeStatus": "Claude: {status}",
   "nav.language": "Dil",
   "nav.theme": "Mövzu",
-  "nav.footerToggle": "Ayarlar və haqqında",
 
   "status.busy": "işləyir",
   "status.shell": "əmr icra edir",
@@ -363,6 +362,8 @@ export const az: Dict = {
   "conv.toBottom": "Ən yeni mesaja en",
   "conv.files": "Əlavə edilən fayllar",
   "conv.fileMenu": "Fayllar",
+  "conv.images": "{list} mesajla birlikdə gedir",
+  "conv.pasteFailed": "Şəkil yapışdırıla bilmədi: {err}",
   "conv.lookTitle": "Söhbət görünüşü",
   "conv.fontSize": "Yazı ölçüsü",
   "conv.cmdTerminal": "Terminal sekmesində açılır",

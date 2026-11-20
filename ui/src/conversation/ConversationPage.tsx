@@ -5,6 +5,8 @@ import SessionTerminalPlaceholder from "../pages/SessionTerminalPlaceholder";
 import { terminalForPid } from "../terminal/store";
 import Composer from "./Composer";
 import ConvStatus from "./ConvStatus";
+import { inputImages } from "./statusLine";
+import { useTerminalScreen } from "./useTerminalScreen";
 import { useConvFontSize } from "./convAppearance";
 import ConvItemView from "./ConvItemView";
 import { applyPage, hasOlder, lastIndex, type ConvState } from "./convState";
@@ -18,6 +20,9 @@ const PIN_PX = 40;
 const OLDER_PX = 200;
 /** After a send, the transcript gets the message a moment later. */
 const AFTER_SEND_MS = 500;
+
+const NO_IMAGES: number[] = [];
+const sameNumbers = (a: number[], b: number[]) => a.length === b.length && a.every((n, i) => n === b[i]);
 
 interface Props {
   sessionId: string;
@@ -171,6 +176,8 @@ export default function ConversationPage({ sessionId, card, onShowTerminal, onTe
     () => (conv?.items ?? []).flatMap((i) => (i.kind === "user" && i.text.trim() !== "" ? [i.text] : [])),
     [conv],
   );
+  /** Images pasted into Claude's input, read from its app terminal's screen. */
+  const images = useTerminalScreen(card?.parentPid ?? null, inputImages, sameNumbers, NO_IMAGES);
 
   // Right click on text selected in the list opens the Quote/Copy menu;
   // without a selection the system's own menu stays.
@@ -225,7 +232,7 @@ export default function ConversationPage({ sessionId, card, onShowTerminal, onTe
         {live && <ConvStatus card={card} />}
         {hosted
           ? <Composer sessionId={sessionId} status={card.status} onShowTerminal={onShowTerminal} onSent={onSent} quote={quote}
-            skillsKey={card.transcriptBytes} sent={sent} />
+            skillsKey={card.transcriptBytes} sent={sent} images={images} />
           : <SessionTerminalPlaceholder card={card} sessionId={sessionId} onTerminal={onTerminal}
             onAdopted={onAdopted} onResume={onResume} />}
       </div>

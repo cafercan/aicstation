@@ -17,7 +17,6 @@ export const zh: Dict = {
   "nav.claudeStatus": "Claude：{status}",
   "nav.language": "语言",
   "nav.theme": "主题",
-  "nav.footerToggle": "设置与关于",
 
   "status.busy": "工作中",
   "status.shell": "正在执行命令",
@@ -363,6 +362,8 @@ export const zh: Dict = {
   "conv.toBottom": "跳到最新消息",
   "conv.files": "附加的文件",
   "conv.fileMenu": "文件",
+  "conv.images": "{list} 将随消息发送",
+  "conv.pasteFailed": "无法粘贴图片：{err}",
   "conv.lookTitle": "对话外观",
   "conv.fontSize": "字号",
   "conv.cmdTerminal": "在终端标签页中打开",

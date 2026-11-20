@@ -3,6 +3,7 @@ import { butaglyphInfo, listShells, openButaglyphEditor, setUsageBridge, type Bu
 import { refreshClaudeStatus, useClaudeStatus } from "../terminal/claudeBarData";
 import { errorText, useT, type Key } from "../i18n";
 import { isWindows } from "../platform";
+import About from "../components/About";
 import GeneralPrefs from "../components/GeneralPrefs";
 import TerminalAppearance from "../components/TerminalAppearance";
 import ConversationAppearance from "../components/ConversationAppearance";
@@ -231,6 +232,7 @@ export default function SettingsPage() {
         {row("closeToTray", "settings.closeToTray", "settings.closeToTrayHint")}
       </fieldset>
       {error && <div className="settings-err" role="alert">{error}</div>}
+      <About />
     </div>
   );
 }

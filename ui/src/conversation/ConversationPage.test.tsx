@@ -1004,3 +1004,50 @@ test("@ menu: not while the session waits for an answer", async () => {
   await new Promise((r) => setTimeout(r, 150));
   expect(fileCalls()).toEqual([]);
 });
+
+// Images
+
+function imageBox(images: number[] = []) {
+  serve({ send_to_session: () => undefined, paste_image_to_session: () => undefined, get_session_commands: () => [] });
+  render(<Composer sessionId="s1" status="idle" onShowTerminal={noop} images={images} />);
+  return screen.getByRole("textbox") as HTMLTextAreaElement;
+}
+const pastes = () => invoke.mock.calls.filter(([c]) => c === "paste_image_to_session").length;
+const clip = (types: string[], files: string[]) => ({
+  types, items: files.map((type) => ({ kind: "file", type })), getData: () => "",
+});
+
+test("image: a pasted picture goes to Claude's input, pasted text stays text", () => {
+  const box = imageBox();
+  const ev = fireEvent.paste(box, { clipboardData: clip(["Files"], ["image/png"]) });
+  expect(ev).toBe(false);
+  expect(pastes()).toBe(1);
+  // Text copied with a picture (a web page) pastes as text.
+  expect(fireEvent.paste(box, { clipboardData: clip(["text/plain", "Files"], ["image/png"]) })).toBe(true);
+  expect(fireEvent.paste(box, { clipboardData: clip(["Files"], ["application/pdf"]) })).toBe(true);
+  expect(pastes()).toBe(1);
+});
+
+test("image: Alt+V pastes the clipboard's image as in the terminal; AltGr+V does not", () => {
+  const box = imageBox();
+  fireEvent.keyDown(box, { key: "v", code: "KeyV", altKey: true });
+  expect(pastes()).toBe(1);
+  fireEvent.keyDown(box, { key: "v", code: "KeyV", altKey: true, ctrlKey: true });
+  expect(pastes()).toBe(1);
+});
+
+test("image: waiting images show above the box and send without text", async () => {
+  const box = imageBox([1, 2]);
+  expect(screen.getByRole("status").textContent).toBe("[Image #1] [Image #2] mesajla birlikte gider");
+  const btn = screen.getByRole("button", { name: "Gönder" }) as HTMLButtonElement;
+  expect(btn.disabled).toBe(false);
+  fireEvent.keyDown(box, { key: "Enter" });
+  await waitFor(() => expect(sent()).toEqual([""]));
+});
+
+test("image: without images an empty box sends nothing", () => {
+  const box = imageBox();
+  expect(screen.queryByRole("status")).toBeNull();
+  fireEvent.keyDown(box, { key: "Enter" });
+  expect(sent()).toEqual([]);
+});

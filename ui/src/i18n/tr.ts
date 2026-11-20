@@ -16,7 +16,6 @@ export const tr = {
   "nav.claudeStatus": "Claude: {status}",
   "nav.language": "Dil",
   "nav.theme": "Tema",
-  "nav.footerToggle": "Ayarlar ve hakkında",
 
   // Status labels
   "status.busy": "çalışıyor",
@@ -373,6 +372,8 @@ export const tr = {
   "conv.toBottom": "En yeni mesaja in",
   "conv.files": "Eklenen dosyalar",
   "conv.fileMenu": "Dosyalar",
+  "conv.images": "{list} mesajla birlikte gider",
+  "conv.pasteFailed": "Resim yapıştırılamadı: {err}",
   "conv.lookTitle": "Sohbet görünümü",
   "conv.fontSize": "Yazı boyutu",
   "conv.cmdTerminal": "Terminal sekmesinde açılır",

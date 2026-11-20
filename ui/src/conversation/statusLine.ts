@@ -66,6 +66,21 @@ function inputBox(rows: string[]): { top: number; bottom: number } {
   return { top, bottom };
 }
 
+/**
+ * Numbers of the `[Image #n]` placeholders inside the input box (images
+ * pasted into the message being written), ascending, each once; none when
+ * the box is not on screen.
+ */
+export function inputImages(rows: string[]): number[] {
+  const { top, bottom } = inputBox(rows);
+  if (top < 0) return [];
+  const found = new Set<number>();
+  for (const row of rows.slice(top + 1, bottom)) {
+    for (const m of row.matchAll(/\[Image #(\d+)\]/g)) found.add(Number(m[1]));
+  }
+  return [...found].sort((a, b) => a - b);
+}
+
 /** First (from the bottom) spinner row above the input box, trimmed, without key hints. */
 export function findSpinner(rows: string[]): string | null {
   const box = inputBox(rows);

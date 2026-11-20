@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { findModeLine, findSpinner, screenRows } from "./statusLine";
+import { findModeLine, findSpinner, inputImages, screenRows } from "./statusLine";
 
 test("finds the spinner, ASCII star included, and drops key hints", () => {
   expect(findSpinner(["", "* Fermenting… (33s · ↓ 2.8k tokens · thinking with high effort)", "  ⎿ Tip: x", "> "]))
@@ -76,4 +76,19 @@ test("screenRows reads the screen at the bottom, not the scrolled view", () => {
     buffer: { active: { baseY: 1, viewportY: 0, getLine: (i: number) => ({ translateToString: () => lines[i] }) } },
   };
   expect(screenRows(term as never)).toEqual(["a", "b"]);
+});
+
+test("the images waiting in Claude's input box are read from its rows", () => {
+  const rule = "─".repeat(40);
+  const rows = [
+    "> [Image #1] gönderilmiş eski mesaj",
+    rule,
+    "> [Image #2] [Image #3] şuna bak",
+    "  [Image #3]",
+    rule,
+    "  ⏵⏵ auto mode on",
+  ];
+  expect(inputImages(rows)).toEqual([2, 3]);
+  expect(inputImages([rule, "> boş", rule])).toEqual([]);
+  expect(inputImages(["> [Image #4]"])).toEqual([]);
 });

@@ -73,11 +73,6 @@ import App from "./App";
 import { paletteItems, type ShortcutCtx } from "./workspace";
 import type { SessionCard } from "./api";
 
-/** The sidebar's bottom block (settings, about) starts closed. */
-const openFooter = () => {
-  const t = screen.getByRole("button", { name: /Ayarlar ve hakkında/ });
-  if (t.getAttribute("aria-expanded") !== "true") fireEvent.click(t);
-};
 
 
 beforeEach(() => { fake.reset(); });
@@ -247,7 +242,6 @@ test("komut paleti Ayarlar'ı da açar", async () => {
 
 test("kısayol katmanı Ayarlar panelinin girişlerine dokunmaz", async () => {
   await boot();
-  openFooter();
   fireEvent.click(screen.getByRole("button", { name: /^⚙ Ayarlar/ }));
   const box = (await screen.findAllByRole("checkbox"))[0] as HTMLInputElement;
   box.focus();

@@ -236,6 +236,7 @@ table.hist td .est { display: block; font-size: 11px; }
 .conv-status-line .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; }
 .conv-status-line .text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .conv-composer-row { display: flex; align-items: flex-end; gap: 8px; }
+.conv-images { color: var(--muted); font-size: .923em; margin: 0 0 4px 2px; }
 .conv-composer textarea {
   /* border-box: the grown height set from code includes padding and border. */
   flex: 1; box-sizing: border-box; min-height: 38px; resize: none; padding: 8px 10px; background: var(--bg); color: var(--text);

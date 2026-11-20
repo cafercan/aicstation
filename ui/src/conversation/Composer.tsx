@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import { getSessionCommands, getSessionFiles, sendToSession, type FileHint, type SessionSkill } from "../api";
+import { getSessionCommands, getSessionFiles, pasteImageToSession, sendToSession, type FileHint, type SessionSkill } from "../api";
 import { errorText, useT } from "../i18n";
 import { getDraft, setDraft } from "./drafts";
 import { appendQuote } from "./quote";
@@ -18,11 +18,16 @@ import { atQuery, completeAt } from "./atMention";
  * opens the command menu (built-ins and the session's skills); the skills
  * are asked for again when the menu opens after `skillsKey` changed. Typing
  * `@path` lists the session folder's matching files: Tab or Enter writes the
- * picked one. Unsent text survives leaving the tab (see `drafts`).
+ * picked one. An image pasted (or Alt+V, as in the terminal) goes into
+ * Claude's own input: Claude Code reads the clipboard itself, and `images`
+ * (the `[Image #n]` in its input box) shows what the next message takes
+ * along. Unsent text survives leaving the tab (see `drafts`).
  */
-export default function Composer({ sessionId, status, onShowTerminal, onSent, quote, skillsKey, sent = [] }: {
+export default function Composer({ sessionId, status, onShowTerminal, onSent, quote, skillsKey, sent = [], images = [] }: {
   sessionId: string; status: string; onShowTerminal: () => void; onSent?: () => void;
   quote?: { text: string; seq: number }; skillsKey?: number;
+  /** Numbers of the images waiting in Claude's input (`[Image #n]`). */
+  images?: number[];
   /** Messages sent before, oldest first: ↑ in the empty box brings them back. */
   sent?: string[];
 }) {
@@ -178,7 +183,10 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
 
   /** Starts sending `value`; false when nothing was sent (waiting, a send in flight, empty). */
   const send = (value = text): boolean => {
-    if (waiting || sendingRef.current || value.trim() === "") return false;
+    // Only images: the empty text sends Claude's input as it is.
+    if (value.trim() === "" && images.length > 0) value = "";
+    else if (value.trim() === "") return false;
+    if (waiting || sendingRef.current) return false;
     sendingRef.current = true;
     setSending(true);
     setErr(null);
@@ -202,6 +210,21 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
     return true;
   };
 
+  /** The clipboard's image into Claude's input; it shows above the box once there. */
+  const pasteImage = () => {
+    if (waiting) return;
+    setErr(null);
+    pasteImageToSession(sessionId).catch((e: unknown) => setErr(t("conv.pasteFailed", { err: errorText(e) })));
+  };
+  const onPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const dt = e.clipboardData;
+    const image = Array.from(dt.items ?? []).some((i) => i.kind === "file" && i.type.startsWith("image/"));
+    // Text (also text copied with a picture) pastes as text.
+    if (!image || dt.types.includes("text/plain")) return;
+    e.preventDefault();
+    pasteImage();
+  };
+
   /** Runs a menu entry; a picker command it sent also shows the Terminal tab. */
   const pick = (e: SlashEntry) => {
     if (send(`/${e.name}`) && e.terminal) onShowTerminal();
@@ -210,6 +233,12 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // keyCode 229: WebKitGTK can send the Enter that commits an IME word with isComposing false.
     const ime = e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229;
+    // Alt+V: Claude Code's image paste key in the terminal (AltGr is Ctrl+Alt, not this).
+    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.code === "KeyV" || e.key.toLowerCase() === "v")) {
+      e.preventDefault();
+      pasteImage();
+      return;
+    }
     if (filesOpen && !ime) {
       const n = hints.length;
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -269,6 +298,11 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
     <div className="conv-composer">
       {menuOpen && <SlashMenu id={listId} entries={entries} active={Math.min(active, entries.length - 1)} onPick={pick} onHover={setActive} />}
       {filesOpen && <FileMenu id={listId} hints={hints} active={Math.min(hintActive, hints.length - 1)} onPick={complete} onHover={setHintActive} />}
+      {images.length > 0 && (
+        <div className="conv-images" role="status">
+          {t("conv.images", { list: images.map((n) => `[Image #${n}]`).join(" ") })}
+        </div>
+      )}
       <div className="conv-composer-row">
         <textarea ref={box} value={text} rows={2} disabled={waiting} placeholder={t("conv.placeholder")}
           aria-autocomplete="list" aria-controls={menuOpen || filesOpen ? listId : undefined}
@@ -278,8 +312,9 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
             setText(e.target.value); setCaret(e.target.selectionStart); setErr(null); setClosedFor(null); setBrowse(null);
           }}
           onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
-          onKeyDown={onKeyDown} />
-        <button type="button" className="btn" disabled={waiting || sending || text.trim() === ""} onClick={() => send()}>
+          onKeyDown={onKeyDown} onPaste={onPaste} />
+        <button type="button" className="btn" disabled={waiting || sending || (text.trim() === "" && images.length === 0)}
+          onClick={() => send()}>
           {t("conv.send")}
         </button>
       </div>
