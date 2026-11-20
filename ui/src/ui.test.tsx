@@ -194,6 +194,16 @@ test("status bar seçili oturumu gösterir", () => {
   expect(screen.getByText(/demo/)).toBeTruthy();
 });
 
+test("status bar shows no branch field for a folder outside git", () => {
+  const { unmount } = render(<StatusBar sessions={[card({ gitBranch: "feat/x" })]} selectedId="s1" />);
+  expect(screen.getByRole("contentinfo").textContent).toContain("│ feat/x │");
+  unmount();
+  render(<StatusBar sessions={[card({ gitBranch: null })]} selectedId="s1" />);
+  const text = screen.getByRole("contentinfo").textContent!;
+  expect(text).not.toContain("│ ? │");
+  expect(text).toMatch(/demo │ bağlam/);
+});
+
 test("status bar oturum adı yerine klasör adını gösterir", () => {
   render(<StatusBar sessions={[card({ name: "oturum-adi", cwd: "C:\\isler\\pusula\\" })]} selectedId="s1" />);
   const sb = screen.getByRole("contentinfo");

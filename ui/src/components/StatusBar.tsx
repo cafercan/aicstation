@@ -14,7 +14,7 @@ export default function StatusBar({ sessions, selectedId }: Props) {
   return (
     <footer className="sb">
       <span className="c2">{c.model ?? "?"}</span> │ {folderName(c.cwd) || "?"} │{" "}
-      <span className="g">{c.gitBranch ?? "?"}</span> │{" "}
+      {c.gitBranch && <><span className="g">{c.gitBranch}</span> │{" "}</>}
       {t("sb.context", { pct: fmtContext(c.contextPct) })} │{" "}
       {c.agentsTotal > 0 ? t("sb.agents", { n: c.agentsTotal }) : t("sb.noAgents")} │{" "}
       <span style={{ color: statusTextColor(statusKind(c.status, c.pid)) }}>{statusLabel(c.status, c.pid)}</span> │{" "}

@@ -267,8 +267,9 @@ impl SessionStats {
                     }
                     self.cwd = Some(c.clone());
                 }
-                if git_branch.is_some() {
-                    self.git_branch = git_branch.clone();
+                if let Some(b) = git_branch {
+                    // "HEAD": not a git repository, or a detached HEAD; no branch either way.
+                    self.git_branch = (b != "HEAD").then(|| b.clone());
                 }
                 if let Some(at) = at {
                     self.touch(*at);
@@ -385,6 +386,18 @@ mod tests {
         let last = format!("m{}", MAX_SEEN_IDS * 3 - 1);
         s.apply(&asst(&last, "claude-opus-5-5", None, u, vec![], at(10, 0)));
         assert_eq!(s.tokens.input, (MAX_SEEN_IDS * 3) as u64);
+    }
+
+    #[test]
+    fn head_is_no_branch() {
+        // Claude Code writes "HEAD" outside a git repository (and on a detached HEAD).
+        let mut s = SessionStats::default();
+        let on = |b: &str| Entry::Meta { cwd: None, git_branch: Some(b.into()), at: None };
+        s.apply(&on("HEAD"));
+        assert_eq!(s.git_branch, None);
+        s.apply(&on("main"));
+        s.apply(&on("HEAD"));
+        assert_eq!(s.git_branch, None);
     }
 
     #[test]
