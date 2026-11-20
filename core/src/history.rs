@@ -54,8 +54,9 @@ pub struct HistoryRow {
 /// On-disk cache schema. A cache of any other version (or the bare array of
 /// version 1, which had no first cwd) is ignored and rebuilt (version 3 added
 /// the token totals, version 4 the git branch, version 5 a first cwd that
-/// matches the transcript's project folder).
-pub const CACHE_VERSION: u32 = 5;
+/// matches the transcript's project folder, version 6 no "HEAD" branch for a
+/// folder outside git).
+pub const CACHE_VERSION: u32 = 6;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
