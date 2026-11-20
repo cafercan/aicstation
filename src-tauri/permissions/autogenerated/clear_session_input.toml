@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-clear-session-input"
+description = "Enables the clear_session_input command without any pre-configured scope."
+commands.allow = ["clear_session_input"]
+
+[[permission]]
+identifier = "deny-clear-session-input"
+description = "Denies the clear_session_input command without any pre-configured scope."
+commands.deny = ["clear_session_input"]
