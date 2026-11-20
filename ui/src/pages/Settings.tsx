@@ -4,6 +4,7 @@ import { refreshClaudeStatus, useClaudeStatus } from "../terminal/claudeBarData"
 import { errorText, useT, type Key } from "../i18n";
 import { isWindows } from "../platform";
 import About from "../components/About";
+import { askConfirm } from "../components/ConfirmDialog";
 import GeneralPrefs from "../components/GeneralPrefs";
 import TerminalAppearance from "../components/TerminalAppearance";
 import ConversationAppearance from "../components/ConversationAppearance";
@@ -69,7 +70,7 @@ function UsageLimitsRow({ onError }: { onError: (e: unknown) => void }) {
   const status = useClaudeStatus();
   const [busy, setBusy] = useState(false);
   const change = async (on: boolean) => {
-    if (on && !window.confirm(t("settings.usageLimitsConfirm"))) return;
+    if (on && !(await askConfirm(t("settings.usageLimitsConfirm")))) return;
     setBusy(true);
     try { await setUsageBridge(on); } catch (e) { onError(e); }
     await refreshClaudeStatus();

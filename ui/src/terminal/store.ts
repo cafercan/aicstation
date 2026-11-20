@@ -1,4 +1,5 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { askConfirm } from "../components/ConfirmDialog";
 import { ClipboardAddon } from "@xterm/addon-clipboard";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
@@ -213,15 +214,18 @@ export async function closeTerminal(id: number): Promise<void> {
   removeEntry(id);
 }
 
-/** True when closing may proceed: no Claude session (in any state) inside, or the user agrees. */
-export function confirmClose(ids: number[], sessions: SessionCard[]): boolean {
+/**
+ * True when closing may proceed: no Claude session (in any state) inside, or
+ * the user agrees. `beforeAsk` runs only when there is a question (the tray's
+ * Quit brings the hidden window forward to ask it).
+ */
+export async function confirmClose(ids: number[], sessions: SessionCard[], beforeAsk?: () => Promise<void>): Promise<boolean> {
   const active = terminals
     .filter((t) => ids.includes(t.id))
     .flatMap((t) => sessionsIn(t, sessions));
   if (active.length === 0) return true;
-  return window.confirm(
-    t("term.confirmClose", { n: active.length, names: active.map((s) => s.name).join(", ") }),
-  );
+  await beforeAsk?.();
+  return askConfirm(t("term.confirmClose", { n: active.length, names: active.map((s) => s.name).join(", ") }));
 }
 
 export function allTerminalIds(): number[] { return terminals.map((t) => t.id); }

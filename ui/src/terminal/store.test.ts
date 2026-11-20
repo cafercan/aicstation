@@ -28,6 +28,8 @@ vi.mock("@xterm/xterm", () => ({
     open() {}
   },
 }));
+const askConfirm = vi.hoisted(() => vi.fn(async (_m: string) => true));
+vi.mock("../components/ConfirmDialog", () => ({ askConfirm: (m: string) => askConfirm(m) }));
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: class { fit() {} } }));
 vi.mock("@xterm/addon-unicode11", () => ({ Unicode11Addon: class { kind = "unicode11"; } }));
 vi.mock("@xterm/addon-search", () => ({ SearchAddon: class { kind = "search"; } }));
@@ -179,20 +181,23 @@ test("a paste larger than one write arrives whole, in order, in pieces", async (
 
 test("kapatma: içinde herhangi bir Claude oturumu varsa onay ister", async () => {
   await openTerminal();
-  const ask = vi.spyOn(window, "confirm").mockReturnValue(false);
-  expect(confirmClose([7], [])).toBe(true);
-  expect(confirmClose([7], [card({ parentPid: 9999, status: "busy" })])).toBe(true);
-  expect(ask).not.toHaveBeenCalled();
-  expect(confirmClose([7], [card({ parentPid: 4242, status: "idle" })])).toBe(false);
-  expect(confirmClose([7], [card({ parentPid: 4242, status: "busy" })])).toBe(false);
-  expect(confirmClose([7], [card({ parentPid: 4242, status: "waiting" })])).toBe(false);
-  expect(ask).toHaveBeenCalledTimes(3);
-  ask.mockReturnValue(true);
-  expect(confirmClose([7], [card({ parentPid: 4242, status: "busy" })])).toBe(true);
-  expect(ask).toHaveBeenLastCalledWith("Terminalde açık 1 Claude oturumu var (demo). Yine de kapatılsın mı?");
+  askConfirm.mockResolvedValue(false);
+  const before = vi.fn(async () => {});
+  expect(await confirmClose([7], [], before)).toBe(true);
+  expect(await confirmClose([7], [card({ parentPid: 9999, status: "busy" })], before)).toBe(true);
+  expect(askConfirm).not.toHaveBeenCalled();
+  expect(before).not.toHaveBeenCalled();
+  expect(await confirmClose([7], [card({ parentPid: 4242, status: "idle" })], before)).toBe(false);
+  expect(await confirmClose([7], [card({ parentPid: 4242, status: "busy" })])).toBe(false);
+  expect(await confirmClose([7], [card({ parentPid: 4242, status: "waiting" })])).toBe(false);
+  expect(askConfirm).toHaveBeenCalledTimes(3);
+  expect(before).toHaveBeenCalledTimes(1);
+  askConfirm.mockResolvedValue(true);
+  expect(await confirmClose([7], [card({ parentPid: 4242, status: "idle" })])).toBe(true);
+  expect(askConfirm).toHaveBeenLastCalledWith("Terminalde açık 1 Claude oturumu var (demo). Yine de kapatılsın mı?");
   setLang("en");
-  confirmClose([7], [card({ parentPid: 4242 }), card({ parentPid: 4242, name: "iki" })]);
-  expect(ask).toHaveBeenLastCalledWith("The terminal has 2 open Claude sessions (demo, iki). Close it anyway?");
+  await confirmClose([7], [card({ parentPid: 4242 }), card({ parentPid: 4242, name: "iki" })]);
+  expect(askConfirm).toHaveBeenLastCalledWith("The terminal has 2 open Claude sessions (demo, iki). Close it anyway?");
 });
 
 test("süreç çıkınca terminal menüden düşer", async () => {

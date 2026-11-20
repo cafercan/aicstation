@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { askConfirm } from "../components/ConfirmDialog";
 import type { SessionCard } from "../api";
 import { goToTab, gotoTarget, resumeError } from "../gotoTab";
 import { errorText, useT } from "../i18n";
@@ -74,8 +75,9 @@ export default function SessionTerminalPlaceholder({ card, sessionId, onTerminal
                 .then(setNote, (e: unknown) => setErr({ text: e instanceof Error ? e.message : String(e), terminal: null }));
             }}>{tx("detail.goto")}</button>
           )}
-          <button className="btn" disabled={!move.enabled || busy} onClick={() => {
-            if (!move.enabled || busyRef.current || !window.confirm(tx("place.moveConfirm"))) return;
+          <button className="btn" disabled={!move.enabled || busy} onClick={async () => {
+            if (!move.enabled || busyRef.current || !(await askConfirm(tx("place.moveConfirm")))) return;
+            if (busyRef.current) return;
             run(
               () => openAdoptTerminal(sessionId, card.name).then((t) => onAdopted(t.id, sessionId)),
               (e) => ({ text: errorText(e), terminal: null }),

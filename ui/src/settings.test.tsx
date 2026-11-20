@@ -44,7 +44,8 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke, Channel: class {} }));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async (name: string, cb: (e: { payload: unknown }) => void) => {
     h.listeners.set(name, cb);
-    return () => { h.listeners.delete(name); };
+    // A late unlisten of an earlier test's app must not drop this test's listener.
+    return () => { if (h.listeners.get(name) === cb) h.listeners.delete(name); };
   }),
 }));
 vi.mock("@tauri-apps/api/window", () => ({
@@ -61,6 +62,8 @@ import SettingsPage, { parseBudget } from "./pages/Settings";
 import { loadSettings } from "./settings";
 import { resetUiState } from "./testing/reset";
 import { setLang } from "./i18n";
+import ConfirmHost from "./components/ConfirmDialog";
+import { answerConfirm } from "./testing/confirm";
 
 
 
@@ -278,7 +281,12 @@ test("tepsiden Çık: kapatma onayından geçip pencereyi kapatır", async () =>
   render(<App />);
   await waitFor(() => expect(h.listeners.has("tray-quit")).toBe(true));
   act(() => h.listeners.get("tray-quit")!({ payload: null }));
-  await waitFor(() => expect(h.destroy).toHaveBeenCalledTimes(1));
+  // Terminals left by earlier tests may hold a session: then the question shows.
+  await waitFor(() => {
+    const ok = screen.queryByRole("button", { name: "Tamam" });
+    if (ok) fireEvent.click(ok);
+    expect(h.destroy).toHaveBeenCalledTimes(1);
+  });
   expect(calls("hide_to_tray")).toEqual([]);
 });
 
@@ -291,23 +299,21 @@ test("ayarlar sayfası dil ve tema seçicilerini gösterir; ayarlar yüklenirken
 
 test("Claude kullanım limitleri: açmak onay ister; vazgeçilirse dokunulmaz, kapatmak sormaz", async () => {
   await loadSettings();
-  render(<SettingsPage />);
+  render(<><SettingsPage /><ConfirmHost /></>);
   const name = /Claude kullanım limitlerini/;
   const box = () => screen.getByRole("checkbox", { name }) as HTMLInputElement;
   await waitFor(() => expect(box().disabled).toBe(false));
   expect(box().checked).toBe(false);
-  const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false);
   fireEvent.click(box());
-  expect(confirm).toHaveBeenCalledWith(expect.stringContaining("~/.claude/settings.json"));
+  expect(await answerConfirm(false)).toContain("~/.claude/settings.json");
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
   expect(calls("set_usage_bridge")).toEqual([]);
-  confirm.mockReturnValueOnce(true);
   fireEvent.click(box());
+  await answerConfirm(true);
   await waitFor(() => expect(box().checked).toBe(true));
   expect(calls("set_usage_bridge")).toEqual([{ on: true }]);
-  confirm.mockClear();
   fireEvent.click(box());
   await waitFor(() => expect(box().checked).toBe(false));
-  expect(confirm).not.toHaveBeenCalled();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(calls("set_usage_bridge")).toEqual([{ on: true }, { on: false }]);
-  confirm.mockRestore();
 });

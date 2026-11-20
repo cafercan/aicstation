@@ -125,7 +125,9 @@ export function screenRows(term: Terminal): string[] {
     const line = buf.getLine(y);
     // Untrimmed while a wrapped row may follow: a space at the wrap is text.
     const text = line?.translateToString(false) ?? "";
-    if (line?.isWrapped && rows.length > 0) rows[rows.length - 1] += text;
+    // A full-width rule leaves xterm's wrap pending, so the row Claude
+    // draws after it comes out marked as wrapped: it is a row of its own.
+    if (line?.isWrapped && rows.length > 0 && !isRule(rows[rows.length - 1].trimEnd())) rows[rows.length - 1] += text;
     else rows.push(text);
   }
   return rows.map((r) => r.trimEnd());

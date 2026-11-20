@@ -77,6 +77,8 @@ export const ru: Dict = {
   "app.terminalMissing": "Терминал не найден.",
   "app.backToDashboard": "← Панель",
   "common.loading": "Загрузка…",
+  "common.ok": "ОК",
+  "common.cancel": "Отмена",
 
   "hist.title": "История",
   "hist.folderFilter": "Фильтр по папке",

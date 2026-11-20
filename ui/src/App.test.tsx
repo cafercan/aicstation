@@ -63,6 +63,7 @@ vi.mock("./pages/TerminalView", () => ({
 
 import App from "./App";
 import { resetUiState } from "./testing/reset";
+import { answerConfirm } from "./testing/confirm";
 
 function card(over: Partial<SessionCard>): SessionCard {
   return {
@@ -200,7 +201,6 @@ test("Claude'suz kabuk terminalinde sekme çubuğu yok", async () => {
 });
 
 test("uygulama dışındaki oturumun Terminal sekmesi: yer tutucu; taşınınca yeni terminal gösterilir", async () => {
-  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
   snap.sessions = [card({ sessionId: "s-ext", hostKind: "windowsTerminal", movable: true })];
   openAdopt.mockImplementation(async () => fake.add(3, 70));
   const { container } = render(<App />);
@@ -209,12 +209,12 @@ test("uygulama dışındaki oturumun Terminal sekmesi: yer tutucu; taşınınca 
   fireEvent.click(tab("Terminal"));
   expect(screen.getByText("Bu oturum uygulamanın dışında, Windows Terminal'de çalışıyor.")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Uygulamaya taşı" }));
+  await answerConfirm(true);
   await waitFor(() => expect(termVisible(3)).toBe("true"));
   expect(openAdopt).toHaveBeenCalledWith("s-ext", "demo");
   // Once the registry lists the session in the new terminal, the tab bar is back.
   await push([card({ sessionId: "s-ext", parentPid: 70, hostKind: "embedded" })]);
   expect(tab("Terminal").getAttribute("aria-selected")).toBe("true");
-  confirm.mockRestore();
 });
 
 test("kapalı oturumun Terminal sekmesi Devam et sunar; kayıt gelmeden dönülürse yeni terminal açılır", async () => {

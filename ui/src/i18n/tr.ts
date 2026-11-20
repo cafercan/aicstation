@@ -76,6 +76,8 @@ export const tr = {
   "app.terminalMissing": "Terminal bulunamadı.",
   "app.backToDashboard": "← Dashboard",
   "common.loading": "Yükleniyor…",
+  "common.ok": "Tamam",
+  "common.cancel": "İptal",
 
   // History
   "hist.title": "Geçmiş",

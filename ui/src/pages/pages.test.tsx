@@ -30,6 +30,8 @@ import SessionDetailPage from "./SessionDetail";
 import History from "./History";
 import SessionTerminalPlaceholder from "./SessionTerminalPlaceholder";
 import { resetUiState } from "../testing/reset";
+import ConfirmHost from "../components/ConfirmDialog";
+import { answerConfirm } from "../testing/confirm";
 
 const usage = { input: 1000, output: 500, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0 };
 const call = (id: string, name: string, target: string, state: ToolCall["state"]): ToolCall =>
@@ -583,44 +585,42 @@ test("Uygulamaya taşı: oturum çalışırken devre dışı ve nedeni yazılı 
 });
 
 test("Uygulamaya taşı önce onay ister; iptalde hiçbir şey yapılmaz, onayda bir kez taşınır", async () => {
-  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
   const onAdopted = vi.fn();
   openAdoptTerminal.mockResolvedValue({ id: 9 });
-  render(placeholder({ onAdopted }));
+  render(<>{placeholder({ onAdopted })}<ConfirmHost /></>);
   fireEvent.click(moveButton());
-  expect(confirm).toHaveBeenCalledWith(expect.stringContaining("komut satırı seçenekleri taşınmaz"));
-  expect(confirm.mock.calls[0][0]).toContain("arka plan kabuk komutları durabilir");
+  const text = await answerConfirm(false);
+  expect(text).toContain("komut satırı seçenekleri taşınmaz");
+  expect(text).toContain("arka plan kabuk komutları durabilir");
   expect(openAdoptTerminal).not.toHaveBeenCalled();
-  confirm.mockReturnValue(true);
   fireEvent.click(moveButton());
+  await answerConfirm(true);
   await waitFor(() => expect(onAdopted).toHaveBeenCalledWith(9, "s1"));
   expect(openAdoptTerminal).toHaveBeenCalledTimes(1);
   expect(openAdoptTerminal).toHaveBeenCalledWith("s1", "demo");
-  confirm.mockRestore();
 });
 
 test("Uygulamaya taşı istek sürerken devre dışı, ikinci tık yeni istek açmaz", async () => {
-  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
   openAdoptTerminal.mockReturnValue(new Promise(() => {}));
-  render(placeholder());
+  render(<>{placeholder()}<ConfirmHost /></>);
   fireEvent.click(moveButton());
+  await answerConfirm(true);
   await waitFor(() => expect(moveButton().disabled).toBe(true));
   fireEvent.click(moveButton());
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(openAdoptTerminal).toHaveBeenCalledTimes(1);
-  confirm.mockRestore();
 });
 
 test("Uygulamaya taşı hatası çevrilip satır içinde gösterilir, düğme yeniden açılır", async () => {
-  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
   openAdoptTerminal.mockRejectedValue("adopt_busy");
   const onAdopted = vi.fn();
-  render(placeholder({ onAdopted }));
+  render(<>{placeholder({ onAdopted })}<ConfirmHost /></>);
   fireEvent.click(moveButton());
+  await answerConfirm(true);
   const alert = await screen.findByRole("alert");
   expect(alert.textContent).toContain("Oturum çalışıyor; boşta olduğunda taşınabilir");
   expect(moveButton().disabled).toBe(false);
   expect(onAdopted).not.toHaveBeenCalled();
-  confirm.mockRestore();
 });
 
 test("kapalı oturumun Terminal sekmesi ▶ Devam et sunar; hata ve devam ettiren terminale Sekmeye git", async () => {

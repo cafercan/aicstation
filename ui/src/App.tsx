@@ -24,6 +24,7 @@ import {
   useTerminals,
 } from "./terminal/store";
 import { openSessionView, resolveView, tabBarFor, viewAfterClose } from "./sessionView";
+import ConfirmHost from "./components/ConfirmDialog";
 import "./app.css";
 import "./features.css";
 import { splitAfterClose, type Split } from "./terminal/split";
@@ -88,19 +89,21 @@ export default function App() {
     let unlisten: (() => void) | undefined;
     let alive = true;
     /** Real exit (window close without tray, or "Quit" in the tray menu). */
-    const exitApp = () => {
-      if (!confirmClose(allTerminalIds(), snapRef.current.sessions)) return;
+    const exitApp = async () => {
+      const win = getCurrentWindow();
+      const show = async () => { await win.show().catch(() => {}); await win.setFocus().catch(() => {}); };
+      if (!(await confirmClose(allTerminalIds(), snapRef.current.sessions, show))) return;
       allTerminalIds().forEach((id) => { void closeTerminal(id); });
       // Destroy explicitly so a rejected destroy is logged, not swallowed.
       getCurrentWindow().destroy().catch((err) => console.error("Pencere kapatılamadı:", err));
     };
-    const unlistens: Promise<() => void>[] = [onTrayQuit(exitApp)];
+    const unlistens: Promise<() => void>[] = [onTrayQuit(() => { void exitApp(); })];
     try {
       unlistens.push(getCurrentWindow().onCloseRequested((e) => {
         e.preventDefault();
         // Until the settings have loaded, the default (minimize to tray) applies.
-        if (!(currentSettings()?.closeToTray ?? true)) return exitApp();
-        hideToTray().catch((err) => { console.error("Tepsiye küçültülemedi:", err); exitApp(); });
+        if (!(currentSettings()?.closeToTray ?? true)) { void exitApp(); return; }
+        hideToTray().catch((err) => { console.error("Tepsiye küçültülemedi:", err); void exitApp(); });
       }));
     } catch { /* not running inside Tauri */ }
     const all = Promise.all(unlistens);
@@ -161,8 +164,8 @@ export default function App() {
   /** Card click and History open: the app terminal hosting the session, else its Info tab. */
   const openSession = useCallback((id: string) =>
     setView(openSessionView(id, snapRef.current.sessions, terminalForPid)), []);
-  const onClose = useCallback((id: number) => {
-    if (!confirmClose([id], snapRef.current.sessions)) return;
+  const onClose = useCallback(async (id: number) => {
+    if (!(await confirmClose([id], snapRef.current.sessions))) return;
     // Closing a split pane leaves the other pane on screen.
     const other = splitAfterClose(splitRef.current, id).show;
     setView((v) => viewAfterClose(v, id, other));
@@ -265,6 +268,7 @@ export default function App() {
       </div>
       <StatusBar sessions={snapshot.sessions} selectedId={selectedId} />
       <Overlays {...shortcuts} />
+      <ConfirmHost />
     </div>
   );
 }

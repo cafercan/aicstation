@@ -71,6 +71,8 @@ export const fr: Dict = {
   "app.terminalMissing": "Terminal introuvable.",
   "app.backToDashboard": "← Tableau de bord",
   "common.loading": "Chargement…",
+  "common.ok": "OK",
+  "common.cancel": "Annuler",
 
   "hist.title": "Historique",
   "hist.folderFilter": "Filtre de dossier",

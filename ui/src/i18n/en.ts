@@ -68,6 +68,8 @@ export const en: Dict = {
   "app.terminalMissing": "Terminal not found.",
   "app.backToDashboard": "← Dashboard",
   "common.loading": "Loading…",
+  "common.ok": "OK",
+  "common.cancel": "Cancel",
 
   "hist.title": "History",
   "hist.folderFilter": "Folder filter",

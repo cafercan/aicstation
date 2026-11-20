@@ -92,3 +92,20 @@ test("the images waiting in Claude's input box are read from its rows", () => {
   expect(inputImages([rule, "> boş", rule])).toEqual([]);
   expect(inputImages(["> [Image #4]"])).toEqual([]);
 });
+
+test("a full-width rule does not swallow the row xterm marks as wrapped after it", () => {
+  const rule = "─".repeat(244);
+  const lines = [
+    { text: rule, wrapped: false },
+    { text: "❯ [Image #1]", wrapped: true },
+    { text: rule, wrapped: false },
+    { text: "  ⏵⏵ auto mode on", wrapped: false },
+  ];
+  const term = {
+    rows: 4,
+    buffer: { active: { baseY: 0, getLine: (i: number) => ({ isWrapped: lines[i].wrapped, translateToString: () => lines[i].text }) } },
+  };
+  const rows = screenRows(term as never);
+  expect(rows).toEqual([rule, "❯ [Image #1]", rule, "  ⏵⏵ auto mode on"]);
+  expect(inputImages(rows)).toEqual([1]);
+});

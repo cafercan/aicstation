@@ -111,6 +111,11 @@ kbd { font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px; color:
 .help td:first-child { white-space: nowrap; }
 .help .meta { margin-top: 10px; }
 .help .btn { align-self: flex-end; margin-top: 6px; }
+.confirm { width: min(440px, calc(100vw - 32px)); padding: 16px; }
+.confirm p { margin: 0 0 14px; line-height: 1.5; white-space: pre-line; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.confirm .btn { margin: 0; }
+.confirm .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 /* Secondary dollar estimate next to or under a token count (muted, smaller) */
 .est { color: var(--muted); font-size: .85em; font-weight: 400; font-style: normal; text-transform: none; letter-spacing: 0; }

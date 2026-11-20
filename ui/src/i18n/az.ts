@@ -71,6 +71,8 @@ export const az: Dict = {
   "app.terminalMissing": "Terminal tapılmadı.",
   "app.backToDashboard": "← Panel",
   "common.loading": "Yüklənir…",
+  "common.ok": "Oldu",
+  "common.cancel": "Ləğv et",
 
   "hist.title": "Tarixçə",
   "hist.folderFilter": "Qovluq filtri",

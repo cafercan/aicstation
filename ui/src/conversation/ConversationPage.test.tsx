@@ -1051,3 +1051,23 @@ test("image: without images an empty box sends nothing", () => {
   fireEvent.keyDown(box, { key: "Enter" });
   expect(sent()).toEqual([]);
 });
+
+test("image: the [Image #n] in the app terminal's input box show above the message box", async () => {
+  const rule = "─".repeat(244);
+  const lines = ["● eski yanıt", "", rule, "❯ [Image #1]", rule, "  ⏵⏵ auto mode on (shift+tab to cycle)"];
+  const term = {
+    rows: lines.length,
+    buffer: { active: { baseY: 0, getLine: (i: number) => ({ isWrapped: false, translateToString: () => lines[i] }) } },
+    onWriteParsed: () => ({ dispose: () => {} }),
+  };
+  (NO_TERMINALS as unknown as object[]).push({ id: 5, pid: 70, term });
+  terminalForPid.mockImplementation((p) => (p === 70 ? 5 : undefined));
+  try {
+    serve({ get_conversation_page: () => page(ITEMS), get_session_commands: () => [] });
+    render(<ConversationPage sessionId="s1" card={card()} onShowTerminal={noop} onTerminal={noop} onAdopted={noop} onResume={async () => {}} />);
+    expect((await screen.findByText(/mesajla birlikte gider/)).textContent).toBe("[Image #1] mesajla birlikte gider");
+  } finally {
+    (NO_TERMINALS as unknown as object[]).length = 0;
+    terminalForPid.mockImplementation(() => undefined);
+  }
+});

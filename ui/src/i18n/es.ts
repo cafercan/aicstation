@@ -71,6 +71,8 @@ export const es: Dict = {
   "app.terminalMissing": "No se encontró el terminal.",
   "app.backToDashboard": "← Panel",
   "common.loading": "Cargando…",
+  "common.ok": "Aceptar",
+  "common.cancel": "Cancelar",
 
   "hist.title": "Historial",
   "hist.folderFilter": "Filtro de carpeta",

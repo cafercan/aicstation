@@ -71,6 +71,8 @@ export const zh: Dict = {
   "app.terminalMissing": "未找到终端。",
   "app.backToDashboard": "← 总览",
   "common.loading": "加载中…",
+  "common.ok": "确定",
+  "common.cancel": "取消",
 
   "hist.title": "历史记录",
   "hist.folderFilter": "文件夹筛选",
