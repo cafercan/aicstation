@@ -1,5 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import { clearSessionInput, getSessionCommands, getSessionFiles, pasteImageToSession, sendToSession, type FileHint, type SessionSkill } from "../api";
+import {
+  getSessionCommands, getSessionFiles, pasteImageToSession, removeSessionImage, sendToSession, type FileHint, type SessionSkill,
+} from "../api";
 import { errorText, useT } from "../i18n";
 import { getDraft, setDraft } from "./drafts";
 import { appendQuote } from "./quote";
@@ -8,6 +10,10 @@ import { matchCommands, slashQuery, type SlashEntry } from "./slashCommands";
 import SlashMenu, { slashOptionId } from "./SlashMenu";
 import FileMenu from "./FileMenu";
 import { atQuery, completeAt } from "./atMention";
+import type { InputImage } from "./statusLine";
+
+/** A preview waits this long for its [Image #n]; then the paste is taken as failed. */
+const PREVIEW_WAIT_MS = 30_000;
 
 /**
  * Message box under the conversation of a session in an app terminal. Enter
@@ -26,8 +32,8 @@ import { atQuery, completeAt } from "./atMention";
 export default function Composer({ sessionId, status, onShowTerminal, onSent, quote, skillsKey, sent = [], images = [] }: {
   sessionId: string; status: string; onShowTerminal: () => void; onSent?: () => void;
   quote?: { text: string; seq: number }; skillsKey?: number;
-  /** Numbers of the images waiting in Claude's input (`[Image #n]`). */
-  images?: number[];
+  /** The images waiting in Claude's input (`[Image #n]`), in input order. */
+  images?: InputImage[];
   /** Messages sent before, oldest first: ↑ in the empty box brings them back. */
   sent?: string[];
 }) {
@@ -212,19 +218,63 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
     return true;
   };
 
+  // Previews: a picture pasted here waits in `queued` for the next new
+  // [Image #n] in Claude's input and is shown on it; a paste without the
+  // picture's data (Alt+V, Ctrl+Shift+V) queues none. Freed when its image leaves.
+  const queued = useRef<{ url: string | null; at: number }[]>([]);
+  const previews = useRef(new Map<number, string | null>());
+  const [, setPreviewTick] = useState(0);
+  const imageKey = images.map((i) => i.n).join(",");
+  useEffect(() => {
+    const map = previews.current;
+    const now = Date.now();
+    let changed = false;
+    for (const { n } of images) {
+      if (map.has(n)) continue;
+      // A queued preview whose paste never arrived is dropped.
+      while (queued.current.length > 0 && now - queued.current[0].at > PREVIEW_WAIT_MS) {
+        const old = queued.current.shift()!;
+        if (old.url) URL.revokeObjectURL(old.url);
+      }
+      map.set(n, queued.current.shift()?.url ?? null);
+      changed = true;
+    }
+    for (const [n, url] of map) {
+      if (images.some((i) => i.n === n)) continue;
+      if (url) URL.revokeObjectURL(url);
+      map.delete(n);
+      changed = true;
+    }
+    if (changed) setPreviewTick((x) => x + 1);
+  }, [imageKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => {
+    for (const url of previews.current.values()) if (url) URL.revokeObjectURL(url);
+    for (const q of queued.current) if (q.url) URL.revokeObjectURL(q.url);
+  }, []);
+
   /** The clipboard's image into Claude's input; it shows above the box once there. */
-  const pasteImage = () => {
+  const pasteImage = (picture: Blob | null) => {
     if (waiting) return;
     setErr(null);
-    pasteImageToSession(sessionId).catch((e: unknown) => setErr(t("conv.pasteFailed", { err: errorText(e) })));
+    queued.current.push({ url: picture ? URL.createObjectURL(picture) : null, at: Date.now() });
+    pasteImageToSession(sessionId).catch((e: unknown) => {
+      const q = queued.current.pop();
+      if (q?.url) URL.revokeObjectURL(q.url);
+      setErr(t("conv.pasteFailed", { err: errorText(e) }));
+    });
   };
   const onPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const dt = e.clipboardData;
-    const image = Array.from(dt.items ?? []).some((i) => i.kind === "file" && i.type.startsWith("image/"));
-    // Text (also text copied with a picture) pastes as text.
-    if (!image || dt.types.includes("text/plain")) return;
+    const item = Array.from(dt.items ?? []).find((i) => i.kind === "file" && i.type.startsWith("image/"));
+    // Text (also text copied with a picture) pastes as text. A paste with no
+    // data at all is Ctrl+Shift+V (as plain text) of a picture.
+    if (dt.types.includes("text/plain") || !(item || dt.types.length === 0)) return;
     e.preventDefault();
-    pasteImage();
+    pasteImage(item?.getAsFile() ?? null);
+  };
+  const removeImage = (at: number) => {
+    setErr(null);
+    removeSessionImage(sessionId, at).catch((e: unknown) => setErr(errorText(e)));
   };
 
   /** Runs a menu entry; a picker command it sent also shows the Terminal tab. */
@@ -238,7 +288,7 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
     // Alt+V: Claude Code's image paste key in the terminal (AltGr is Ctrl+Alt, not this).
     if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.code === "KeyV" || e.key.toLowerCase() === "v")) {
       e.preventDefault();
-      pasteImage();
+      pasteImage(null);
       return;
     }
     if (filesOpen && !ime) {
@@ -302,12 +352,24 @@ export default function Composer({ sessionId, status, onShowTerminal, onSent, qu
       {filesOpen && <FileMenu id={listId} hints={hints} active={Math.min(hintActive, hints.length - 1)} onPick={complete} onHover={setHintActive} />}
       {images.length > 0 && (
         <div className="conv-images">
-          <span role="status">{t("conv.images", { list: images.map((n) => `[Image #${n}]`).join(" ") })}</span>
-          <button type="button" className="conv-images-x" aria-label={t("conv.imagesRemove")} title={t("conv.imagesRemove")}
-            disabled={waiting} onClick={() => {
-              setErr(null);
-              clearSessionInput(sessionId).catch((e: unknown) => setErr(errorText(e)));
-            }}>×</button>
+          <ul aria-label={t("conv.imagesLabel")}>
+            {images.map(({ n, at }) => {
+              const url = previews.current.get(n);
+              const name = `[Image #${n}]`;
+              return (
+                <li key={n} title={name}>
+                  {url ? <img src={url} alt="" /> : <span className="ph" aria-hidden="true" />}
+                  <span>#{n}</span>
+                  {at !== null && (
+                    <button type="button" className="conv-images-x" disabled={waiting}
+                      aria-label={t("conv.imageRemove", { name })} title={t("conv.imageRemove", { name })}
+                      onClick={() => removeImage(at)}>×</button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          <span role="status">{t("conv.imagesNote")}</span>
         </div>
       )}
       <div className="conv-composer-row">

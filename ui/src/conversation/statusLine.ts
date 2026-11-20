@@ -67,18 +67,32 @@ function inputBox(rows: string[]): { top: number; bottom: number } {
 }
 
 /**
- * Numbers of the `[Image #n]` placeholders inside the input box (images
- * pasted into the message being written), ascending, each once; none when
- * the box is not on screen.
+ * An image pasted into Claude's input: its `[Image #n]` number, and on the
+ * input's first line `at`, the characters from the line's start to the end
+ * of its tag (where Backspace removes it); `null` on a later line.
  */
-export function inputImages(rows: string[]): number[] {
+export interface InputImage { n: number; at: number | null }
+
+/**
+ * The `[Image #n]` placeholders inside the input box (images pasted into the
+ * message being written), in input order, each once; none when the box is
+ * not on screen.
+ */
+export function inputImages(rows: string[]): InputImage[] {
   const { top, bottom } = inputBox(rows);
   if (top < 0) return [];
-  const found = new Set<number>();
-  for (const row of rows.slice(top + 1, bottom)) {
-    for (const m of row.matchAll(/\[Image #(\d+)\]/g)) found.add(Number(m[1]));
-  }
-  return [...found].sort((a, b) => a - b);
+  const out: InputImage[] = [];
+  rows.slice(top + 1, bottom).forEach((row, i) => {
+    // The first line starts with the prompt glyph.
+    const line = i === 0 ? row.replace(/^\s*[❯>][  ]?/, "") : row;
+    for (const m of line.matchAll(/\[Image #(\d+)\]/g)) {
+      const n = Number(m[1]);
+      if (out.some((o) => o.n === n)) continue;
+      // Characters, not UTF-16 units: the arrow keys move by characters.
+      out.push({ n, at: i === 0 ? [...line.slice(0, m.index! + m[0].length)].length : null });
+    }
+  });
+  return out;
 }
 
 /** First (from the bottom) spinner row above the input box, trimmed, without key hints. */

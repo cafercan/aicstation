@@ -704,9 +704,9 @@ mod tests {
                     text.push_str(&String::from_utf8_lossy(&b));
                     // ConPTY asks for the cursor position and waits; a real
                     // terminal (xterm.js) answers, so the test plays that role.
-                    if text.contains("[6n") {
-                        text = text.replace("[6n", "");
-                        let _ = m.write(info.id, "[1;1R");
+                    if text.contains("\x1b[6n") {
+                        text = text.replace("\x1b[6n", "");
+                        let _ = m.write(info.id, "\x1b[1;1R");
                     }
                 }
                 Ev::Exit(c) => break c,

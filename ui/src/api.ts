@@ -250,8 +250,9 @@ export const sendToSession = (sessionId: string, text: string) =>
   invoke<void>("send_to_session", { sessionId, text });
 /** Has Claude Code paste the clipboard's image into the session's input (its own paste key). */
 export const pasteImageToSession = (sessionId: string) => invoke<void>("paste_image_to_session", { sessionId });
-/** Empties Claude's input line (the images waiting there). */
-export const clearSessionInput = (sessionId: string) => invoke<void>("clear_session_input", { sessionId });
+/** Drops the image whose `[Image #n]` tag ends `at` characters into Claude's input line. */
+export const removeSessionImage = (sessionId: string, at: number) =>
+  invoke<void>("remove_session_image", { sessionId, at });
 /** Opens the session on claude.ai/code in the system browser; only the id is sent. */
 export const openRemoteControl = (sessionId: string) => invoke<void>("open_remote_control", { sessionId });
 export interface PtyInfo { id: number; pid: number }

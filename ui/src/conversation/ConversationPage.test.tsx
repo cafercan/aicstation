@@ -1007,21 +1007,25 @@ test("@ menu: not while the session waits for an answer", async () => {
 
 // Images
 
-function imageBox(images: number[] = []) {
+/** Images waiting in Claude's input, the first line holding them all. */
+const imgs = (...ns: number[]) => ns.map((n, i) => ({ n, at: 10 * (i + 1) + i }));
+
+function imageBox(images: { n: number; at: number | null }[] = []) {
   serve({
-    send_to_session: () => undefined, paste_image_to_session: () => undefined, clear_session_input: () => undefined,
+    send_to_session: () => undefined, paste_image_to_session: () => undefined, remove_session_image: () => undefined,
     get_session_commands: () => [],
   });
-  render(<Composer sessionId="s1" status="idle" onShowTerminal={noop} images={images} />);
-  return screen.getByRole("textbox") as HTMLTextAreaElement;
+  const r = render(<Composer sessionId="s1" status="idle" onShowTerminal={noop} images={images} />);
+  return { box: screen.getByRole("textbox") as HTMLTextAreaElement, rerender: (next: typeof images) =>
+    r.rerender(<Composer sessionId="s1" status="idle" onShowTerminal={noop} images={next} />) };
 }
 const pastes = () => invoke.mock.calls.filter(([c]) => c === "paste_image_to_session").length;
 const clip = (types: string[], files: string[]) => ({
-  types, items: files.map((type) => ({ kind: "file", type })), getData: () => "",
+  types, items: files.map((type) => ({ kind: "file", type, getAsFile: () => new Blob(["x"], { type }) })), getData: () => "",
 });
 
 test("image: a pasted picture goes to Claude's input, pasted text stays text", () => {
-  const box = imageBox();
+  const { box } = imageBox();
   const ev = fireEvent.paste(box, { clipboardData: clip(["Files"], ["image/png"]) });
   expect(ev).toBe(false);
   expect(pastes()).toBe(1);
@@ -1029,19 +1033,24 @@ test("image: a pasted picture goes to Claude's input, pasted text stays text", (
   expect(fireEvent.paste(box, { clipboardData: clip(["text/plain", "Files"], ["image/png"]) })).toBe(true);
   expect(fireEvent.paste(box, { clipboardData: clip(["Files"], ["application/pdf"]) })).toBe(true);
   expect(pastes()).toBe(1);
+  // Ctrl+Shift+V (paste as plain text) of a picture comes with no data at all.
+  expect(fireEvent.paste(box, { clipboardData: clip([], []) })).toBe(false);
+  expect(pastes()).toBe(2);
 });
 
 test("image: Alt+V pastes the clipboard's image as in the terminal; AltGr+V does not", () => {
-  const box = imageBox();
+  const { box } = imageBox();
   fireEvent.keyDown(box, { key: "v", code: "KeyV", altKey: true });
   expect(pastes()).toBe(1);
   fireEvent.keyDown(box, { key: "v", code: "KeyV", altKey: true, ctrlKey: true });
   expect(pastes()).toBe(1);
 });
 
-test("image: waiting images show above the box and send without text", async () => {
-  const box = imageBox([1, 2]);
-  expect(screen.getByRole("status").textContent).toBe("[Image #1] [Image #2] mesajla birlikte gider");
+test("image: waiting images show above the box, each with its own ×, and send without text", async () => {
+  const { box } = imageBox(imgs(1, 2));
+  const list = screen.getByRole("list", { name: "Yapıştırılan resimler" });
+  expect([...list.querySelectorAll("li")].map((li) => li.textContent)).toEqual(["#1×", "#2×"]);
+  expect(screen.getByRole("status").textContent).toBe("mesajla birlikte gider");
   const btn = screen.getByRole("button", { name: "Gönder" }) as HTMLButtonElement;
   expect(btn.disabled).toBe(false);
   fireEvent.keyDown(box, { key: "Enter" });
@@ -1049,7 +1058,7 @@ test("image: waiting images show above the box and send without text", async () 
 });
 
 test("image: without images an empty box sends nothing", () => {
-  const box = imageBox();
+  const { box } = imageBox();
   expect(screen.queryByRole("status")).toBeNull();
   fireEvent.keyDown(box, { key: "Enter" });
   expect(sent()).toEqual([]);
@@ -1057,7 +1066,7 @@ test("image: without images an empty box sends nothing", () => {
 
 test("image: the [Image #n] in the app terminal's input box show above the message box", async () => {
   const rule = "─".repeat(244);
-  const lines = ["● eski yanıt", "", rule, "❯ [Image #1]", rule, "  ⏵⏵ auto mode on (shift+tab to cycle)"];
+  const lines = ["● eski yanıt", "", rule, "❯ [Image #1]", rule, "  ⏵⏵ auto mode on (shift+tab to cycle)"];
   const term = {
     rows: lines.length,
     buffer: { active: { baseY: 0, getLine: (i: number) => ({ isWrapped: false, translateToString: () => lines[i] }) } },
@@ -1068,21 +1077,51 @@ test("image: the [Image #n] in the app terminal's input box show above the messa
   try {
     serve({ get_conversation_page: () => page(ITEMS), get_session_commands: () => [] });
     render(<ConversationPage sessionId="s1" card={card()} onShowTerminal={noop} onTerminal={noop} onAdopted={noop} onResume={async () => {}} />);
-    expect((await screen.findByText(/mesajla birlikte gider/)).textContent).toBe("[Image #1] mesajla birlikte gider");
+    const list = await screen.findByRole("list", { name: "Yapıştırılan resimler" });
+    expect(list.textContent).toBe("#1×");
   } finally {
     (NO_TERMINALS as unknown as object[]).length = 0;
     terminalForPid.mockImplementation(() => undefined);
   }
 });
 
-test("image: × drops the waiting images from Claude's input", () => {
-  imageBox([2, 3]);
-  fireEvent.click(screen.getByRole("button", { name: "Resimleri kaldır" }));
-  expect(invoke.mock.calls.filter(([c]) => c === "clear_session_input")).toEqual([["clear_session_input", { sessionId: "s1" }]]);
+test("image: an image's × drops only that one from Claude's input", () => {
+  imageBox(imgs(2, 3));
+  fireEvent.click(screen.getByRole("button", { name: "Resmi kaldır: [Image #3]" }));
+  expect(invoke.mock.calls.filter(([c]) => c === "remove_session_image"))
+    .toEqual([["remove_session_image", { sessionId: "s1", at: 21 }]]);
+});
+
+test("image: an image on a later line of the input has no ×", () => {
+  imageBox([{ n: 4, at: 10 }, { n: 5, at: null }]);
+  expect(screen.getByRole("button", { name: "Resmi kaldır: [Image #4]" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Resmi kaldır: [Image #5]" })).toBeNull();
+});
+
+test("image: a picture pasted here previews on its [Image #n]", () => {
+  const urls: string[] = [];
+  const create = vi.spyOn(URL, "createObjectURL").mockImplementation(() => { urls.push(`blob:${urls.length}`); return urls[urls.length - 1]; });
+  const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+  try {
+    const { box, rerender } = imageBox(imgs(7));
+    // #7 was there before: no preview of its own.
+    fireEvent.paste(box, { clipboardData: clip(["Files"], ["image/png"]) });
+    expect(create).toHaveBeenCalledTimes(1);
+    rerender(imgs(7, 8));
+    const li = screen.getAllByRole("listitem");
+    expect(li[0].querySelector("img")).toBeNull();
+    expect(li[1].querySelector("img")!.getAttribute("src")).toBe("blob:0");
+    // Gone from the input: its preview is freed.
+    rerender(imgs(7));
+    expect(revoke).toHaveBeenCalledWith("blob:0");
+  } finally {
+    create.mockRestore();
+    revoke.mockRestore();
+  }
 });
 
 test("image: text sent after images is set off by a space", async () => {
-  const box = imageBox([1]);
+  const { box } = imageBox(imgs(1));
   fireEvent.change(box, { target: { value: "resimde ne var" } });
   fireEvent.keyDown(box, { key: "Enter" });
   await waitFor(() => expect(sent()).toEqual([" resimde ne var"]));

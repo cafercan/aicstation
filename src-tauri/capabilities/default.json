@@ -21,7 +21,7 @@
     "allow-adopt-session",
     "allow-send-to-session",
     "allow-paste-image-to-session",
-    "allow-clear-session-input",
+    "allow-remove-session-image",
     "allow-open-remote-control",
     "allow-pty-write",
     "allow-pty-resize",

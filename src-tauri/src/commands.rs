@@ -1963,11 +1963,14 @@ mod tests {
         assert_eq!(terms.writes(), [(7, IMAGE_PASTE_KEY.to_string())]);
         write_registry(&reg, &w, "waiting");
         assert_eq!(paste_image(&state, &terms, ADOPT_ID).unwrap_err(), errors::SEND_WAITING);
-        assert_eq!(clear_input(&state, &terms, ADOPT_ID).unwrap_err(), errors::SEND_WAITING);
+        assert_eq!(remove_image(&state, &terms, ADOPT_ID, 2).unwrap_err(), errors::SEND_WAITING);
         assert_eq!(terms.writes().len(), 1);
         write_registry(&reg, &w, "idle");
-        clear_input(&state, &terms, ADOPT_ID).unwrap();
-        assert_eq!(terms.writes()[1], (7, "".to_string()), "Ctrl+U empties Claude's input line");
+        remove_image(&state, &terms, ADOPT_ID, 2).unwrap();
+        let rm = "\x1b[H\x1b[C\x1b[C\x7f";
+        assert_eq!(terms.writes()[1], (7, rm.to_string()), "to the line start, right to the tag's end, Backspace");
+        assert_eq!(remove_image(&state, &terms, ADOPT_ID, MAX_INPUT_AT + 1).unwrap_err(), errors::SEND_TOO_LARGE);
+        assert_eq!(terms.writes().len(), 2);
     }
 
     #[test]
@@ -2248,9 +2251,9 @@ pub fn send_text(
 /// The key Claude Code pastes the clipboard's image with: Alt+V on Windows,
 /// Ctrl+V elsewhere.
 #[cfg(windows)]
-const IMAGE_PASTE_KEY: &str = "v";
+const IMAGE_PASTE_KEY: &str = "\x1bv";
 #[cfg(not(windows))]
-const IMAGE_PASTE_KEY: &str = "";
+const IMAGE_PASTE_KEY: &str = "\x16";
 
 /// Message box: an image was pasted. Claude Code reads images from the system
 /// clipboard itself, so its paste key goes to the session's app terminal
@@ -2260,10 +2263,18 @@ pub fn paste_image(app: &AppState, terms: &dyn Terminals, session_id: &str) -> R
     input_key(app, terms, session_id, IMAGE_PASTE_KEY)
 }
 
-/// Message box: the images waiting in Claude's input are dropped. Ctrl+U
-/// empties Claude Code's input line (the box keeps its own text apart).
-pub fn clear_input(app: &AppState, terms: &dyn Terminals, session_id: &str) -> Result<(), String> {
-    input_key(app, terms, session_id, "")
+/// Farthest place in Claude's input line `remove_image` walks to.
+const MAX_INPUT_AT: u32 = 4096;
+
+/// Message box: one image waiting in Claude's input is dropped. `at` is
+/// where its `[Image #n]` tag ends on the input's first line (characters
+/// from the line's start): Home, `at` times Right, then one Backspace, which
+/// removes a whole image tag in Claude Code.
+pub fn remove_image(app: &AppState, terms: &dyn Terminals, session_id: &str, at: u32) -> Result<(), String> {
+    if at > MAX_INPUT_AT {
+        return Err(errors::SEND_TOO_LARGE.into());
+    }
+    input_key(app, terms, session_id, &format!("\x1b[H{}\x7f", "\x1b[C".repeat(at as usize)))
 }
 
 /// One key to the session's app terminal, checked as in `send_text`.
@@ -2280,10 +2291,11 @@ pub fn paste_image_to_session(app: tauri::AppHandle, session_id: String) -> Resu
 }
 
 #[tauri::command(async)]
-pub fn clear_session_input(app: tauri::AppHandle, session_id: String) -> Result<(), String> {
+pub fn remove_session_image(app: tauri::AppHandle, session_id: String, at: u32) -> Result<(), String> {
     use tauri::Manager;
-    clear_input(&app.state::<AppState>(), app.state::<PtyManager>().inner(), &session_id)
+    remove_image(&app.state::<AppState>(), app.state::<PtyManager>().inner(), &session_id, at)
 }
+
 
 /// `send_text` on the blocking pool (it sleeps between the two writes).
 /// Only the id and the text come from the UI.

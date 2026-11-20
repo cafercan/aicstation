@@ -88,7 +88,7 @@ test("the images waiting in Claude's input box are read from its rows", () => {
     rule,
     "  ⏵⏵ auto mode on",
   ];
-  expect(inputImages(rows)).toEqual([2, 3]);
+  expect(inputImages(rows).map((i) => i.n)).toEqual([2, 3]);
   expect(inputImages([rule, "> boş", rule])).toEqual([]);
   expect(inputImages(["> [Image #4]"])).toEqual([]);
 });
@@ -107,5 +107,13 @@ test("a full-width rule does not swallow the row xterm marks as wrapped after it
   };
   const rows = screenRows(term as never);
   expect(rows).toEqual([rule, "❯ [Image #1]", rule, "  ⏵⏵ auto mode on"]);
-  expect(inputImages(rows)).toEqual([1]);
+  expect(inputImages(rows).map((i) => i.n)).toEqual([1]);
+});
+
+test("each image's place: characters from the input's start to the end of its tag, on the first line only", () => {
+  const rule = "─".repeat(40);
+  const rows = [rule, "❯ [Image #5] [Image #6] ğüş [Image #7]", "  [Image #8]", rule];
+  expect(inputImages(rows)).toEqual([
+    { n: 5, at: 10 }, { n: 6, at: 21 }, { n: 7, at: 36 }, { n: 8, at: null },
+  ]);
 });
