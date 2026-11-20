@@ -1945,6 +1945,28 @@ mod tests {
     }
 
     #[test]
+    fn empty_text_only_submits_what_is_in_the_input() {
+        // A message of pasted images only: they already sit in Claude's input.
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, _, _) = send_env(tmp.path(), "idle");
+        let terms = FakeTerms::new(|_| {});
+        send_text(&state, &terms, ADOPT_ID, "", Duration::ZERO).unwrap();
+        assert_eq!(terms.writes(), [(7, "\r".to_string())]);
+    }
+
+    #[test]
+    fn image_paste_sends_claude_codes_paste_key() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, reg, w) = send_env(tmp.path(), "busy");
+        let terms = FakeTerms::new(|_| {});
+        paste_image(&state, &terms, ADOPT_ID).unwrap();
+        assert_eq!(terms.writes(), [(7, IMAGE_PASTE_KEY.to_string())]);
+        write_registry(&reg, &w, "waiting");
+        assert_eq!(paste_image(&state, &terms, ADOPT_ID).unwrap_err(), errors::SEND_WAITING);
+        assert_eq!(terms.writes().len(), 1);
+    }
+
+    #[test]
     fn send_text_refusal_before_the_paste_keeps_its_own_code() {
         let tmp = tempfile::tempdir().unwrap();
         let (state, _, _) = send_env(tmp.path(), "waiting");
@@ -2194,7 +2216,8 @@ impl Terminals for PtyManager {
 /// still idle or busy (not waiting: Enter would answer its prompt) and still
 /// runs in the same terminal (else Enter would run the text in the shell).
 /// A failure after the paste is `send_not_submitted:<inner code>`: the text
-/// then sits unsent in the terminal's input.
+/// then sits unsent in the terminal's input. An empty `text` only writes the
+/// Enter: a message of images pasted into Claude's input (`paste_image`).
 pub fn send_text(
     app: &AppState,
     terms: &dyn Terminals,
@@ -2202,11 +2225,13 @@ pub fn send_text(
     text: &str,
     gap: Duration,
 ) -> Result<(), String> {
-    let payload = crate::pty::paste_payload(text).map_err(String::from)?;
+    let payload = if text.is_empty() { None } else { Some(crate::pty::paste_payload(text).map_err(String::from)?) };
     let shell = app.send_target(session_id)?;
     let id = terms.id_for_pid(shell).ok_or(errors::SEND_NOT_EMBEDDED)?;
-    terms.write(id, &payload)?;
-    std::thread::sleep(gap);
+    if let Some(payload) = payload {
+        terms.write(id, &payload)?;
+        std::thread::sleep(gap);
+    }
     let submit = || {
         if app.send_target(session_id)? != shell || terms.id_for_pid(shell) != Some(id) {
             return Err(errors::SEND_NOT_EMBEDDED.to_string());
@@ -2214,6 +2239,29 @@ pub fn send_text(
         terms.write(id, "\r")
     };
     submit().map_err(|e| errors::with(errors::SEND_NOT_SUBMITTED, e))
+}
+
+/// The key Claude Code pastes the clipboard's image with: Alt+V on Windows,
+/// Ctrl+V elsewhere.
+#[cfg(windows)]
+const IMAGE_PASTE_KEY: &str = "v";
+#[cfg(not(windows))]
+const IMAGE_PASTE_KEY: &str = "";
+
+/// Message box: an image was pasted. Claude Code reads images from the system
+/// clipboard itself, so its paste key goes to the session's app terminal
+/// (checked as in `send_text`); it puts `[Image #n]` into its input, which
+/// the next message sends along.
+pub fn paste_image(app: &AppState, terms: &dyn Terminals, session_id: &str) -> Result<(), String> {
+    let shell = app.send_target(session_id)?;
+    let id = terms.id_for_pid(shell).ok_or(errors::SEND_NOT_EMBEDDED)?;
+    terms.write(id, IMAGE_PASTE_KEY)
+}
+
+#[tauri::command(async)]
+pub fn paste_image_to_session(app: tauri::AppHandle, session_id: String) -> Result<(), String> {
+    use tauri::Manager;
+    paste_image(&app.state::<AppState>(), app.state::<PtyManager>().inner(), &session_id)
 }
 
 /// `send_text` on the blocking pool (it sleeps between the two writes).

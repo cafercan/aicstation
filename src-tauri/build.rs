@@ -16,6 +16,7 @@ const COMMANDS: &[&str] = &[
     "pty_spawn_resume",
     "adopt_session",
     "send_to_session",
+    "paste_image_to_session",
     "open_remote_control",
     "pty_write",
     "pty_resize",
