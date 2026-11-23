@@ -13,7 +13,7 @@ license(s) named in the "Used" column.
 
 | License | Packages |
 |---|---|
-| MIT | 223 |
+| MIT | 224 |
 | Apache-2.0 | 4 |
 | BSD-3-Clause | 4 |
 | Zlib | 2 |
@@ -21,7 +21,7 @@ license(s) named in the "Used" column.
 | CC0-1.0 | 1 |
 | MPL-2.0 | 5 |
 
-## Rust crates (243)
+## Rust crates (244)
 
 | Package | Version | Declared license | Used |
 |---|---|---|---|
@@ -35,7 +35,7 @@ license(s) named in the "Used" column.
 | bit-vec | 0.8.0 | Apache-2.0 OR MIT | MIT |
 | bitflags | 1.3.2 | MIT/Apache-2.0 | MIT |
 | bitflags | 2.13.2 | MIT OR Apache-2.0 | MIT |
-| block-buffer | 0.10.4 | MIT OR Apache-2.0 | MIT |
+| block-buffer | 0.12.1 | MIT OR Apache-2.0 | MIT |
 | brotli | 9.1.1 | BSD-3-Clause AND MIT | MIT AND BSD-3-Clause |
 | brotli-decompressor | 6.2.0 | BSD-3-Clause/MIT | MIT |
 | bs58 | 0.5.1 | MIT/Apache-2.0 | MIT |
@@ -47,12 +47,13 @@ license(s) named in the "Used" column.
 | cfb | 0.14.0 | MIT | MIT |
 | cfg-if | 1.0.5 | MIT OR Apache-2.0 | MIT |
 | chrono | 0.4.45 | MIT OR Apache-2.0 | MIT |
-| cookie | 0.18.2 | MIT OR Apache-2.0 | MIT |
-| cpufeatures | 0.2.17 | MIT OR Apache-2.0 | MIT |
+| const-oid | 0.10.3 | Apache-2.0 OR MIT | MIT |
+| cookie | 0.18.3 | MIT OR Apache-2.0 | MIT |
+| cpufeatures | 0.3.1 | MIT OR Apache-2.0 | MIT |
 | crc32fast | 1.5.4 | MIT OR Apache-2.0 | MIT |
 | crossbeam-channel | 0.5.17 | MIT OR Apache-2.0 | MIT |
 | crossbeam-utils | 0.8.23 | MIT OR Apache-2.0 | MIT |
-| crypto-common | 0.1.7 | MIT OR Apache-2.0 | MIT |
+| crypto-common | 0.2.2 | MIT OR Apache-2.0 | MIT |
 | cssparser | 0.37.0 | MPL-2.0 | MPL-2.0 |
 | cssparser-macros | 0.7.1 | MPL-2.0 | MPL-2.0 |
 | ctor | 1.0.13 | Apache-2.0 OR MIT | MIT |
@@ -65,7 +66,7 @@ license(s) named in the "Used" column.
 | deranged | 0.5.9 | MIT OR Apache-2.0 | MIT |
 | derive_more | 2.1.1 | MIT | MIT |
 | derive_more-impl | 2.1.1 | MIT | MIT |
-| digest | 0.10.7 | MIT OR Apache-2.0 | MIT |
+| digest | 0.11.3 | MIT OR Apache-2.0 | MIT |
 | dirs | 7.0.0 | MIT OR Apache-2.0 | MIT |
 | dirs-sys | 0.5.0 | MIT OR Apache-2.0 | MIT |
 | displaydoc | 0.2.7 | MIT OR Apache-2.0 | MIT |
@@ -84,8 +85,7 @@ license(s) named in the "Used" column.
 | flate2 | 1.1.10 | MIT OR Apache-2.0 | MIT |
 | fnv | 1.0.7 | Apache-2.0 / MIT | MIT |
 | foldhash | 0.2.0 | Zlib | Zlib |
-| form_urlencoded | 1.2.2 | MIT OR Apache-2.0 | MIT |
-| generic-array | 0.14.7 | MIT | MIT |
+| form_urlencoded | 1.2.3 | MIT OR Apache-2.0 | MIT |
 | getrandom | 0.3.4 | MIT OR Apache-2.0 | MIT |
 | getrandom | 0.4.3 | MIT OR Apache-2.0 | MIT |
 | glob | 0.3.4 | MIT OR Apache-2.0 | MIT |
@@ -95,6 +95,7 @@ license(s) named in the "Used" column.
 | hex | 0.4.3 | MIT OR Apache-2.0 | MIT |
 | html5ever | 0.39.0 | MIT OR Apache-2.0 | MIT |
 | http | 1.5.0 | MIT OR Apache-2.0 | MIT |
+| hybrid-array | 0.4.15 | MIT OR Apache-2.0 | MIT |
 | ico | 0.6.0 | MIT | MIT |
 | icu_collections | 2.4.0 | Unicode-3.0 | Unicode-3.0 |
 | icu_locale_core | 2.4.0 | Unicode-3.0 | Unicode-3.0 |
@@ -183,7 +184,7 @@ license(s) named in the "Used" column.
 | serialize-to-javascript | 0.1.2 | MIT OR Apache-2.0 | MIT |
 | serialize-to-javascript-impl | 0.1.2 | MIT OR Apache-2.0 | MIT |
 | servo_arc | 0.4.3 | MIT OR Apache-2.0 | MIT |
-| sha2 | 0.10.9 | MIT OR Apache-2.0 | MIT |
+| sha2 | 0.11.1 | MIT OR Apache-2.0 | MIT |
 | shared_library | 0.1.9 | Apache-2.0/MIT | MIT |
 | shell-words | 1.1.1 | MIT/Apache-2.0 | MIT |
 | simd-adler32 | 0.3.10 | MIT | MIT |
@@ -198,12 +199,12 @@ license(s) named in the "Used" column.
 | syn | 3.0.9 | MIT OR Apache-2.0 | MIT |
 | synstructure | 0.14.0 | MIT | MIT |
 | tao | 0.37.2 | Apache-2.0 | Apache-2.0 |
-| tauri | 2.12.5 | Apache-2.0 OR MIT | MIT |
-| tauri-codegen | 2.7.4 | Apache-2.0 OR MIT | MIT |
-| tauri-macros | 2.7.4 | Apache-2.0 OR MIT | MIT |
-| tauri-runtime | 2.12.2 | Apache-2.0 OR MIT | MIT |
-| tauri-runtime-wry | 2.12.3 | Apache-2.0 OR MIT | MIT |
-| tauri-utils | 2.10.2 | Apache-2.0 OR MIT | MIT |
+| tauri | 2.12.7 | Apache-2.0 OR MIT | MIT |
+| tauri-codegen | 2.7.6 | Apache-2.0 OR MIT | MIT |
+| tauri-macros | 2.7.6 | Apache-2.0 OR MIT | MIT |
+| tauri-runtime | 2.12.4 | Apache-2.0 OR MIT | MIT |
+| tauri-runtime-wry | 2.12.5 | Apache-2.0 OR MIT | MIT |
+| tauri-utils | 2.10.4 | Apache-2.0 OR MIT | MIT |
 | tendril | 0.5.1 | MIT OR Apache-2.0 | MIT |
 | thiserror | 1.0.69 | MIT OR Apache-2.0 | MIT |
 | thiserror | 2.0.21 | MIT OR Apache-2.0 | MIT |
@@ -228,7 +229,7 @@ license(s) named in the "Used" column.
 | typenum | 1.20.1 | MIT OR Apache-2.0 | MIT |
 | unicode-ident | 1.0.27 | (MIT OR Apache-2.0) AND Unicode-3.0 | MIT AND Unicode-3.0 |
 | unicode-segmentation | 1.13.3 | MIT OR Apache-2.0 | MIT |
-| url | 2.5.8 | MIT OR Apache-2.0 | MIT |
+| url | 2.5.9 | MIT OR Apache-2.0 | MIT |
 | urlpattern | 0.6.0 | MIT | MIT |
 | utf_types | 1.0.0 | Apache-2.0 OR MIT | MIT |
 | utf8_iter | 1.1.0 | Apache-2.0 OR MIT | MIT |
@@ -273,7 +274,7 @@ license(s) named in the "Used" column.
 
 | Package | Version | Declared license | Used |
 |---|---|---|---|
-| @tauri-apps/api | 2.12.4 | Apache-2.0 OR MIT | MIT |
+| @tauri-apps/api | 2.12.5 | Apache-2.0 OR MIT | MIT |
 | @xterm/addon-clipboard | 0.2.0 | MIT | MIT |
 | @xterm/addon-fit | 0.11.0 | MIT | MIT |
 | @xterm/addon-search | 0.16.0 | MIT | MIT |
@@ -316,7 +317,7 @@ Packages:
 - bit-vec 0.8.0 — Copyright (c) 2023 The Rust Project Developers
 - bitflags 1.3.2 — Copyright (c) 2014 The Rust Project Developers
 - bitflags 2.13.2 — Copyright (c) 2014 The Rust Project Developers
-- block-buffer 0.10.4 — Copyright (c) 2018-2019 The RustCrypto Project Developers
+- block-buffer 0.12.1 — Copyright (c) 2018-2025 The RustCrypto Project Developers
 - brotli 9.1.1 — Copyright (c) 2016 Dropbox, Inc.; Copyright (c) 2009, 2010, 2013-2016 by the Brotli Authors.
 - brotli-decompressor 6.2.0 — Copyright (c) 2016 Dropbox, Inc.
 - bs58 0.5.1 — Copyright (c) 2016 The roaring-rs developers.
@@ -328,12 +329,13 @@ Packages:
 - cfb 0.14.0 — Copyright (c) 2017 Matthew D. Steele
 - cfg-if 1.0.5 — Copyright (c) 2014 Alex Crichton
 - chrono 0.4.45 — Copyright (c) 2014, Kang Seonghoon.
-- cookie 0.18.2 — Copyright 2017 Sergio Benitez; Copyright 2014 Alex Chricton; Copyright (c) 2017 Sergio Benitez; Copyright (c) 2014 Alex Crichton
-- cpufeatures 0.2.17 — Copyright (c) 2020-2025 The RustCrypto Project Developers
+- const-oid 0.10.3 — Copyright (c) 2020-2026 The RustCrypto Project Developers
+- cookie 0.18.3 — Copyright 2017 Sergio Benitez; Copyright 2014 Alex Chricton; Copyright (c) 2017 Sergio Benitez; Copyright (c) 2014 Alex Crichton
+- cpufeatures 0.3.1 — Copyright (c) 2020-2026 The RustCrypto Project Developers
 - crc32fast 1.5.4 — Copyright (c) 2018 Sam Rijs, Alex Crichton and contributors
 - crossbeam-channel 0.5.17 — Copyright (c) 2019 The Crossbeam Project Developers; COPYRIGHT AND/OR OTHER APPLICABLE LAW. ANY USE OF THE WORK OTHER THAN AS; copyright protection under copyright law or other applicable laws.; Copyright (c) 2009 The Go Authors. All rights reserved.
 - crossbeam-utils 0.8.23 — Copyright (c) 2019 The Crossbeam Project Developers
-- crypto-common 0.1.7 — Copyright (c) 2021 RustCrypto Developers
+- crypto-common 0.2.2 — Copyright (c) 2021-2026 RustCrypto Developers
 - ctor 1.0.13 — Authors: Matt Mastracci <matthew@mastracci.com>
 - darling 0.24.1 — Copyright (c) 2017 Ted Driggs
 - darling_core 0.24.1 — Copyright (c) 2017 Ted Driggs
@@ -344,7 +346,7 @@ Packages:
 - deranged 0.5.9 — Copyright 2024 Jacob Pratt et al.; Copyright (c) 2024 Jacob Pratt et al.
 - derive_more 2.1.1 — Copyright (c) 2016 Jelte Fennema
 - derive_more-impl 2.1.1 — Copyright (c) 2016 Jelte Fennema
-- digest 0.10.7 — Copyright (c) 2017 Artyom Pavlov
+- digest 0.11.3 — Copyright (c) 2017-2025 RustCrypto Developers; Copyright (c) 2017 Artyom Pavlov
 - dirs 7.0.0 — Copyright (c) 2018-2019 dirs-rs contributors
 - dirs-sys 0.5.0 — Copyright (c) 2018-2019 dirs-rs contributors
 - displaydoc 0.2.7 — Authors: Jane Lusby <jlusby@yaah.dev>
@@ -360,8 +362,7 @@ Packages:
 - filedescriptor 0.8.3 — Copyright (c) 2018 Wez Furlong
 - flate2 1.1.10 — Copyright (c) 2014-2026 Alex Crichton
 - fnv 1.0.7 — Copyright (c) 2017 Contributors
-- form_urlencoded 1.2.2 — Copyright (c) 2013-2016 The rust-url developers
-- generic-array 0.14.7 — Copyright (c) 2015 Bartłomiej Kamiński
+- form_urlencoded 1.2.3 — Copyright (c) 2013-2016 The rust-url developers
 - getrandom 0.3.4 — Copyright (c) 2018-2025 The rust-random Project Developers; Copyright (c) 2014 The Rust Project Developers
 - getrandom 0.4.3 — Copyright (c) 2018-2026 The rust-random Project Developers; Copyright (c) 2014 The Rust Project Developers
 - glob 0.3.4 — Copyright (c) 2014 The Rust Project Developers
@@ -371,6 +372,7 @@ Packages:
 - hex 0.4.3 — Copyright (c) 2013-2014 The Rust Project Developers.; Copyright (c) 2015-2020 The rust-hex Developers
 - html5ever 0.39.0 — Copyright (c) 2014 The html5ever Project Developers
 - http 1.5.0 — Copyright 2017 http-rs authors; Copyright (c) 2017 http-rs authors
+- hybrid-array 0.4.15 — Copyright (c) 2022-2026 The RustCrypto Project Developers
 - ico 0.6.0 — Copyright (c) 2018 Matthew D. Steele
 - ident_case 1.0.1 — Authors: Ted Driggs <ted.driggs@outlook.com>
 - idna 1.1.0 — Copyright (c) 2013-2025 The rust-url developers
@@ -446,7 +448,7 @@ Packages:
 - serialize-to-javascript 0.1.2 — Copyright (c) 2021 Chip Reed
 - serialize-to-javascript-impl 0.1.2 — Copyright (c) 2021 Chip Reed
 - servo_arc 0.4.3 — Authors: The Servo Project Developers
-- sha2 0.10.9 — Copyright (c) 2006-2009 Graydon Hoare; Copyright (c) 2009-2013 Mozilla Foundation; Copyright (c) 2016 Artyom Pavlov
+- sha2 0.11.1 — Copyright (c) 2016-2026 The RustCrypto Project Developers; Copyright (c) 2016 Artyom Pavlov; Copyright (c) 2009-2013 Mozilla Foundation; Copyright (c) 2006-2009 Graydon Hoare
 - shared_library 0.1.9 — Copyright (c) 2017 Pierre Krieger
 - shell-words 1.1.1 — Copyright (c) 2016 Tomasz Miąsko
 - simd-adler32 0.3.10 — Copyright (c) [2021] [Marvin Countryman]
@@ -460,12 +462,12 @@ Packages:
 - syn 2.0.119 — Authors: David Tolnay <dtolnay@gmail.com>
 - syn 3.0.9 — Authors: David Tolnay <dtolnay@gmail.com>
 - synstructure 0.14.0 — Copyright 2016 Nika Layzell
-- tauri 2.12.5 — Copyright (c) 2017 - Present Tauri Apps Contributors
-- tauri-codegen 2.7.4 — Copyright (c) 2017 - Present Tauri Apps Contributors
-- tauri-macros 2.7.4 — Copyright (c) 2017 - Present Tauri Apps Contributors
-- tauri-runtime 2.12.2 — Copyright (c) 2017 - Present Tauri Apps Contributors
-- tauri-runtime-wry 2.12.3 — Copyright (c) 2017 - Present Tauri Apps Contributors
-- tauri-utils 2.10.2 — Copyright (c) 2017 - Present Tauri Apps Contributors
+- tauri 2.12.7 — Copyright (c) 2017 - Present Tauri Apps Contributors
+- tauri-codegen 2.7.6 — Copyright (c) 2017 - Present Tauri Apps Contributors
+- tauri-macros 2.7.6 — Copyright (c) 2017 - Present Tauri Apps Contributors
+- tauri-runtime 2.12.4 — Copyright (c) 2017 - Present Tauri Apps Contributors
+- tauri-runtime-wry 2.12.5 — Copyright (c) 2017 - Present Tauri Apps Contributors
+- tauri-utils 2.10.4 — Copyright (c) 2017 - Present Tauri Apps Contributors
 - tendril 0.5.1 — Copyright (c) 2015 Keegan McAllister
 - thiserror 1.0.69 — Authors: David Tolnay <dtolnay@gmail.com>
 - thiserror 2.0.21 — Authors: David Tolnay <dtolnay@gmail.com>
@@ -489,7 +491,7 @@ Packages:
 - typenum 1.20.1 — Copyright 2014 Paho Lurie-Gregg; Copyright (c) 2014 Paho Lurie-Gregg
 - unicode-ident 1.0.27 — COPYRIGHT AND PERMISSION NOTICE; Copyright © 1991-2023 Unicode, Inc.
 - unicode-segmentation 1.13.3 — Copyright (c) 2015 The Rust Project Developers
-- url 2.5.8 — Copyright (c) 2013-2025 The rust-url developers
+- url 2.5.9 — Copyright (c) 2013-2025 The rust-url developers
 - urlpattern 0.6.0 — Copyright (c) 2021 the Deno authors
 - utf_types 1.0.0 — Copyright Mozilla Foundation
 - utf8_iter 1.1.0 — Copyright Mozilla Foundation
@@ -520,7 +522,7 @@ Packages:
 - winreg 0.10.1 — Copyright (c) 2015 Igor Shaula
 - wry 0.57.1 — Copyright (c) 2020-2023 Ngo Iok Ui & Tauri Programme within The Commons Conservancy
 - zmij 1.0.23 — Authors: David Tolnay <dtolnay@gmail.com>
-- @tauri-apps/api 2.12.4 — Copyright (c) 2017 - Present Tauri Apps Contributors
+- @tauri-apps/api 2.12.5 — Copyright (c) 2017 - Present Tauri Apps Contributors
 - @xterm/addon-clipboard 0.2.0 — Copyright (c) 2023, The xterm.js authors (https://github.com/xtermjs/xterm.js)
 - @xterm/addon-fit 0.11.0 — Copyright (c) 2019, The xterm.js authors (https://github.com/xtermjs/xterm.js)
 - @xterm/addon-search 0.16.0 — Copyright (c) 2017, The xterm.js authors (https://github.com/xtermjs/xterm.js)
